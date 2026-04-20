@@ -1,103 +1,79 @@
 # Syntrexpowers
 
-Enhanced fork of [Superpowers](https://github.com/obra/superpowers) with improved code review: 9-layer review protocol, proof model, mechanical pre-sweep, and compact findings-only output.
+3 custom skills that augment [Superpowers](https://github.com/obra/superpowers). Not a replacement — an addon. Superpowers stays installed and updates normally.
 
-## What's Different from Superpowers
+## Skills
 
-| Feature | Superpowers | Syntrexpowers |
-|---------|-------------|---------------|
-| Code review layers | 5 generic categories | 9 structured layers |
-| Trace vectors | — | 7 cross-file vectors (caller→callee, error propagation, numerical parity, etc.) |
-| Proof model | — | Source + reachable path + harm (3 mandatory proof points) |
-| Mechanical pre-sweep | — | Grep-based Phase 0 before LLM (zero token cost) |
-| Output | Strengths + Issues + Recommendations | Findings-only + verdict |
-| Severity levels | Critical / Important / Minor | Critical / High / Medium / Low |
-| Review cycle | One-shot | Iterative: fix → re-review → 0 |
+### enhanced-code-review
+Replaces `superpowers:requesting-code-review` trigger with structured protocol:
+- **9 review layers** — requirements, architecture, logic, contracts, data, security, reliability, performance, tests
+- **7 trace vectors** — caller→callee, data flow, error propagation, cross-module, state lifecycle, absence audit, numerical parity
+- **Proof model** — every finding requires: source (file:line) + reachable path + harm. Missing any = not a finding
+- **Phase 0 mechanical pre-sweep** — grep for numeric assertions, vacuous tests, TODO/FIXME before LLM (zero token cost)
+- **Compact output** — findings + verdict only, no strengths/recommendations/narration
+- **Graduated depth** — 1-3 files: layers only, 4-10: + key vectors, 10+: full matrix
 
-All original Superpowers skills are included (TDD, debugging, brainstorming, plans, subagent-driven development, etc.).
+### design-review
+Works alongside `superpowers:brainstorming` for designing systems, modules, plugins, widgets, UI:
+- **7-level decomposition framework** — Supersystem → Mission → Concept → Values → Skills → Behaviors → Environment
+- **Consistency checks** — completeness, mission alignment, values→skills→behaviors chain, cross-level coherence
+- **Spec review mode** — placeholder scan, internal contradictions, actionability, missing sections
+- **Depth by granularity** — sandbox: full 7 levels, widget: 5 levels, component: 3 levels
+
+### enhanced-planning
+Works alongside `superpowers:writing-plans`:
+- **Design validation** — verify 7-level framework before writing plan
+- **Mechanical verification** — each task gets grep/bash verification commands (zero LLM cost)
+- **Cross-task consistency** — dependency chains, numeric parity, no orphan tasks
+- **Plan self-review checklist** — completeness, verification coverage, no placeholders
 
 ## Installation
 
 ### Claude Code
 
 ```bash
-# 1. Add marketplace
-claude plugins marketplace add Isoft-Consulting/syntrexpowers
-
-# 2. Install plugin
-claude plugins install syntrexpowers
-
-# 3. (Optional) Disable original superpowers to avoid skill name conflicts
-claude plugins disable superpowers
+# Copy skills to Claude Code skills directory
+mkdir -p ~/.claude/skills
+cp -r skills/enhanced-code-review ~/.claude/skills/
+cp -r skills/design-review ~/.claude/skills/
+cp -r skills/enhanced-planning ~/.claude/skills/
 ```
 
-Restart Claude Code session after installation.
+Restart session. Skills appear alongside superpowers automatically.
 
-### OpenAI Codex CLI
+### Codex CLI
 
 ```bash
-# 1. Add marketplace
-codex marketplace add Isoft-Consulting/syntrexpowers
-
-# 2. Disable original superpowers (if installed)
-mv ~/.codex/superpowers ~/.codex/_superpowers_disabled
-
-# 3. Verify
-codex # start new session, skills should show syntrexpowers:*
+# Copy skills to Codex skills directory
+cp -r skills/enhanced-code-review ~/.codex/skills/
+cp -r skills/design-review ~/.codex/skills/
+cp -r skills/enhanced-planning ~/.codex/skills/
 ```
 
-### Manual Installation (any platform)
-
-Clone the repo and point your tool at it:
+### Update
 
 ```bash
-git clone git@github.com:Isoft-Consulting/syntrexpowers.git ~/syntrexpowers
+cd ~/syntrexpowers && git pull
+# Then re-copy skills to ~/.claude/skills/ and/or ~/.codex/skills/
 ```
 
-**Claude Code:**
-```bash
-claude plugins marketplace add ~/syntrexpowers
-claude plugins install syntrexpowers
+## Workflow
+
+```
+superpowers:brainstorming + design-review (7 levels)
+    → superpowers:writing-plans + enhanced-planning (validation)
+    → implementation (superpowers:subagent-driven-development)
+    → enhanced-code-review (9 layers + proof model)
 ```
 
-**Codex CLI:**
-```bash
-codex marketplace add ~/syntrexpowers
-```
-
-## Usage
-
-Skills trigger automatically — same as Superpowers. The enhanced code reviewer activates when you request code review or use `syntrexpowers:requesting-code-review`.
-
-### Code Review Workflow
-
-1. **Phase 0 (mechanical pre-sweep)** — grep for numeric assertions, vacuous tests, TODO/FIXME — zero LLM tokens
-2. **9-layer review** — requirements, architecture, logic, contracts, data, security, reliability, performance, tests
-3. **7 trace vectors** — caller→callee, data flow, error propagation, cross-module, state lifecycle, absence audit, numerical parity
-4. **Proof model** — every finding must have: source (file:line) + reachable path + harm
-5. **Iterative cycle** — fix → re-review → repeat until 0 findings
-
-### All Skills
-
-**Testing:** test-driven-development
-**Debugging:** systematic-debugging, verification-before-completion
-**Collaboration:** brainstorming, writing-plans, executing-plans, dispatching-parallel-agents, requesting-code-review, receiving-code-review, using-git-worktrees, finishing-a-development-branch, subagent-driven-development
-**Meta:** writing-skills, using-superpowers
-
-## Updating
-
-```bash
-# Claude Code
-claude plugins update syntrexpowers
-
-# Codex — re-add marketplace (pulls latest)
-codex marketplace add Isoft-Consulting/syntrexpowers
-```
+Superpowers handles the flow. Our skills add structure and rigor at key points.
 
 ## Based On
 
-Fork of [obra/superpowers](https://github.com/obra/superpowers) v5.0.7. Original by [Jesse Vincent](https://blog.fsck.com) at [Prime Radiant](https://primeradiant.com).
+- [Superpowers](https://github.com/obra/superpowers) by Jesse Vincent — the workflow engine
+- [7-level decomposition framework](https://github.com/Isoft-Consulting/core/blob/main/Docs/specs/design-decomposition-framework-v1.md) — design methodology
+- A/B tested proof model and mechanical pre-sweep on real 26-file review scope
 
 ## License
 
-MIT License — see LICENSE file for details.
+MIT
