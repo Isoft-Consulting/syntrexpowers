@@ -14,7 +14,7 @@ You are reviewing code changes. Find real defects, verify each one, report only 
 
 ## Requirements/Plan
 
-{PLAN_REFERENCE}
+{PLAN_OR_REQUIREMENTS}
 
 ## Git Range to Review
 

@@ -115,7 +115,7 @@ You: [Fix both issues]
 **Never:**
 - Skip review because "it's simple"
 - Ignore Critical issues
-- Proceed with unfixed Important issues
+- Proceed with unfixed High issues
 - Argue with valid technical feedback
 
 **If reviewer wrong:**
