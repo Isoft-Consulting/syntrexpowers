@@ -21,12 +21,12 @@ Missing any → not a finding → do not report.
 ## Flow
 
 ```
-1. Scope: determine what to review
+1. Scope: determine what to review (auto, do NOT ask user)
    - User gave file paths → use them
-   - User described area ("в речекере", "в парсерах") → ask user for exact file list, do NOT guess
-   - User said just "фдр" with no context → use files from current session (Edit/Write history)
-   - Nothing above works → ask user what to review
-   NEVER auto-run git diff to guess scope. Always know exactly what files you're reviewing.
+   - Session context exists → files from Edit/Write/Read in this session
+   - User named area ("в речекере", "в парсерах") → find files matching that area from session context or project structure
+   - NEVER run git diff to guess scope
+   - NEVER ask user "какие файлы?" — scope is always derivable from context
 2. Phase 0: mechanical pre-sweep (grep, zero LLM tokens)
 3. Phase 1: dispatch Agent(model: inherit) with 9-layer + vector protocol
    → iterative: verify → fix → re-sweep → 0
