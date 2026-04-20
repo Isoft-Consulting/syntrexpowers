@@ -31,19 +31,25 @@ HEAD_SHA=$(git rev-parse HEAD)
 
 **2. Mechanical pre-sweep (zero LLM tokens):**
 
-Before dispatching the reviewer, run grep to collect candidates:
+Before dispatching the reviewer, run grep on changed files to collect candidates:
 ```bash
-# Find numeric assertions that might have count mismatches
-git diff $BASE_SHA..$HEAD_SHA -- '*.php' '*.ts' '*.py' | grep -n 'assertEquals\|assertCount\|assert.*==' | grep '[0-9]'
+# List changed files
+FILES=$(git diff --name-only $BASE_SHA..$HEAD_SHA)
 
-# Find vacuous assertions (assertTrue(true), empty asserts)
-git diff $BASE_SHA..$HEAD_SHA | grep -n 'assertTrue(true)\|assertEquals(.*,.*)'
+# Numeric assertions — potential count mismatches
+grep -Hn 'assertEquals\|assertCount' $FILES | grep -E '\b[0-9]+\b'
 
-# Find skip/guard conditions
-git diff $BASE_SHA..$HEAD_SHA | grep -n 'skip\|function_exists\|class_exists'
+# Vacuous assertions — tests that assert nothing
+grep -Hn 'assertTrue(true)' $FILES
+
+# Skip/guard conditions
+grep -Hn 'function_exists\|class_exists\|markTestSkipped' $FILES
+
+# TODO/FIXME
+grep -Hn 'TODO\|FIXME' $FILES
 ```
 
-Include pre-sweep results in the reviewer prompt as "Phase 0 candidates — verify these first."
+Include pre-sweep results in the `{PHASE_0_CANDIDATES}` placeholder.
 
 **3. Dispatch code-reviewer subagent:**
 
@@ -55,6 +61,7 @@ Use Task tool with superpowers:code-reviewer type, fill template at `code-review
 - `{BASE_SHA}` - Starting commit
 - `{HEAD_SHA}` - Ending commit
 - `{DESCRIPTION}` - Brief summary
+- `{PHASE_0_CANDIDATES}` - Results from mechanical pre-sweep (step 2)
 
 **4. Act on feedback:**
 - Fix Critical issues immediately
@@ -88,10 +95,19 @@ grep -n 'assertEquals\|assertCount' src/verify.ts | grep '[0-9]'
 [Subagent returns]:
   Issues:
     High: verify.ts:45 — assertEquals(4, ...) but IssueType enum has 5 values
+      Path: verifyIndex() called with 5 issue types → assertion fails
+      Harm: test passes with wrong count, real coverage gap
     Medium: repair.ts:23 — no progress callback for long operations
-  Verdict: Ready to merge with fixes
+      Path: repairIndex() on 10k+ entries → no feedback for minutes
+      Harm: user thinks process hung
+  Verdict: Needs fixes
 
 You: [Fix both issues]
+[Re-dispatch reviewer for confirmation]
+
+[Subagent returns]:
+  0 issues found. Verdict: Ready to merge
+
 [Continue to Task 3]
 ```
 

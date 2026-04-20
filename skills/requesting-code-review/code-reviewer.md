@@ -35,25 +35,11 @@ A finding requires ALL THREE:
 
 Missing any → not a finding → do not report.
 
-## Phase 0: Mechanical Pre-Sweep
+## Phase 0 Candidates
 
-Before reading code, run grep to build candidate list:
+{PHASE_0_CANDIDATES}
 
-```bash
-# Numeric assertions (potential count mismatches)
-grep -rn 'assertEquals\|assertCount\|assert.*==' {changed_files} | grep '[0-9]'
-
-# Vacuous assertions
-grep -rn 'assertTrue(true)\|assert.*(\s*)' {changed_files}
-
-# Skip/guard conditions
-grep -rn 'skip\|function_exists\|class_exists' {changed_files}
-
-# TODO/FIXME
-grep -rn 'TODO\|FIXME\|HACK\|XXX' {changed_files}
-```
-
-Start with these candidates. Verify each with pointed reads (20-80 lines around the match).
+Verify these candidates first with pointed reads (20-80 lines). Then proceed to broad sweep.
 
 ## 9-Layer Review Checklist
 
@@ -104,15 +90,16 @@ Do NOT read files top-to-bottom. Do NOT narrate clean areas.
 #### Low
 [Style, minor improvements]
 
-**For each issue:**
-- File:line reference
+**For each issue (all three proof elements required):**
+- Source: file:line reference
+- Path: reachable execution scenario
 - Claim vs reality
 - Harm (what breaks)
 - Fix (if not obvious)
 
 ### Verdict
 
-**Ready to merge?** [Yes / With fixes / No]
+**Ready to merge / Needs fixes / Blocked**
 
 **Reasoning:** [1-2 sentences]
 

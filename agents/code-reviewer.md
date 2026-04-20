@@ -67,12 +67,13 @@ Do NOT read entire files top-to-bottom. Do NOT narrate what you checked and foun
 
 Report ONLY confirmed findings and verdict. Nothing else.
 
-**For each finding:**
+**For each finding (all three proof elements required):**
 - Severity: Critical / High / Medium / Low
-- File:line reference
-- What's wrong (claim vs reality)
-- Why it matters (harm)
-- How to fix (if not obvious)
+- Source: file:line reference
+- Path: reachable execution scenario that triggers it
+- Claim vs reality: what's wrong
+- Harm: what breaks or degrades
+- Fix: how to resolve (if not obvious)
 
 **Verdict:** Ready to merge / Needs fixes / Blocked
 
