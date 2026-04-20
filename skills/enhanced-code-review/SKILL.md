@@ -28,41 +28,25 @@ Missing any → not a finding → do not report.
    - NEVER run git diff to guess scope
    - NEVER ask user "какие файлы?" — scope is always derivable from context
 2. Phase 0: mechanical pre-sweep (grep, zero LLM tokens)
-3. Phase 1: dispatch Agent(model: inherit) with 9-layer + vector protocol
+3. Review: apply 9-layer + vector protocol directly (do NOT dispatch subagent)
    → iterative: verify → fix → re-sweep → 0
 4. Show findings + verdict
 ```
 
 ## Phase 0: Mechanical Pre-Sweep
 
-Before dispatching reviewer, run grep on scope files:
+Before reading code, run Grep on scope files to build candidate list:
 
-```bash
-FILES=$(git diff --name-only ${BASE_SHA}..${HEAD_SHA})
+- Numeric assertions: `assertEquals`, `assertCount` with numbers
+- Vacuous assertions: `assertTrue(true)`
+- Skip/guard conditions: `function_exists`, `class_exists`, `markTestSkipped`
+- TODO/FIXME markers
 
-# Numeric assertions — potential count mismatches
-grep -Hn 'assertEquals\|assertCount' $FILES | grep -E '\b[0-9]+\b'
+Use Grep tool, not Bash. Start review from these candidates.
 
-# Vacuous assertions
-grep -Hn 'assertTrue(true)' $FILES
+## Review Protocol
 
-# Skip/guard conditions
-grep -Hn 'function_exists\|class_exists\|markTestSkipped' $FILES
-
-# TODO/FIXME
-grep -Hn 'TODO\|FIXME' $FILES
-```
-
-Include results as "Phase 0 candidates — verify these first" in the reviewer prompt.
-
-## Phase 1: Dispatch Reviewer
-
-```
-Agent(
-  model: inherit,
-  prompt: [9-layer protocol below] + scope + Phase 0 candidates + context
-)
-```
+Apply directly — do NOT dispatch a subagent. You ARE the reviewer.
 
 ### 9 Layers (vertical — each file)
 
