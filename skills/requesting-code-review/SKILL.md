@@ -29,7 +29,23 @@ BASE_SHA=$(git rev-parse HEAD~1)  # or origin/main
 HEAD_SHA=$(git rev-parse HEAD)
 ```
 
-**2. Dispatch code-reviewer subagent:**
+**2. Mechanical pre-sweep (zero LLM tokens):**
+
+Before dispatching the reviewer, run grep to collect candidates:
+```bash
+# Find numeric assertions that might have count mismatches
+git diff $BASE_SHA..$HEAD_SHA -- '*.php' '*.ts' '*.py' | grep -n 'assertEquals\|assertCount\|assert.*==' | grep '[0-9]'
+
+# Find vacuous assertions (assertTrue(true), empty asserts)
+git diff $BASE_SHA..$HEAD_SHA | grep -n 'assertTrue(true)\|assertEquals(.*,.*)'
+
+# Find skip/guard conditions
+git diff $BASE_SHA..$HEAD_SHA | grep -n 'skip\|function_exists\|class_exists'
+```
+
+Include pre-sweep results in the reviewer prompt as "Phase 0 candidates — verify these first."
+
+**3. Dispatch code-reviewer subagent:**
 
 Use Task tool with superpowers:code-reviewer type, fill template at `code-reviewer.md`
 
@@ -40,10 +56,10 @@ Use Task tool with superpowers:code-reviewer type, fill template at `code-review
 - `{HEAD_SHA}` - Ending commit
 - `{DESCRIPTION}` - Brief summary
 
-**3. Act on feedback:**
+**4. Act on feedback:**
 - Fix Critical issues immediately
-- Fix Important issues before proceeding
-- Note Minor issues for later
+- Fix High issues before proceeding
+- Note Medium/Low issues for later
 - Push back if reviewer is wrong (with reasoning)
 
 ## Example
@@ -56,21 +72,26 @@ You: Let me request code review before proceeding.
 BASE_SHA=$(git log --oneline | grep "Task 1" | head -1 | awk '{print $1}')
 HEAD_SHA=$(git rev-parse HEAD)
 
+[Run mechanical pre-sweep]
+grep -n 'assertEquals\|assertCount' src/verify.ts | grep '[0-9]'
+→ verify.ts:45: assertEquals(4, issues.length)
+→ verify.ts:89: assertEquals(0, errors.length)
+
 [Dispatch superpowers:code-reviewer subagent]
   WHAT_WAS_IMPLEMENTED: Verification and repair functions for conversation index
   PLAN_OR_REQUIREMENTS: Task 2 from docs/superpowers/plans/deployment-plan.md
   BASE_SHA: a7981ec
   HEAD_SHA: 3df7661
   DESCRIPTION: Added verifyIndex() and repairIndex() with 4 issue types
+  PHASE_0_CANDIDATES: verify.ts:45 assertEquals(4, issues.length), verify.ts:89 assertEquals(0, errors.length)
 
 [Subagent returns]:
-  Strengths: Clean architecture, real tests
   Issues:
-    Important: Missing progress indicators
-    Minor: Magic number (100) for reporting interval
-  Assessment: Ready to proceed
+    High: verify.ts:45 — assertEquals(4, ...) but IssueType enum has 5 values
+    Medium: repair.ts:23 — no progress callback for long operations
+  Verdict: Ready to merge with fixes
 
-You: [Fix progress indicators]
+You: [Fix both issues]
 [Continue to Task 3]
 ```
 
