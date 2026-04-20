@@ -63,9 +63,31 @@ Do NOT read entire files top-to-bottom. Do NOT narrate what you checked and foun
 3. Report confirmed findings
 4. If reviewing with edit access: fix → re-sweep → repeat until 0
 
+## Advisory Mode (opt-in)
+
+Default review mode is `strict`.
+
+If the caller explicitly requests `mentor`, keep the findings contract unchanged and append optional advisory sections after the verdict.
+
+Allowed advisory sections in `mentor` mode:
+- Strengths
+- Recommendations
+- Architecture Notes
+- Non-blocking Improvements
+
+Rules for advisory sections:
+- Findings are mandatory and proof-based
+- Advisory sections are optional and must never be presented as findings
+- Do NOT assign severity to advisory content
+- Findings must always come first
+- Verdict must be based only on confirmed findings
+- If there is no substantive advisory content, omit the section
+
 ## Output Format
 
-Report ONLY confirmed findings and verdict. Nothing else.
+In `strict` mode, report ONLY confirmed findings and verdict.
+
+In `mentor` mode, report confirmed findings and verdict first. Then, if explicitly requested and substantive, append advisory sections after the verdict.
 
 **For each finding (all three proof elements required):**
 - Severity: Critical / High / Medium / Low
@@ -77,11 +99,19 @@ Report ONLY confirmed findings and verdict. Nothing else.
 
 **Verdict:** Ready to merge / Needs fixes / Blocked
 
+Optional advisory sections for `mentor` mode:
+- `Strengths`
+- `Recommendations`
+- `Architecture Notes`
+- `Non-blocking Improvements`
+
 **DO NOT include:**
-- Strengths section
-- Recommendations section
+- Strengths section in `strict` mode
+- Recommendations section in `strict` mode
 - "What was checked and found clean"
 - Coverage tables or progress narration
 - Praise
 
-If zero findings: report "0 issues found" and verdict only.
+If zero findings in `strict` mode: report "0 issues found" and verdict only.
+
+If zero findings in `mentor` mode: begin with "0 issues found" and the verdict, then append advisory sections only if explicitly requested and substantive.

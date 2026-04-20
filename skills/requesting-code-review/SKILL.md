@@ -9,6 +9,24 @@ Dispatch superpowers:code-reviewer subagent to catch issues before they cascade.
 
 **Core principle:** Review early, review often.
 
+## Review Modes
+
+Use `strict` by default:
+- merge gates
+- bugfix validation
+- regression review
+- "find real issues only"
+
+Use `mentor` only when the human explicitly asks for:
+- strengths
+- recommendations
+- broader engineering feedback
+- architecture notes
+- "review like canonical superpowers"
+
+If the human does not ask for advisory feedback, stay in `strict` mode.
+Do not auto-upgrade to `mentor`.
+
 ## When to Request Review
 
 **Mandatory:**
@@ -33,20 +51,29 @@ HEAD_SHA=$(git rev-parse HEAD)
 
 Before dispatching the reviewer, run grep on changed files to collect candidates:
 ```bash
-# List changed files
-FILES=$(git diff --name-only $BASE_SHA..$HEAD_SHA)
-
 # Numeric assertions — potential count mismatches
-grep -Hn 'assertEquals\|assertCount' $FILES | grep -E '\b[0-9]+\b'
+git diff --name-only -z "$BASE_SHA..$HEAD_SHA" |
+  while IFS= read -r -d '' file; do
+    grep -HnE 'assertEquals\([^)]*\b[0-9]+\b|assertCount\([^)]*\b[0-9]+\b' -- "$file"
+  done
 
 # Vacuous assertions — tests that assert nothing
-grep -Hn 'assertTrue(true)' $FILES
+git diff --name-only -z "$BASE_SHA..$HEAD_SHA" |
+  while IFS= read -r -d '' file; do
+    grep -Hn 'assertTrue(true)' -- "$file"
+  done
 
 # Skip/guard conditions
-grep -Hn 'function_exists\|class_exists\|markTestSkipped' $FILES
+git diff --name-only -z "$BASE_SHA..$HEAD_SHA" |
+  while IFS= read -r -d '' file; do
+    grep -Hn 'function_exists\|class_exists\|markTestSkipped' -- "$file"
+  done
 
 # TODO/FIXME
-grep -Hn 'TODO\|FIXME' $FILES
+git diff --name-only -z "$BASE_SHA..$HEAD_SHA" |
+  while IFS= read -r -d '' file; do
+    grep -Hn 'TODO\|FIXME' -- "$file"
+  done
 ```
 
 Include pre-sweep results in the `{PHASE_0_CANDIDATES}` placeholder.
@@ -55,6 +82,14 @@ Include pre-sweep results in the `{PHASE_0_CANDIDATES}` placeholder.
 
 Use Task tool with superpowers:code-reviewer type, fill template at `code-reviewer.md`
 
+When dispatching:
+- Default to `REVIEW_MODE: strict`
+- Use `REVIEW_MODE: mentor` only on explicit request
+- Set `OPTIONAL_FOCUS: none` when no advisory extras were requested
+- Keep findings and verdict first in all modes
+- Never mix advisory comments into `Issues`
+- Findings are mandatory and proof-based. Advisory sections are optional and must never be presented as findings.
+
 **Placeholders:**
 - `{WHAT_WAS_IMPLEMENTED}` - What you just built
 - `{PLAN_OR_REQUIREMENTS}` - What it should do
@@ -62,6 +97,8 @@ Use Task tool with superpowers:code-reviewer type, fill template at `code-review
 - `{HEAD_SHA}` - Ending commit
 - `{DESCRIPTION}` - Brief summary
 - `{PHASE_0_CANDIDATES}` - Results from mechanical pre-sweep (step 2)
+- `{REVIEW_MODE}` - `strict` by default; use `mentor` only if the human explicitly asks for advisory feedback
+- `{OPTIONAL_FOCUS}` - Requested extras, e.g. `strengths`, `recommendations`, `architecture notes`; use `none` when not requested
 
 **4. Act on feedback:**
 - Fix Critical issues immediately
@@ -80,7 +117,10 @@ BASE_SHA=$(git log --oneline | grep "Task 1" | head -1 | awk '{print $1}')
 HEAD_SHA=$(git rev-parse HEAD)
 
 [Run mechanical pre-sweep]
-grep -n 'assertEquals\|assertCount' src/verify.ts | grep '[0-9]'
+git diff --name-only -z "$BASE_SHA..$HEAD_SHA" |
+  while IFS= read -r -d '' file; do
+    grep -HnE 'assertEquals\([^)]*\b[0-9]+\b|assertCount\([^)]*\b[0-9]+\b' -- "$file"
+  done
 → verify.ts:45: assertEquals(4, issues.length)
 → verify.ts:89: assertEquals(0, errors.length)
 
@@ -91,24 +131,44 @@ grep -n 'assertEquals\|assertCount' src/verify.ts | grep '[0-9]'
   HEAD_SHA: 3df7661
   DESCRIPTION: Added verifyIndex() and repairIndex() with 4 issue types
   PHASE_0_CANDIDATES: verify.ts:45 assertEquals(4, issues.length), verify.ts:89 assertEquals(0, errors.length)
+  REVIEW_MODE: strict
+  OPTIONAL_FOCUS: none
 
 [Subagent returns]:
-  Issues:
-    High: verify.ts:45 — assertEquals(4, ...) but IssueType enum has 5 values
-      Path: verifyIndex() called with 5 issue types → assertion fails
-      Harm: test passes with wrong count, real coverage gap
-    Medium: repair.ts:23 — no progress callback for long operations
-      Path: repairIndex() on 10k+ entries → no feedback for minutes
-      Harm: user thinks process hung
+  #### High
+    Source: verify.ts:45
+    Path: verifyIndex() called with 5 issue types → assertion fails
+    Claim vs reality: assertEquals(4, ...) but IssueType enum has 5 values
+    Harm: test passes with wrong count, real coverage gap
+    Fix: update expected count to match the enum
+  #### Medium
+    Source: repair.ts:23
+    Path: repairIndex() on 10k+ entries → no feedback for minutes
+    Claim vs reality: no progress callback for long operations
+    Harm: user thinks process hung
+    Fix: emit periodic progress updates during long runs
   Verdict: Needs fixes
 
 You: [Fix both issues]
 [Re-dispatch reviewer for confirmation]
 
 [Subagent returns]:
-  0 issues found. Verdict: Ready to merge
+  0 issues found
+  Verdict: Ready to merge
 
 [Continue to Task 3]
+```
+
+### Mentor-Mode Example
+
+If the human explicitly asks for broader feedback, opt in:
+
+```text
+[Human asks]: "Review this and include strengths and recommendations."
+
+[Dispatch superpowers:code-reviewer subagent]
+  REVIEW_MODE: mentor
+  OPTIONAL_FOCUS: strengths, recommendations
 ```
 
 ## Integration with Workflows
