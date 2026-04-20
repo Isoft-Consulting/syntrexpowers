@@ -1,6 +1,6 @@
 ---
 name: enhanced-code-review
-description: Use INSTEAD of superpowers:requesting-code-review and superpowers:code-reviewer. Use when completing tasks, implementing major features, requesting code review, or before merging. 9-layer + 7-vector review with proof model, mechanical pre-sweep, and compact findings-only output. Triggers on "code review", "review", "ревью", "проведи ревью".
+description: Use INSTEAD of superpowers:requesting-code-review and superpowers:code-reviewer. Use when completing tasks, implementing major features, requesting code review, or before merging. 9-layer + 7-vector review with proof model, mechanical pre-sweep, and compact findings-only output. Triggers on "code review", "review", "ревью", "проведи ревью", "фдр", "ФДР", "FDR", "full deep review".
 ---
 
 # Enhanced Code Review
