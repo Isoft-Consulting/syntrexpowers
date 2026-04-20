@@ -5,7 +5,7 @@ description: Use when completing tasks, implementing major features, or before m
 
 # Requesting Code Review
 
-Dispatch superpowers:code-reviewer subagent to catch issues before they cascade. The reviewer gets precisely crafted context for evaluation — never your session's history. This keeps the reviewer focused on the work product, not your thought process, and preserves your own context for continued work.
+Dispatch syntrexpowers:code-reviewer subagent to catch issues before they cascade. The reviewer gets precisely crafted context for evaluation — never your session's history. This keeps the reviewer focused on the work product, not your thought process, and preserves your own context for continued work.
 
 **Core principle:** Review early, review often.
 
@@ -80,7 +80,7 @@ Include pre-sweep results in the `{PHASE_0_CANDIDATES}` placeholder.
 
 **3. Dispatch code-reviewer subagent:**
 
-Use Task tool with superpowers:code-reviewer type, fill template at `code-reviewer.md`
+Use Task tool with syntrexpowers:code-reviewer type, fill template at `code-reviewer.md`
 
 When dispatching:
 - Default to `REVIEW_MODE: strict`
@@ -124,7 +124,7 @@ git diff --name-only -z "$BASE_SHA..$HEAD_SHA" |
 → verify.ts:45: assertEquals(4, issues.length)
 → verify.ts:89: assertEquals(0, errors.length)
 
-[Dispatch superpowers:code-reviewer subagent]
+[Dispatch syntrexpowers:code-reviewer subagent]
   WHAT_WAS_IMPLEMENTED: Verification and repair functions for conversation index
   PLAN_OR_REQUIREMENTS: Task 2 from docs/superpowers/plans/deployment-plan.md
   BASE_SHA: a7981ec
@@ -166,7 +166,7 @@ If the human explicitly asks for broader feedback, opt in:
 ```text
 [Human asks]: "Review this and include strengths and recommendations."
 
-[Dispatch superpowers:code-reviewer subagent]
+[Dispatch syntrexpowers:code-reviewer subagent]
   REVIEW_MODE: mentor
   OPTIONAL_FOCUS: strengths, recommendations
 ```

@@ -1,0 +1,16 @@
+{
+  "name": "syntrexpowers",
+  "interface": {
+    "displayName": "Syntrexpowers"
+  },
+  "plugins": [
+    {
+      "name": "syntrexpowers",
+      "source": {
+        "source": "local",
+        "path": "./plugins/syntrexpowers"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
