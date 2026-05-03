@@ -19,8 +19,8 @@
 #   stdin: ignored
 #   args: optional --base <ref> (default HEAD)
 #   exit 0 → trivial, skip FDR
-#   exit 1 → not trivial, FDR mandatory
-#   exit 2 → error / not in git repo (treated as non-trivial by callers)
+#   exit 1 → not trivial / not in git repo / FDR mandatory
+#   (exit 2 reserved для внутренних ошибок parsing — пока не используется)
 #
 # Запускается из cwd репозитория.
 

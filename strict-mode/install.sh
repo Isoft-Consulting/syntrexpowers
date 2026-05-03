@@ -69,6 +69,11 @@ WAVE2_HOOKS=(health-check.sh prompt-inject.sh pre-write-scan.sh record-edit.sh s
 WAVE3_HOOKS=(is-trivial-diff.sh fdr-validate.sh)
 for f in "${WAVE2_HOOKS[@]}" "${WAVE3_HOOKS[@]}"; do
   if [[ -f "$BUNDLE_DIR/hooks/$f" ]]; then
+    # Бекап существующего хука перед перезаписью (защита от потери кастомизаций).
+    if [[ -f "$HOOKS_DIR/$f" ]] && ! cmp -s "$BUNDLE_DIR/hooks/$f" "$HOOKS_DIR/$f"; then
+      cp "$HOOKS_DIR/$f" "$BACKUP_DIR/${f}.bak-${DATE_TAG}"
+      echo "  ↺ backed up $f → backups/${f}.bak-${DATE_TAG}"
+    fi
     cp "$BUNDLE_DIR/hooks/$f" "$HOOKS_DIR/$f"
     chmod +x "$HOOKS_DIR/$f"
     echo "  ✓ $f"
