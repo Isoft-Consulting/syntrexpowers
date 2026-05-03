@@ -58,6 +58,13 @@ if [[ -n "$PROBLEMS" ]]; then
 fi
 
 # === Wave 3 extensions ===
+#
+# Transitional flag: пока Phase 3 (/fdr skill) не deploy'ен, артефакт-гейт
+# (проверки a и c) ломает workflow — у пользователя нет способа генерировать
+# артефакт. STRICT_NO_ARTIFACT_GATE=1 отключает их. (b) и (d) остаются —
+# они no-op без артефакта/verifier.
+ARTIFACT_GATE_ENABLED=true
+[[ "${STRICT_NO_ARTIFACT_GATE:-0}" = "1" ]] && ARTIFACT_GATE_ENABLED=false
 
 # (b) Артефакт существует → run fdr-validate.sh
 ARTIFACT_VALID=true
@@ -75,7 +82,7 @@ if [[ -s "$FDR_ARTIFACT" ]]; then
 fi
 
 # (a) edits-log непустой + НЕТ артефакта + не trivial-diff → block "invoke /fdr"
-if ! $ARTIFACT_EXISTS && [[ -s "$EDITS_LOG" ]]; then
+if $ARTIFACT_GATE_ENABLED && ! $ARTIFACT_EXISTS && [[ -s "$EDITS_LOG" ]]; then
   TRIVIAL=false
   if [[ -x "$HOOKS_DIR/is-trivial-diff.sh" ]]; then
     PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
@@ -89,7 +96,7 @@ if ! $ARTIFACT_EXISTS && [[ -s "$EDITS_LOG" ]]; then
 fi
 
 # (c) Артефакт + open findings + edits-log mtime > artifact mtime → auto-block recheck
-if $ARTIFACT_EXISTS && $ARTIFACT_VALID; then
+if $ARTIFACT_GATE_ENABLED && $ARTIFACT_EXISTS && $ARTIFACT_VALID; then
   # Парсим counts из артефакта (Verdict block)
   OPEN_COUNT=$(awk '/^## Verdict$/{f=1;next} /^## /&&f{exit} f && /^counts:/{
     match($0, /[0-9]+[[:space:]]+open/); if (RSTART) print substr($0, RSTART, RLENGTH); exit

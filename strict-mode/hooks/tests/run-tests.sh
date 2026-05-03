@@ -1441,6 +1441,7 @@ out=$(echo "$JSON" | "$HOOKS_DIR/stop-guard.sh" 2>&1); ec=$?
 assert_exit "w5-invalid-exit" 0 $ec
 assert_contains "w5-invalid-block" '"decision":[[:space:]]*"block"' "$out"
 assert_contains "w5-invalid-validator" "failed validation" "$out"
+assert_contains "w5-invalid-c4-msg" "C4 FAIL" "$out"
 rm -f "$ART" "$EL"
 
 # W5.5: artifact + open findings + edits-log mtime > artifact mtime → recheck block
@@ -1530,6 +1531,23 @@ else
   printf '  ✗ w5-bypass-consumed\n'; FAIL_NAMES+=("w5-bypass-consumed"); FAILED=$((FAILED + 1))
 fi
 rm -f "$EL"
+
+# W5.7b: STRICT_NO_ARTIFACT_GATE=1 → проверки (a) и (c) отключены, no block on missing artifact
+SID="w5-gate-off-$(date +%s%N | head -c 12)"
+REPO=$(mk_git_repo "$TEST_STATE/w5-gate-off-repo-$(date +%s%N | head -c 12)")
+echo "<?php real;" > "$REPO/x.php"
+(cd "$REPO" && git add x.php && git commit -q -m "init")
+echo "<?php real change;" > "$REPO/x.php"
+echo "$REPO/x.php" > "$HOME/.claude/state/edits-${SID}.log"
+JSON="{\"session_id\":\"$SID\"}"
+out=$(cd "$REPO" && echo "$JSON" | STRICT_NO_ARTIFACT_GATE=1 "$HOOKS_DIR/stop-guard.sh" 2>&1); ec=$?
+assert_exit "w5-gate-off-exit" 0 $ec
+if echo "$out" | grep -q "FDR artifact missing"; then
+  printf '  ✗ w5-gate-off-no-block (gate fired despite STRICT_NO_ARTIFACT_GATE=1)\n'; FAIL_NAMES+=("w5-gate-off-no-block"); FAILED=$((FAILED + 1))
+else
+  printf '  ✓ w5-gate-off-no-block\n'; PASSED=$((PASSED + 1))
+fi
+rm -f "$HOME/.claude/state/edits-${SID}.log"
 
 # W5.8: stop-guard syntax check
 if bash -n "$HOOKS_DIR/stop-guard.sh" 2>/dev/null; then

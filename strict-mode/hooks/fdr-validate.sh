@@ -85,7 +85,10 @@ fi
 # === C3-C5, C10: parse Findings ===
 # Findings секция: каждый ### F<n> блок до следующего ### или ##.
 # Парсинг через awk → temp-файл per finding (надёжнее чем bash IFS multi-char).
-FINDINGS_DIR=$(mktemp -d -t fdr-findings.XXXXXX)
+FINDINGS_DIR=$(mktemp -d -t fdr-findings.XXXXXX 2>/dev/null) || {
+  echo "fdr-validate: cannot create tempdir (ENOSPC / TMPDIR unwritable)" >&2
+  exit 1
+}
 trap 'rm -rf "$FINDINGS_DIR" 2>/dev/null' EXIT
 
 printf '%s\n' "$ARTIFACT_BODY" | awk -v outdir="$FINDINGS_DIR" '
