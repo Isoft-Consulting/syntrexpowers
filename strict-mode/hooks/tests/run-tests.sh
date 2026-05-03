@@ -1010,6 +1010,534 @@ out=$(echo "$JSON" | "$HOOKS_DIR/fdr-challenge.sh" 2>&1); ec=$?
 assert_exit "w3-meta-long-exit" 0 $ec
 assert_contains "w3-meta-long-blocks" '"decision":[[:space:]]*"block"' "$out"
 
+# =============================================================================
+# Wave 3 Phase 2: is-trivial-diff.sh + fdr-validate.sh
+# =============================================================================
+
+# Helper: создаёт mini git-repo во временной директории, возвращает путь
+mk_git_repo() {
+  local dir="$1"
+  mkdir -p "$dir"
+  (cd "$dir" && git init -q && git config user.email "t@t" && git config user.name "T" \
+    && touch baseline && git add baseline && git commit -q -m "init") >/dev/null 2>&1
+  echo "$dir"
+}
+
+echo ""
+echo "=== W4: is-trivial-diff.sh ==="
+
+# W4.1: not git repo → exit 1 (treated as non-trivial)
+NONGIT="$TEST_STATE/w4-nongit-$(date +%s%N | head -c 12)"
+mkdir -p "$NONGIT"
+out=$(cd "$NONGIT" && "$HOOKS_DIR/is-trivial-diff.sh" 2>&1); ec=$?
+assert_exit "w4-not-git-repo" 1 $ec
+
+# W4.2: no changes → exit 0 (trivial)
+REPO=$(mk_git_repo "$TEST_STATE/w4-clean-$(date +%s%N | head -c 12)")
+out=$(cd "$REPO" && "$HOOKS_DIR/is-trivial-diff.sh" 2>&1); ec=$?
+assert_exit "w4-no-changes" 0 $ec
+
+# W4.3: docs-only (.md) → exit 1 (NOT trivial — docs require FDR per 2026-05-04 rule)
+REPO=$(mk_git_repo "$TEST_STATE/w4-docs-$(date +%s%N | head -c 12)")
+echo "# changed" > "$REPO/README.md"
+out=$(cd "$REPO" && "$HOOKS_DIR/is-trivial-diff.sh" 2>&1); ec=$?
+assert_exit "w4-docs-not-trivial" 1 $ec
+
+# W4.4: lockfile only → exit 0 (trivial)
+REPO=$(mk_git_repo "$TEST_STATE/w4-lock-$(date +%s%N | head -c 12)")
+touch "$REPO/composer.lock"; (cd "$REPO" && git add composer.lock && git commit -q -m "lock-init")
+echo "{}" > "$REPO/composer.lock"
+out=$(cd "$REPO" && "$HOOKS_DIR/is-trivial-diff.sh" 2>&1); ec=$?
+assert_exit "w4-lockfile-trivial" 0 $ec
+
+# W4.5: real PHP code change → exit 1
+REPO=$(mk_git_repo "$TEST_STATE/w4-php-$(date +%s%N | head -c 12)")
+echo "<?php echo 1;" > "$REPO/file.php"
+(cd "$REPO" && git add file.php && git commit -q -m "init-php")
+echo "<?php echo 2;" > "$REPO/file.php"
+out=$(cd "$REPO" && "$HOOKS_DIR/is-trivial-diff.sh" 2>&1); ec=$?
+assert_exit "w4-php-not-trivial" 1 $ec
+
+# W4.6: comments-only PHP → exit 0
+REPO=$(mk_git_repo "$TEST_STATE/w4-comm-$(date +%s%N | head -c 12)")
+echo "<?php echo 1;" > "$REPO/x.php"
+(cd "$REPO" && git add x.php && git commit -q -m "init")
+printf '<?php echo 1;\n// new comment\n' > "$REPO/x.php"
+out=$(cd "$REPO" && "$HOOKS_DIR/is-trivial-diff.sh" 2>&1); ec=$?
+assert_exit "w4-comments-only-trivial" 0 $ec
+
+# W4.7: whitespace-only change → exit 0
+REPO=$(mk_git_repo "$TEST_STATE/w4-ws-$(date +%s%N | head -c 12)")
+echo "<?php echo 1;" > "$REPO/y.php"
+(cd "$REPO" && git add y.php && git commit -q -m "init")
+printf '<?php   echo  1;  \n' > "$REPO/y.php"
+out=$(cd "$REPO" && "$HOOKS_DIR/is-trivial-diff.sh" 2>&1); ec=$?
+assert_exit "w4-whitespace-trivial" 0 $ec
+
+# W4.8: translation .json → exit 0
+REPO=$(mk_git_repo "$TEST_STATE/w4-i18n-$(date +%s%N | head -c 12)")
+mkdir -p "$REPO/lang"
+echo '{}' > "$REPO/lang/ru.json"
+(cd "$REPO" && git add lang/ru.json && git commit -q -m "init")
+echo '{"k":"v"}' > "$REPO/lang/ru.json"
+out=$(cd "$REPO" && "$HOOKS_DIR/is-trivial-diff.sh" 2>&1); ec=$?
+assert_exit "w4-translation-trivial" 0 $ec
+
+# W4.9: sensitive-paths override (auth/X.lock should NOT be trivial)
+SENSITIVE_TMP="$HOME/.claude/sensitive-paths.txt"
+mkdir -p "$HOME/.claude"
+[[ -f "$SENSITIVE_TMP" ]] && cp "$SENSITIVE_TMP" "$SENSITIVE_TMP.test-bak"
+printf '(^|/)auth/.*\n' > "$SENSITIVE_TMP"
+REPO=$(mk_git_repo "$TEST_STATE/w4-sens-$(date +%s%N | head -c 12)")
+mkdir -p "$REPO/auth"
+touch "$REPO/auth/x.lock"
+(cd "$REPO" && git add auth/x.lock && git commit -q -m "init")
+echo "x" > "$REPO/auth/x.lock"
+out=$(cd "$REPO" && "$HOOKS_DIR/is-trivial-diff.sh" 2>&1); ec=$?
+assert_exit "w4-sensitive-override" 1 $ec
+[[ -f "$SENSITIVE_TMP.test-bak" ]] && mv "$SENSITIVE_TMP.test-bak" "$SENSITIVE_TMP" || rm -f "$SENSITIVE_TMP"
+
+echo ""
+echo "=== W4: fdr-validate.sh ==="
+
+# Helper для построения валидного артефакта
+write_valid_artifact() {
+  local f="$1"
+  cat > "$f" <<'MD'
+# FDR — session test
+generated: 2026-05-04T00:00:00Z
+cycles: 1
+
+## Scope
+- file1.php
+
+## Findings
+
+## Verdict
+status: complete
+counts: 0 open / 0 resolved
+MD
+}
+
+# W4.10: missing artifact → C1 fail
+out=$("$HOOKS_DIR/fdr-validate.sh" "/nonexistent/fdr.md" "/nonexistent/edits.log" 2>&1); ec=$?
+assert_exit "w4-c1-missing" 2 $ec
+assert_contains "w4-c1-missing-msg" "C1 FAIL" "$out"
+
+# W4.11: valid empty artifact (0 findings) → exit 0
+ART="$TEST_STATE/w4-art-valid.md"
+EDITS="$TEST_STATE/w4-edits-valid.log"
+write_valid_artifact "$ART"
+echo "file1.php" > "$EDITS"
+out=$("$HOOKS_DIR/fdr-validate.sh" "$ART" "$EDITS" 2>&1); ec=$?
+assert_exit "w4-valid-empty" 0 $ec
+
+# W4.12: edited file not in scope → C2 fail
+ART="$TEST_STATE/w4-art-c2.md"
+EDITS="$TEST_STATE/w4-edits-c2.log"
+write_valid_artifact "$ART"
+# Создаём существующий файл который НЕ в Scope
+touch "$TEST_STATE/missing-from-scope.go"
+echo "$TEST_STATE/missing-from-scope.go" > "$EDITS"
+out=$("$HOOKS_DIR/fdr-validate.sh" "$ART" "$EDITS" 2>&1); ec=$?
+assert_exit "w4-c2-not-in-scope" 2 $ec
+assert_contains "w4-c2-msg" "C2 FAIL" "$out"
+
+# W4.13: finding missing field → C3 fail
+ART="$TEST_STATE/w4-art-c3.md"
+EDITS="$TEST_STATE/w4-edits-c3.log"
+cat > "$ART" <<'MD'
+# FDR — session test
+cycles: 1
+
+## Scope
+- file1.php
+
+## Findings
+### F1
+file: app/x.php:42
+layer: 6
+scenario: missing
+severity: HIGH
+status: open
+
+## Verdict
+status: incomplete
+counts: 1 open / 0 resolved
+MD
+echo "file1.php" > "$EDITS"
+out=$("$HOOKS_DIR/fdr-validate.sh" "$ART" "$EDITS" 2>&1); ec=$?
+assert_exit "w4-c3-missing-field" 2 $ec
+assert_contains "w4-c3-msg-expected" "missing field 'expected'" "$out"
+
+# W4.14: CRITICAL без :line → C3 fail
+ART="$TEST_STATE/w4-art-c3-line.md"
+EDITS="$TEST_STATE/w4-edits-c3-line.log"
+cat > "$ART" <<'MD'
+# FDR
+cycles: 1
+## Scope
+- file1.php
+## Findings
+### F1
+file: app/x.php
+layer: 6
+scenario: race
+expected: lock
+actual: race
+severity: CRITICAL
+status: open
+## Verdict
+status: incomplete
+counts: 1 open / 0 resolved
+MD
+echo "file1.php" > "$EDITS"
+out=$("$HOOKS_DIR/fdr-validate.sh" "$ART" "$EDITS" 2>&1); ec=$?
+assert_exit "w4-c3-critical-needs-line" 2 $ec
+assert_contains "w4-c3-line-msg" "CRITICAL requires file:line" "$out"
+
+# W4.15: invalid severity → C4 fail
+ART="$TEST_STATE/w4-art-c4.md"
+EDITS="$TEST_STATE/w4-edits-c4.log"
+cat > "$ART" <<'MD'
+# FDR
+cycles: 1
+## Scope
+- file1.php
+## Findings
+### F1
+file: app/x.php
+layer: 6
+scenario: x
+expected: y
+actual: z
+severity: SUPER
+status: open
+## Verdict
+status: incomplete
+counts: 1 open / 0 resolved
+MD
+echo "file1.php" > "$EDITS"
+out=$("$HOOKS_DIR/fdr-validate.sh" "$ART" "$EDITS" 2>&1); ec=$?
+assert_exit "w4-c4-bad-sev" 2 $ec
+assert_contains "w4-c4-msg" "C4 FAIL" "$out"
+
+# W4.16: open finding + Verdict status:complete → C6 fail
+ART="$TEST_STATE/w4-art-c6.md"
+EDITS="$TEST_STATE/w4-edits-c6.log"
+cat > "$ART" <<'MD'
+# FDR
+cycles: 1
+## Scope
+- file1.php
+## Findings
+### F1
+file: app/x.php
+layer: 6
+scenario: x
+expected: y
+actual: z
+severity: LOW
+status: open
+## Verdict
+status: complete
+counts: 1 open / 0 resolved
+MD
+echo "file1.php" > "$EDITS"
+out=$("$HOOKS_DIR/fdr-validate.sh" "$ART" "$EDITS" 2>&1); ec=$?
+assert_exit "w4-c6-open-but-complete" 2 $ec
+assert_contains "w4-c6-msg" "C6 FAIL.*open findings exist but Verdict says 'complete'" "$out"
+
+# W4.17: forbidden phrase → C8 fail
+ART="$TEST_STATE/w4-art-c8.md"
+EDITS="$TEST_STATE/w4-edits-c8.log"
+cat > "$ART" <<'MD'
+# FDR
+cycles: 1
+## Scope
+- file1.php
+## Findings
+Great job here!
+## Verdict
+status: complete
+counts: 0 open / 0 resolved
+MD
+echo "file1.php" > "$EDITS"
+out=$("$HOOKS_DIR/fdr-validate.sh" "$ART" "$EDITS" 2>&1); ec=$?
+assert_exit "w4-c8-praise" 2 $ec
+assert_contains "w4-c8-msg" "C8 FAIL" "$out"
+
+# W4.18: resolved without fix-commit → C10 fail
+ART="$TEST_STATE/w4-art-c10.md"
+EDITS="$TEST_STATE/w4-edits-c10.log"
+cat > "$ART" <<'MD'
+# FDR
+cycles: 2
+## Scope
+- file1.php
+## Findings
+### F1
+file: app/x.php
+layer: 6
+scenario: x
+expected: y
+actual: z
+severity: LOW
+status: resolved
+## Verdict
+status: complete
+counts: 0 open / 1 resolved
+MD
+echo "file1.php" > "$EDITS"
+out=$("$HOOKS_DIR/fdr-validate.sh" "$ART" "$EDITS" 2>&1); ec=$?
+assert_exit "w4-c10-no-fix-commit" 2 $ec
+assert_contains "w4-c10-msg" "C10 FAIL" "$out"
+
+# W4.19: bypass file → exit 0 (skip validation)
+SID_TEST="w4-bypass-$(date +%s%N | head -c 12)"
+mkdir -p "$HOME/.claude/state"
+echo "test bypass reason" > "$HOME/.claude/state/bypass-${SID_TEST}"
+out=$("$HOOKS_DIR/fdr-validate.sh" "/nonexistent/fdr.md" "/nonexistent/edits.log" "$SID_TEST" 2>&1); ec=$?
+assert_exit "w4-c11-bypass-allows" 0 $ec
+# Bypass file должен быть удалён
+if [[ ! -f "$HOME/.claude/state/bypass-${SID_TEST}" ]]; then
+  printf '  ✓ w4-c11-bypass-consumed\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w4-c11-bypass-consumed (file still exists)\n'; FAIL_NAMES+=("w4-c11-bypass-consumed"); FAILED=$((FAILED + 1))
+fi
+
+# W4.20: cycles=1 + all resolved → C7 fail
+ART="$TEST_STATE/w4-art-c7.md"
+EDITS="$TEST_STATE/w4-edits-c7.log"
+cat > "$ART" <<'MD'
+# FDR
+cycles: 1
+## Scope
+- file1.php
+## Findings
+### F1
+file: app/x.php
+layer: 6
+scenario: x
+expected: y
+actual: z
+severity: LOW
+status: resolved
+fix-commit: abc1234
+re-check: 2026-05-04T00:00:00 — recheck-agent
+## Verdict
+status: complete
+counts: 0 open / 1 resolved
+MD
+echo "file1.php" > "$EDITS"
+out=$("$HOOKS_DIR/fdr-validate.sh" "$ART" "$EDITS" 2>&1); ec=$?
+assert_exit "w4-c7-cycles-too-low" 2 $ec
+assert_contains "w4-c7-msg" "C7 FAIL" "$out"
+
+# W4.21: bash -n syntax check
+if bash -n "$HOOKS_DIR/is-trivial-diff.sh" 2>/dev/null; then
+  printf '  ✓ w4-trivial-diff-syntax\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w4-trivial-diff-syntax\n'; FAIL_NAMES+=("w4-trivial-diff-syntax"); FAILED=$((FAILED + 1))
+fi
+if bash -n "$HOOKS_DIR/fdr-validate.sh" 2>/dev/null; then
+  printf '  ✓ w4-validate-syntax\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w4-validate-syntax\n'; FAIL_NAMES+=("w4-validate-syntax"); FAILED=$((FAILED + 1))
+fi
+
+echo ""
+echo "=== W5: stop-guard.sh Wave 3 extensions ==="
+
+# Helper: SetUp test SID + edits log с одним файлом
+setup_test_sid() {
+  local sid="$1"
+  local target_file="${2:-/tmp/dummy.php}"
+  echo "$target_file" > "$HOME/.claude/state/edits-${sid}.log"
+}
+
+# Симлинк ~/.claude/hooks → bundle hooks для tests, чтобы stop-guard.sh нашёл peers.
+# (Уже сделано в setUp на строке 21.)
+
+# W5.1: edits exist + no artifact + non-trivial diff → block "FDR artifact missing"
+SID="w5-no-art-$(date +%s%N | head -c 12)"
+REPO=$(mk_git_repo "$TEST_STATE/w5-no-art-repo-$(date +%s%N | head -c 12)")
+echo "<?php new code;" > "$REPO/x.php"
+(cd "$REPO" && git add x.php && git commit -q -m "init")
+echo "<?php real change;" > "$REPO/x.php"
+setup_test_sid "$SID" "$REPO/x.php"
+JSON="{\"session_id\":\"$SID\"}"
+out=$(cd "$REPO" && echo "$JSON" | "$HOOKS_DIR/stop-guard.sh" 2>&1); ec=$?
+assert_exit "w5-no-art-exit" 0 $ec
+assert_contains "w5-no-art-block" '"decision":[[:space:]]*"block"' "$out"
+assert_contains "w5-no-art-reason" "FDR artifact missing" "$out"
+rm -f "$HOME/.claude/state/edits-${SID}.log"
+
+# W5.2: edits + no artifact + trivial diff → NO block (skip)
+SID="w5-trivial-$(date +%s%N | head -c 12)"
+REPO=$(mk_git_repo "$TEST_STATE/w5-triv-repo-$(date +%s%N | head -c 12)")
+touch "$REPO/test.lock"
+(cd "$REPO" && git add test.lock && git commit -q -m "init")
+echo "x" > "$REPO/test.lock"
+setup_test_sid "$SID" "$REPO/test.lock"
+JSON="{\"session_id\":\"$SID\"}"
+out=$(cd "$REPO" && echo "$JSON" | "$HOOKS_DIR/stop-guard.sh" 2>&1); ec=$?
+assert_exit "w5-trivial-exit" 0 $ec
+if echo "$out" | grep -q '"decision"'; then
+  printf '  ✗ w5-trivial-no-block (got block on lockfile-only diff)\n'; FAIL_NAMES+=("w5-trivial-no-block"); FAILED=$((FAILED + 1))
+else
+  printf '  ✓ w5-trivial-no-block\n'; PASSED=$((PASSED + 1))
+fi
+rm -f "$HOME/.claude/state/edits-${SID}.log"
+
+# W5.3: artifact valid (0 findings) → NO block
+SID="w5-valid-$(date +%s%N | head -c 12)"
+ART="$HOME/.claude/state/fdr-${SID}.md"
+EL="$HOME/.claude/state/edits-${SID}.log"
+echo "x.php" > "$EL"
+cat > "$ART" <<'MD'
+# FDR
+cycles: 1
+## Scope
+- x.php
+## Findings
+## Verdict
+status: complete
+counts: 0 open / 0 resolved
+MD
+JSON="{\"session_id\":\"$SID\"}"
+out=$(echo "$JSON" | "$HOOKS_DIR/stop-guard.sh" 2>&1); ec=$?
+assert_exit "w5-valid-exit" 0 $ec
+if echo "$out" | grep -q '"decision"'; then
+  printf '  ✗ w5-valid-no-block (got block on valid artifact)\n'; FAIL_NAMES+=("w5-valid-no-block"); FAILED=$((FAILED + 1))
+else
+  printf '  ✓ w5-valid-no-block\n'; PASSED=$((PASSED + 1))
+fi
+rm -f "$ART" "$EL"
+
+# W5.4: artifact invalid → block with validator output
+SID="w5-invalid-$(date +%s%N | head -c 12)"
+ART="$HOME/.claude/state/fdr-${SID}.md"
+EL="$HOME/.claude/state/edits-${SID}.log"
+echo "x.php" > "$EL"
+cat > "$ART" <<'MD'
+# FDR
+cycles: 1
+## Scope
+- x.php
+## Findings
+### F1
+file: app/x.php
+layer: 6
+scenario: missing fields
+severity: BOGUS
+status: open
+## Verdict
+status: incomplete
+counts: 1 open / 0 resolved
+MD
+JSON="{\"session_id\":\"$SID\"}"
+out=$(echo "$JSON" | "$HOOKS_DIR/stop-guard.sh" 2>&1); ec=$?
+assert_exit "w5-invalid-exit" 0 $ec
+assert_contains "w5-invalid-block" '"decision":[[:space:]]*"block"' "$out"
+assert_contains "w5-invalid-validator" "failed validation" "$out"
+rm -f "$ART" "$EL"
+
+# W5.5: artifact + open findings + edits-log mtime > artifact mtime → recheck block
+SID="w5-recheck-$(date +%s%N | head -c 12)"
+ART="$HOME/.claude/state/fdr-${SID}.md"
+EL="$HOME/.claude/state/edits-${SID}.log"
+echo "x.php" > "$EL"
+cat > "$ART" <<'MD'
+# FDR
+cycles: 1
+## Scope
+- x.php
+## Findings
+### F1
+file: app/x.php:42
+layer: 6
+scenario: race
+expected: lock
+actual: race
+severity: HIGH
+status: open
+## Verdict
+status: incomplete
+counts: 1 open / 0 resolved
+MD
+# Make artifact older than edits-log
+touch -t 202001010000 "$ART"
+touch "$EL"
+JSON="{\"session_id\":\"$SID\"}"
+out=$(echo "$JSON" | "$HOOKS_DIR/stop-guard.sh" 2>&1); ec=$?
+assert_exit "w5-recheck-exit" 0 $ec
+assert_contains "w5-recheck-block" '"decision":[[:space:]]*"block"' "$out"
+assert_contains "w5-recheck-reason" "/fdr to recheck" "$out"
+rm -f "$ART" "$EL"
+
+# W5.6: artifact + open findings + edits-log mtime <= artifact mtime → NO recheck block
+SID="w5-no-recheck-$(date +%s%N | head -c 12)"
+ART="$HOME/.claude/state/fdr-${SID}.md"
+EL="$HOME/.claude/state/edits-${SID}.log"
+echo "x.php" > "$EL"
+cat > "$ART" <<'MD'
+# FDR
+cycles: 1
+## Scope
+- x.php
+## Findings
+### F1
+file: app/x.php:42
+layer: 6
+scenario: race
+expected: lock
+actual: race
+severity: HIGH
+status: open
+## Verdict
+status: incomplete
+counts: 1 open / 0 resolved
+MD
+touch -t 202001010000 "$EL"
+touch "$ART"
+JSON="{\"session_id\":\"$SID\"}"
+out=$(echo "$JSON" | "$HOOKS_DIR/stop-guard.sh" 2>&1); ec=$?
+assert_exit "w5-no-recheck-exit" 0 $ec
+if echo "$out" | grep -q "invoke /fdr to recheck"; then
+  printf '  ✗ w5-no-recheck (false-positive recheck block)\n'; FAIL_NAMES+=("w5-no-recheck"); FAILED=$((FAILED + 1))
+else
+  printf '  ✓ w5-no-recheck\n'; PASSED=$((PASSED + 1))
+fi
+rm -f "$ART" "$EL"
+
+# W5.7: bypass file → exit 0 (skip all checks)
+SID="w5-bypass-$(date +%s%N | head -c 12)"
+EL="$HOME/.claude/state/edits-${SID}.log"
+echo "/nonexistent/x.php" > "$EL"
+echo "test bypass" > "$HOME/.claude/state/bypass-${SID}"
+JSON="{\"session_id\":\"$SID\"}"
+out=$(echo "$JSON" | "$HOOKS_DIR/stop-guard.sh" 2>&1); ec=$?
+assert_exit "w5-bypass-exit" 0 $ec
+if echo "$out" | grep -q '"decision"'; then
+  printf '  ✗ w5-bypass-no-block\n'; FAIL_NAMES+=("w5-bypass-no-block"); FAILED=$((FAILED + 1))
+else
+  printf '  ✓ w5-bypass-no-block\n'; PASSED=$((PASSED + 1))
+fi
+if [[ ! -f "$HOME/.claude/state/bypass-${SID}" ]]; then
+  printf '  ✓ w5-bypass-consumed\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w5-bypass-consumed\n'; FAIL_NAMES+=("w5-bypass-consumed"); FAILED=$((FAILED + 1))
+fi
+rm -f "$EL"
+
+# W5.8: stop-guard syntax check
+if bash -n "$HOOKS_DIR/stop-guard.sh" 2>/dev/null; then
+  printf '  ✓ w5-stop-guard-syntax\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w5-stop-guard-syntax\n'; FAIL_NAMES+=("w5-stop-guard-syntax"); FAILED=$((FAILED + 1))
+fi
+
 echo ""
 echo "==========================================="
 printf 'PASSED: %d\nFAILED: %d\n' "$PASSED" "$FAILED"

@@ -13,7 +13,7 @@ set -uo pipefail
 cat <<'EOF'
 [STRICT MODE]
 1. No stubs (TODO/FIXME/not implemented). Code complete to working state.
-2. After any code edit: think through 9 FDR layers internally, fix found issues. NO 9-layer coverage table in chat — only real fixes + brief verdict.
+2. After ANY edit (code/docs/config/migrations/specs/README): think through 9 FDR layers internally, fix found issues. NO 9-layer coverage table in chat — only real fixes + brief verdict.
 3. Findings (when reported): file (+:symbol when actionable), expected vs actual, severity. Add :line only for CRITICAL/HIGH.
 4. Do exactly what's asked. "Изучи" = study, not edit. When unsure, ask.
 5. Reply in Russian. Code comments Russian. FDR/briefs English.

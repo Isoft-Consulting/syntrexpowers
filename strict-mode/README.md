@@ -113,7 +113,7 @@ Hook-расширения для Claude Code которые **механичес
   - Length-check ≤300 chars отсекает цитаты в длинных сообщениях.
   - Логируется как `allow-self-meta`.
 
-- **Missing-verdict trigger** — если в текущем турне БЫЛИ code edits AND есть FDR-context, но финальное сообщение НЕ содержит verdict-фразы → block с reason «дай verdict (`0 проблем`+rationale OR list of findings)». Закрывает «отчитался про round-N fixes и убежал без verdict».
+- **Missing-verdict trigger** — если в текущем турне БЫЛИ ЛЮБЫЕ edits (code, docs, configs, migrations, README, спеки) AND есть FDR-context, но финальное сообщение НЕ содержит verdict-фразы → block с reason «дай verdict (`0 проблем`+rationale OR list of findings)». Закрывает «отчитался про round-N fixes и убежал без verdict». Docs не освобождают от ФДР — они часто содержат incorrectness в инструкциях, противоречиях между разделами, неточных number/path claims.
 
 - **Verdict-with-rationale requirement** — judge prompt требует rationale для `0 проблем` (1-3 sentences naming concrete checked items). Bare verdict классифицируется как `evasive`.
 

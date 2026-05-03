@@ -65,10 +65,14 @@ done
 
 # ----- 4. Копирование hook-скриптов -----
 echo "[4/7] Установка хуков..."
-for f in health-check.sh prompt-inject.sh pre-write-scan.sh record-edit.sh stop-guard.sh stub-scan.sh fdr-challenge.sh judge.sh prune-mem.py; do
-  cp "$BUNDLE_DIR/hooks/$f" "$HOOKS_DIR/$f"
-  chmod +x "$HOOKS_DIR/$f"
-  echo "  ✓ $f"
+WAVE2_HOOKS=(health-check.sh prompt-inject.sh pre-write-scan.sh record-edit.sh stop-guard.sh stub-scan.sh fdr-challenge.sh judge.sh prune-mem.py)
+WAVE3_HOOKS=(is-trivial-diff.sh fdr-validate.sh)
+for f in "${WAVE2_HOOKS[@]}" "${WAVE3_HOOKS[@]}"; do
+  if [[ -f "$BUNDLE_DIR/hooks/$f" ]]; then
+    cp "$BUNDLE_DIR/hooks/$f" "$HOOKS_DIR/$f"
+    chmod +x "$HOOKS_DIR/$f"
+    echo "  ✓ $f"
+  fi
 done
 cp "$BUNDLE_DIR/hooks/tests/run-tests.sh" "$HOOKS_DIR/tests/run-tests.sh"
 chmod +x "$HOOKS_DIR/tests/run-tests.sh"
