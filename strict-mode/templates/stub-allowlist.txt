@@ -1,0 +1,7 @@
+# Stub allowlist — pre-existing TODOs/stubs that should NOT block strict-mode.
+# Format: <absolute_file_path>:<line_number>:<reason>
+# Example:
+# /Users/me/project/legacy/api.php:142:Pre-existing TODO from 2023, refactor planned in Q2
+# /Users/me/project/lib/parser.go:88:Stub for unimplemented protocol v3, depends on upstream
+
+# Add entries below as needed (one per line, no leading spaces).

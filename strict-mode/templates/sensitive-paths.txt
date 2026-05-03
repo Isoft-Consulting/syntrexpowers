@@ -1,0 +1,9 @@
+.*/auth/.*
+.*/payment/.*
+.*/wallet/.*
+.*/security/.*
+.*/migrations/.*
+.*\.sql$
+.*\.env(\.|$)
+.*/secrets?/.*
+.*/credentials?/.*
