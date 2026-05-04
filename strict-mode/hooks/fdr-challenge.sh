@@ -377,17 +377,20 @@ case "$CLASSIFICATION" in
       log_decision "allow" "stalled: judge demands same gaps repeatedly, model cannot improve"
       exit 0
     fi
-    REASON=$"FDR cycle $CYCLE: judge нашёл новые findings — фикси их кодом, потом продолжай ФДР по оставшимся слоям. Не отчитывайся таблицами — правь.\n\nJudge rationale: $RATIONALE"
-    [[ -n "$GAPS" && "$GAPS" != "" ]] && REASON+=$"\n\nКонкретно: $GAPS"
-    REASON+=$"\n\nBypass: echo \"<reason>\" > $BYPASS_FILE"
+    # NOTE: $"..." это bash i18n localized strings, НЕ ANSI-C escape — \n остаётся
+    # literal. Используем "..." для substitution + $'\n\n' (ANSI-C) для newlines.
+    REASON="FDR cycle $CYCLE: judge нашёл новые findings — фикси их кодом, потом продолжай ФДР по оставшимся слоям. Не отчитывайся таблицами — правь."
+    REASON+=$'\n\n'"Judge rationale: $RATIONALE"
+    [[ -n "$GAPS" && "$GAPS" != "" ]] && REASON+=$'\n\n'"Конкретно: $GAPS"
+    REASON+=$'\n\n'"Bypass: echo \"<reason>\" > $BYPASS_FILE"
     log_decision "block-substantive" "$RATIONALE"
     jq -n --arg r "$REASON" '{decision:"block", reason:$r}'
     exit 0
     ;;
   evasive)
-    REASON=$"FDR cycle $CYCLE: ответ общий, ФДР не двигается. Открой конкретные файлы, найди реальные проблемы, фикси кодом. Не объясняй план — делай."
-    [[ -n "$GAPS" && "$GAPS" != "" ]] && REASON+=$"\n\nКонкретно: $GAPS"
-    REASON+=$"\n\nBypass: echo \"<reason>\" > $BYPASS_FILE"
+    REASON="FDR cycle $CYCLE: ответ общий, ФДР не двигается. Открой конкретные файлы, найди реальные проблемы, фикси кодом. Не объясняй план — делай."
+    [[ -n "$GAPS" && "$GAPS" != "" ]] && REASON+=$'\n\n'"Конкретно: $GAPS"
+    REASON+=$'\n\n'"Bypass: echo \"<reason>\" > $BYPASS_FILE"
     log_decision "block-evasive" "$RATIONALE"
     jq -n --arg r "$REASON" '{decision:"block", reason:$r}'
     exit 0
@@ -398,8 +401,9 @@ case "$CLASSIFICATION" in
       log_decision "allow" "judge=repetitive x$REPETITION_COUNT, stopping cycle"
       exit 0
     fi
-    REASON=$"FDR cycle $CYCLE: judge says you are repeating prior findings. Either add NEW substantive findings OR finalize the verdict explicitly.\n\nJudge rationale: $RATIONALE"
-    REASON+=$"\n\nBypass: echo \"<reason>\" > $BYPASS_FILE"
+    REASON="FDR cycle $CYCLE: judge says you are repeating prior findings. Either add NEW substantive findings OR finalize the verdict explicitly."
+    REASON+=$'\n\n'"Judge rationale: $RATIONALE"
+    REASON+=$'\n\n'"Bypass: echo \"<reason>\" > $BYPASS_FILE"
     log_decision "block-repetitive" "$RATIONALE (count=$REPETITION_COUNT)"
     jq -n --arg r "$REASON" '{decision:"block", reason:$r}'
     exit 0
