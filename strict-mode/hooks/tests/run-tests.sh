@@ -1955,6 +1955,49 @@ else
 fi
 
 echo ""
+echo "=== W8: fdr-challenge reason newline rendering (regression guard) ==="
+
+# W8.1: substantive cycle reason содержит REAL newlines, не literal \n
+# (regression guard: $"..." это i18n bash localized strings — \n остаётся literal.
+# Должен использоваться "..." + $'\n\n' для actual newlines.)
+W8SID="w8-newlines-$(date +%s%N | head -c 12)"
+W8TR="$TEST_STATE/w8-tr.jsonl"
+cat > "$W8TR" <<'JSONL'
+{"type":"user","message":{"content":"проведи фдр"}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"0 проблем. Verdict: ready."}]}}
+JSONL
+mkdir -p "$HOME/.claude/state"
+echo '{"cycle":0,"classification":"initial","summary":"Initial fired"}' > "$HOME/.claude/state/fdr-cycles-${W8SID}.jsonl"
+W8JSON="{\"session_id\":\"$W8SID\",\"transcript_path\":\"$W8TR\",\"hook_event_name\":\"Stop\"}"
+W8OUT=$(echo "$W8JSON" | STRICT_JUDGE_MOCK_RESPONSE='{"classification":"substantive","gaps_to_demand":["test gap"],"rationale":"test rat"}' "$HOOKS_DIR/fdr-challenge.sh" 2>&1)
+# Парсим reason через jq и проверяем что в нём LITERAL newlines (\x0a), не \n строки
+W8REASON=$(printf '%s' "$W8OUT" | jq -r '.reason' 2>/dev/null)
+# Real newline check: должно быть >= 4 строк (4 sections separated by blank lines)
+W8LINES=$(printf '%s' "$W8REASON" | wc -l | tr -d ' ')
+if [[ "$W8LINES" -ge 4 ]]; then
+  printf '  ✓ w8-substantive-real-newlines (%s lines)\n' "$W8LINES"; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w8-substantive-real-newlines (got %s lines, expected >=4 — \\n possibly literal)\n' "$W8LINES"; FAIL_NAMES+=("w8-substantive-real-newlines"); FAILED=$((FAILED + 1))
+fi
+# Negative check: reason НЕ должен содержать literal \\n (backslash-n) substring
+if printf '%s' "$W8REASON" | grep -q '\\n'; then
+  printf '  ✗ w8-no-literal-backslash-n (\\\\n found in reason — $\"...\" used somewhere)\n'; FAIL_NAMES+=("w8-no-literal-backslash-n"); FAILED=$((FAILED + 1))
+else
+  printf '  ✓ w8-no-literal-backslash-n\n'; PASSED=$((PASSED + 1))
+fi
+rm -f "$HOME/.claude/state/fdr-cycles-${W8SID}.jsonl" "$HOME/.claude/state/fired-hashes-${W8SID}.log"
+
+# W8.2: source-level guard — fdr-challenge.sh не должен содержать $"..." для REASON build
+# ($"..." это i18n localized strings, escape sequences не обрабатываются)
+if grep -nE 'REASON(=|\+=)\$"' "$HOOKS_DIR/fdr-challenge.sh" >/dev/null 2>&1; then
+  matches=$(grep -nE 'REASON(=|\+=)\$"' "$HOOKS_DIR/fdr-challenge.sh")
+  printf '  ✗ w8-no-i18n-reason-strings (found $\"...\":\n%s)\n' "$matches"
+  FAIL_NAMES+=("w8-no-i18n-reason-strings"); FAILED=$((FAILED + 1))
+else
+  printf '  ✓ w8-no-i18n-reason-strings\n'; PASSED=$((PASSED + 1))
+fi
+
+echo ""
 echo "==========================================="
 printf 'PASSED: %d\nFAILED: %d\n' "$PASSED" "$FAILED"
 if [[ $FAILED -gt 0 ]]; then
