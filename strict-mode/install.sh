@@ -71,14 +71,27 @@ WAVE3_HOOKS=(is-trivial-diff.sh fdr-validate.sh)
 # Orphan cleanup: предыдущие install runs могли оставить .new.<PID> файлы при kill
 # mid-cp. Sweep'аем перед deploy чтобы избежать накопления (~5KB × N kills).
 # nullglob: если matches нет — pattern expands to пустой список (а не литерал).
+# CONCURRENT SAFETY: skip files младше 60s — это потенциально активный .new.PID
+# другого параллельного install. cp на 5KB hook занимает миллисекунды, активные
+# никогда не попадут под 60-second threshold. Любой .new.* старше 60s — точно
+# orphan от прошлого killed install.
 ORPHAN_COUNT=0
+ORPHAN_SKIPPED=0
+NOW_EPOCH=$(date +%s)
 shopt -s nullglob
 for orphan in "$HOOKS_DIR"/*.new.* "$HOOKS_DIR"/tests/*.new.*; do
   [[ -f "$orphan" ]] || continue
+  ORPHAN_MTIME=$(stat -f %m "$orphan" 2>/dev/null || stat -c %Y "$orphan" 2>/dev/null || echo 0)
+  AGE=$(( NOW_EPOCH - ORPHAN_MTIME ))
+  if [[ "$AGE" -lt 60 ]]; then
+    ORPHAN_SKIPPED=$((ORPHAN_SKIPPED + 1))
+    continue
+  fi
   rm -f "$orphan" 2>/dev/null && ORPHAN_COUNT=$((ORPHAN_COUNT + 1))
 done
 shopt -u nullglob
 [[ "$ORPHAN_COUNT" -gt 0 ]] && echo "  ↻ swept $ORPHAN_COUNT orphan .new.* file(s) from prior interrupted install"
+[[ "$ORPHAN_SKIPPED" -gt 0 ]] && echo "  ⏸ skipped $ORPHAN_SKIPPED .new.* younger than 60s (likely active concurrent install)"
 
 # Atomic deploy helper: cp в .new + chmod + atomic mv через rename(2) на той же FS.
 # Passive safety guarantees:

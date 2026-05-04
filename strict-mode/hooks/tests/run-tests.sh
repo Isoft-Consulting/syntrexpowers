@@ -1723,12 +1723,17 @@ else
 fi
 rm -rf "$W6EMPTY"
 
-# W6.7: orphan .new.* cleanup — pre-existing orphan убирается на старте install
+# W6.7: orphan .new.* cleanup — pre-existing STALE orphan (mtime > 60s) убирается
+# на старте install. Fresh (< 60s) skip'аются для concurrent safety — см. W6.9.
 W6OFAKE=$(mktemp -d -t w6-orphan.XXXXXX)
 HOME="$W6OFAKE" bash "$INSTALL_SH" >/dev/null 2>&1
-# Создаём orphan имитирующий kill mid-cp от прошлого install
+# Создаём orphan имитирующий kill mid-cp от прошлого install (старше 60s)
 echo "stale partial content" > "$W6OFAKE/.claude/hooks/judge.sh.new.99999"
 echo "stale partial content" > "$W6OFAKE/.claude/hooks/tests/run-tests.sh.new.99998"
+# Backdate to 2 minutes ago (past 60s threshold)
+BACKDATE=$(date -v-2M +%Y%m%d%H%M.%S 2>/dev/null || date -d '2 minutes ago' +%Y%m%d%H%M.%S)
+touch -t "$BACKDATE" "$W6OFAKE/.claude/hooks/judge.sh.new.99999" 2>/dev/null
+touch -t "$BACKDATE" "$W6OFAKE/.claude/hooks/tests/run-tests.sh.new.99998" 2>/dev/null
 # Re-install — должен sweep orphans
 out=$(HOME="$W6OFAKE" bash "$INSTALL_SH" 2>&1)
 if echo "$out" | grep -qE "swept [0-9]+ orphan"; then
@@ -1742,6 +1747,47 @@ else
   printf '  ✗ w6-orphan-removed\n'; FAIL_NAMES+=("w6-orphan-removed"); FAILED=$((FAILED + 1))
 fi
 rm -rf "$W6OFAKE"
+
+# W6.9: concurrent-safety — fresh .new.<pid> младше 60s НЕ удаляется sweep'ом
+# (имитация параллельного install в момент когда другой install запускает cleanup).
+W6CFAKE=$(mktemp -d -t w6-conc.XXXXXX)
+HOME="$W6CFAKE" bash "$INSTALL_SH" >/dev/null 2>&1
+# Создаём свежий .new file (mtime = now, simulates active deploy by another process)
+FRESH_NEW="$W6CFAKE/.claude/hooks/judge.sh.new.99999"
+echo "active deploy in progress" > "$FRESH_NEW"
+# Re-install — должен SKIP fresh orphan
+out=$(HOME="$W6CFAKE" bash "$INSTALL_SH" 2>&1)
+if echo "$out" | grep -qE "skipped [0-9]+ .new.\* younger than 60s"; then
+  printf '  ✓ w6-concurrent-fresh-skipped\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-concurrent-fresh-skipped (no skip msg)\n'; FAIL_NAMES+=("w6-concurrent-fresh-skipped"); FAILED=$((FAILED + 1))
+fi
+if [[ -f "$FRESH_NEW" ]]; then
+  printf '  ✓ w6-concurrent-fresh-preserved\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-concurrent-fresh-preserved (active .new file deleted!)\n'; FAIL_NAMES+=("w6-concurrent-fresh-preserved"); FAILED=$((FAILED + 1))
+fi
+rm -rf "$W6CFAKE"
+
+# W6.10: stale orphan (mtime > 60s ago) убирается sweep'ом
+W6STFAKE=$(mktemp -d -t w6-stale.XXXXXX)
+HOME="$W6STFAKE" bash "$INSTALL_SH" >/dev/null 2>&1
+STALE_NEW="$W6STFAKE/.claude/hooks/judge.sh.new.88888"
+echo "stale partial" > "$STALE_NEW"
+# Backdate file mtime to 2 minutes ago
+touch -t "$(date -v-2M +%Y%m%d%H%M.%S 2>/dev/null || date -d '2 minutes ago' +%Y%m%d%H%M.%S)" "$STALE_NEW" 2>/dev/null
+out=$(HOME="$W6STFAKE" bash "$INSTALL_SH" 2>&1)
+if echo "$out" | grep -qE "swept [0-9]+ orphan"; then
+  printf '  ✓ w6-stale-swept\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-stale-swept\n'; FAIL_NAMES+=("w6-stale-swept"); FAILED=$((FAILED + 1))
+fi
+if [[ ! -f "$STALE_NEW" ]]; then
+  printf '  ✓ w6-stale-removed\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-stale-removed (stale .new still exists)\n'; FAIL_NAMES+=("w6-stale-removed"); FAILED=$((FAILED + 1))
+fi
+rm -rf "$W6STFAKE"
 
 # W6.8: trap on EXIT/INT/TERM defined в install.sh
 if grep -qE "trap.*cleanup_active_tmp.*EXIT" "$INSTALL_SH"; then
