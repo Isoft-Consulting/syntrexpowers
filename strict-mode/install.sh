@@ -79,14 +79,15 @@ atomic_deploy() {
   mv -f "$tmp" "$dst"
 }
 
-# Collision-resistant backup naming: timestamp + PID + counter.
+# Collision-resistant backup naming: timestamp + PID + filename.
 # `$(date +%Y%m%d-%H%M%S)` granularity 1 sec — re-deploy в одну секунду overwrites.
-# Добавляем PID и шаг counter в один скрипт-run.
-BACKUP_COUNTER=0
+# Добавляем PID ($$). Filename различает разные хуки в одном install run.
+# (Counter был бы избыточен — install бекапит каждый file ровно один раз; и реализация
+# через subshell counter mutation НЕ работает: $() порождает subshell, изменение
+# переменной не persist в parent.)
 backup_unique_path() {
   local f="$1"
-  BACKUP_COUNTER=$((BACKUP_COUNTER + 1))
-  echo "$BACKUP_DIR/${f}.bak-${DATE_TAG}-$$-${BACKUP_COUNTER}"
+  echo "$BACKUP_DIR/${f}.bak-${DATE_TAG}-$$"
 }
 
 for f in "${WAVE2_HOOKS[@]}" "${WAVE3_HOOKS[@]}"; do

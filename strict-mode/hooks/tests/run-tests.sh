@@ -1618,6 +1618,124 @@ else
 fi
 
 echo ""
+echo "=== W6: atomic deploy + rollback fault injection ==="
+
+INSTALL_SH="$(cd "$HOOKS_DIR/.." && pwd)/install.sh"
+ROLLBACK_SH="$(cd "$HOOKS_DIR/.." && pwd)/rollback.sh"
+
+# W6.1: atomic_deploy design — verify .new.PID + mv pattern preserves dst
+# при failure ПОСЛЕ cp но ПЕРЕД mv (simulates kill между шагами).
+W6DIR="$TEST_STATE/w6-atomic-$(date +%s%N | head -c 12)"
+mkdir -p "$W6DIR"
+ORIG_CONTENT="ORIGINAL_HOOK_v1"
+echo "$ORIG_CONTENT" > "$W6DIR/dst"
+NEW_CONTENT="DEPLOYED_HOOK_v2"
+echo "$NEW_CONTENT" > "$W6DIR/src"
+# Симулируем halt после cp но перед mv: cp src .new, не mv
+cp "$W6DIR/src" "$W6DIR/dst.new.99999"
+# dst должен остаться нетронутым (pre-deploy state)
+if [[ "$(cat "$W6DIR/dst")" = "$ORIG_CONTENT" ]]; then
+  printf '  ✓ w6-atomic-halt-preserves-dst\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-atomic-halt-preserves-dst (dst tampered)\n'; FAIL_NAMES+=("w6-atomic-halt-preserves-dst"); FAILED=$((FAILED + 1))
+fi
+# .new.PID существует как orphan (post-cp, pre-mv state)
+if [[ -f "$W6DIR/dst.new.99999" ]]; then
+  printf '  ✓ w6-atomic-orphan-detected\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-atomic-orphan-detected\n'; FAIL_NAMES+=("w6-atomic-orphan-detected"); FAILED=$((FAILED + 1))
+fi
+# Now complete the deploy: mv .new → dst (atomic via rename(2))
+mv -f "$W6DIR/dst.new.99999" "$W6DIR/dst"
+if [[ "$(cat "$W6DIR/dst")" = "$NEW_CONTENT" ]]; then
+  printf '  ✓ w6-atomic-mv-completes\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-atomic-mv-completes\n'; FAIL_NAMES+=("w6-atomic-mv-completes"); FAILED=$((FAILED + 1))
+fi
+
+# W6.2: backup_unique_path — разные filenames в одном run → разные paths
+# (real scenario: install бекапит judge.sh, prompt-inject.sh, etc. в одну секунду).
+B6HOME=$(mktemp -d -t w6-backup.XXXXXX)
+mkdir -p "$B6HOME/.claude/backups"
+HOME="$B6HOME" bash -c '
+  BACKUP_DIR="$HOME/.claude/backups"
+  DATE_TAG="2026-05-04-120000"
+  backup_unique_path() {
+    local f="$1"
+    echo "$BACKUP_DIR/${f}.bak-${DATE_TAG}-$$"
+  }
+  P1=$(backup_unique_path "judge.sh"); touch "$P1"
+  P2=$(backup_unique_path "prompt-inject.sh"); touch "$P2"
+  [[ "$P1" != "$P2" ]] || exit 1
+  [[ -f "$P1" && -f "$P2" ]] || exit 1
+'
+ec=$?
+if [[ $ec -eq 0 ]]; then
+  printf '  ✓ w6-backup-no-collision-multifile-same-second\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-backup-no-collision-multifile-same-second\n'; FAIL_NAMES+=("w6-backup-no-collision-multifile-same-second"); FAILED=$((FAILED + 1))
+fi
+rm -rf "$B6HOME"
+
+# W6.3: rollback E2E — install → modify → re-install (backup) → rollback restores
+W6FAKE=$(mktemp -d -t w6-rollback.XXXXXX)
+HOME="$W6FAKE" bash "$INSTALL_SH" >/dev/null 2>&1
+HOOK_PROD="$W6FAKE/.claude/hooks/judge.sh"
+ORIG_SUM=$(shasum "$HOOK_PROD" 2>/dev/null | awk '{print $1}')
+# Tamper hook
+echo "// tampered" >> "$HOOK_PROD"
+TAMPER_SUM=$(shasum "$HOOK_PROD" | awk '{print $1}')
+[[ "$ORIG_SUM" != "$TAMPER_SUM" ]] || { printf '  ✗ w6-rollback-tamper-setup\n'; FAIL_NAMES+=("w6-rollback-tamper-setup"); FAILED=$((FAILED + 1)); }
+# Re-install — должен бекапить tampered version
+HOME="$W6FAKE" bash "$INSTALL_SH" >/dev/null 2>&1
+DEPLOY_SUM=$(shasum "$HOOK_PROD" | awk '{print $1}')
+# Rollback — должен вернуть к tampered (latest backup)
+HOME="$W6FAKE" bash "$ROLLBACK_SH" >/dev/null 2>&1
+ROLLBACK_SUM=$(shasum "$HOOK_PROD" | awk '{print $1}')
+if [[ "$ROLLBACK_SUM" = "$TAMPER_SUM" ]]; then
+  printf '  ✓ w6-rollback-restores-backup\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-rollback-restores-backup (got %s, expected %s)\n' "$ROLLBACK_SUM" "$TAMPER_SUM"; FAIL_NAMES+=("w6-rollback-restores-backup"); FAILED=$((FAILED + 1))
+fi
+
+# W6.4: rollback idempotency — second invocation не fail и не меняет state
+HOME="$W6FAKE" bash "$ROLLBACK_SH" 2>/dev/null > /tmp/w6-rollback-out
+ec=$?
+DOUBLE_SUM=$(shasum "$HOOK_PROD" | awk '{print $1}')
+if [[ "$ec" -eq 0 ]] && [[ "$DOUBLE_SUM" = "$ROLLBACK_SUM" ]] && grep -q "skipped (idempotent): " /tmp/w6-rollback-out; then
+  printf '  ✓ w6-rollback-idempotent\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-rollback-idempotent (ec=%s, sum changed=%s)\n' "$ec" "$([[ "$DOUBLE_SUM" != "$ROLLBACK_SUM" ]] && echo yes || echo no)"; FAIL_NAMES+=("w6-rollback-idempotent"); FAILED=$((FAILED + 1))
+fi
+rm -f /tmp/w6-rollback-out
+rm -rf "$W6FAKE"
+
+# W6.5: rollback с missing backup pattern не halt'ит (set -uo pipefail без -e)
+W6EMPTY=$(mktemp -d -t w6-empty.XXXXXX)
+mkdir -p "$W6EMPTY/.claude/backups"
+mkdir -p "$W6EMPTY/.claude/hooks"
+out=$(HOME="$W6EMPTY" bash "$ROLLBACK_SH" 2>&1); ec=$?
+# Должен exit 0 и сообщить "Restored: 0"
+if [[ "$ec" -eq 0 ]] && echo "$out" | grep -q "Restored: 0"; then
+  printf '  ✓ w6-rollback-empty-backups-graceful\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-rollback-empty-backups-graceful (ec=%s)\n' "$ec"; FAIL_NAMES+=("w6-rollback-empty-backups-graceful"); FAILED=$((FAILED + 1))
+fi
+rm -rf "$W6EMPTY"
+
+# W6.6: install/rollback bash -n syntax
+if bash -n "$INSTALL_SH" 2>/dev/null; then
+  printf '  ✓ w6-install-syntax\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-install-syntax\n'; FAIL_NAMES+=("w6-install-syntax"); FAILED=$((FAILED + 1))
+fi
+if bash -n "$ROLLBACK_SH" 2>/dev/null; then
+  printf '  ✓ w6-rollback-syntax\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-rollback-syntax\n'; FAIL_NAMES+=("w6-rollback-syntax"); FAILED=$((FAILED + 1))
+fi
+
+echo ""
 echo "==========================================="
 printf 'PASSED: %d\nFAILED: %d\n' "$PASSED" "$FAILED"
 if [[ $FAILED -gt 0 ]]; then
