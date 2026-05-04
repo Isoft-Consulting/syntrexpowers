@@ -1209,6 +1209,8 @@ Steps:
 
 - **E8 — gtimeout dependency:** `brew install coreutils` обязателен на macOS. Без него `claude -p` без timeout-обёртки может зависнуть. `judge.sh` использует `timeout 50` (10s buffer ниже Stop hook timeout 60000ms). Health-check warning'ует если отсутствует.
 
+- **E10 — Adversarial judge (cycle 1 always probes):** judge изначально позволял `complete` на cycle 1 если agent давал rationale с 3+ areas. Field-наблюдение: agents reliably claim «всё проверил» с confident-sounding rationale, потом при пинге «где халтура?» находят ещё много findings. Решение: judge prompt rule — **cycle 1 (первый ответ после initial challenge) NEVER complete**, всегда adversarial probe (race scenarios, query plans, code grep, migration constraints, конкретные entry points). Cycle 2+ может быть complete только если response отвечает на probe с file:symbol + scenario walkthroughs, не restated coverage areas. Token cost: **~2x** vs прежняя версия (каждое verdict теперь cycle 1 probe + cycle 2 proof minimum). User trade-off: больше токенов в обмен на меньше hidden халтура.
+
 - **E9 — Docs ТРЕБУЮТ ФДР:** изначальный skip-list §4.2.6 пропускал `*.md`/`*.rst`/`*.txt`/README/CHANGELOG. Field-наблюдение: docs-changes часто содержат incorrectness — number-discrepancies, противоречия между разделами, неточные file:path claims, terminological inconsistency. Решение: docs убраны из skip-list, теперь триггерят `missing-verdict` через `fdr-challenge.sh` (если в transcript есть FDR-context). Reminder #2 переформулирован: «After ANY edit (code/docs/config/migrations/specs/README)». Skip в Wave 2.5 — только bypass-файл; в Wave 3 — design'ится trailer-parser (`Strict-Skip-FDR: <reason>` в commit message).
 
 ## 15. Wave 3 design amendments (после FDR)
