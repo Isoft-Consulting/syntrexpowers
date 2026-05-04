@@ -17,6 +17,13 @@
 :[[:space:]]*>[[:space:]]*/
 find[[:space:]]+.*-delete\b
 find[[:space:]]+.*-exec[[:space:]]+rm
+# tee на system paths — pipe-bypass protection (read-only first-cmd skip'ает
+# protected scan; tee явно destructive overwrite на protected → block always).
+\btee[[:space:]]+(-[a-z]+[[:space:]]+)*(/etc/|/usr/local/|/usr/bin/|/usr/sbin/|/var/lib/|/var/log/|/boot/)
+# In-place editing tools — write mode (allowlist пропускает only read modes)
+\bawk[[:space:]]+-i[[:space:]]+inplace
+\bsed[[:space:]]+(-[a-z]+[[:space:]]+)*-i\b
+\bsed[[:space:]]+(-[a-z]+[[:space:]]+)*-i\.
 
 # === Git destructive ===
 git[[:space:]]+reset[[:space:]]+--hard

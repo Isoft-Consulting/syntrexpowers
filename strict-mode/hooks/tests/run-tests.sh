@@ -2316,6 +2316,12 @@ declare -a W11_BLOCK=(
   'ssh user@65.108.108.230 "rm -rf /tmp/cache"'
   # Mass delete через find -delete (Phase A pattern coverage)
   'find ./old-build -delete'
+  # Pipe-bypass: read-only first-cmd → tee write на protected (HIGH security hole)
+  'echo malicious | tee /etc/cron.d/backdoor'
+  # In-place editors на любом file (write mode)
+  'sed -i "s/admin/root/" /tmp/config'
+  'sed -i.bak "s/x/y/" /tmp/file'
+  'awk -i inplace "{print}" /tmp/file'
   # Container/k8s destructive
   'kubectl delete deployment api'
   'docker rm -f mysql_test'
@@ -2340,6 +2346,9 @@ declare -a W11_PASS=(
   # Build/compile — non-destructive
   'npm run build'
   'cargo test'
+  # awk/sed read-only modes — должны pass
+  'awk "{print \$1}" /tmp/file'
+  "sed -n '1,5p' /etc/hosts"
 )
 
 for cmd in "${W11_BLOCK[@]}"; do

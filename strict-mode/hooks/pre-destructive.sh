@@ -123,7 +123,7 @@ FIRST_CMD=$(printf '%s' "$CMD" | awk '
   }')
 SKIP_PROTECTED=false
 case "${FIRST_CMD##*/}" in
-  cat|less|more|head|tail|ls|grep|egrep|fgrep|rgrep|rg|awk|wc|file|stat|which|type|ps|history|env|printenv|md5|md5sum|shasum|sha256sum|cmp|diff|column|sort|uniq|cut|tr)
+  cat|less|more|head|tail|ls|grep|egrep|fgrep|rgrep|rg|wc|file|stat|which|type|ps|history|env|printenv|md5|md5sum|shasum|sha256sum|cmp|diff|column|sort|uniq|cut|tr)
     SKIP_PROTECTED=true
     ;;
   find)
@@ -133,8 +133,16 @@ case "${FIRST_CMD##*/}" in
     fi
     ;;
   sed)
-    # sed -n (no-print mode), sed -E без in-place edit — read-only
-    if ! printf '%s' "$CMD" | grep -qE '\-i\b|\-\-in-place'; then
+    # sed -n (no-print mode), sed -E без in-place edit — read-only.
+    # Pattern для -i.bak / -i'' BSD-формата: -i optionally followed by . or empty arg.
+    if ! printf '%s' "$CMD" | grep -qE '\-i(\b|\.|=|$)|\-\-in-place'; then
+      SKIP_PROTECTED=true
+    fi
+    ;;
+  awk)
+    # awk -f script.awk, awk '{print}' — read-only.
+    # awk -i inplace — write mode (gawk extension).
+    if ! printf '%s' "$CMD" | grep -qE '\-i[[:space:]]+inplace'; then
       SKIP_PROTECTED=true
     fi
     ;;
