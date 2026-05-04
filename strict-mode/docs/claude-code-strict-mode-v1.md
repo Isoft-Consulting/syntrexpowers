@@ -1355,6 +1355,30 @@ Bundle ships в `~/strict-mode-bundle/hooks/`, ещё НЕ deploy'ено в `~/.
 - `awk -F': *'` в parser file-line обрезал `app/x.php:42` до `app/x.php` (терял `:42`). Fix: sed `s/^[Ff]ile:[[:space:]]*//`.
 - В тестах `ec=$(cmd; echo $?)` неправильный pattern — захватывает stdout+exit вместе. Fix: стандартный `out=$(cmd); ec=$?`.
 
+### Wave 4 — Mid-turn destructive gate (deployed 2026-05-04 to staging)
+
+**Motivation:** field-наблюдение что Strict Mode (Wave 1+2+2.5) защищает только pre-turn (UserPromptSubmit reminder) и post-turn (Stop FDR challenge), но agents reliably **execute destructive ops mid-turn** (`rm -rf`, `ALTER TABLE`, `systemctl restart`, force-push) без user confirmation, под давлением «закрыть turn быстрее». Reminder агент игнорирует, FDR challenge — после факта (поздно).
+
+**Components:**
+
+- **`pre-destructive.sh`** (PreToolUse(Bash) hook, default-on): блокирует destructive Bash commands ДО execution. Три layer'а защиты:
+  - **Phase A — pattern blacklist:** ERE regex list в `~/.claude/destructive-patterns.txt` (DB ops, FS destructive, git force, service restart, package uninstall, network flush, migration runners, container/k8s delete).
+  - **Phase A — protected-path whitelist:** path tokens из command match'ятся против `~/.claude/protected-paths.txt` (auto-block любая запись в `/etc/`, `~/.ssh/`, `.env*`, migrations, secrets).
+  - **Phase B — confirmation hash gate:** `~/.claude/state/confirm-<sid>-<sha256(cmd)>` файл с reason. **mtime ≥ 5s** обязательно — defeats self-confirm pattern (агент создаёт + использует в same turn).
+  - **Phase C — Haiku semantic judge** (`destructive-judge.sh`, opt-in через `STRICT_DESTRUCTIVE_JUDGE=1`): для команд не matching pattern — Haiku classifies semantic destructive (ORM migrate, curl DELETE, opaque wrappers). Recursion guard + `--strict-mcp-config --tools ""` как в judge.sh.
+  - **Bypass mechanisms:** одноразовый `bypass-destructive-<sid>`, hash-confirmation file, per-project `<project>/.claude/no-destructive-gate`.
+  - **Audit log:** `~/.claude/state/destructive-log.jsonl` — block/bypass/confirm-allow tracked.
+
+- **Periodic CLAUDE.md re-prime** в `prompt-inject.sh` (Phase B-5): counter в `state/turn-counter-<sid>`. Каждые `STRICT_REPRIME_INTERVAL=10` turns full inject `~/.claude/CLAUDE.md` + `<project>/AGENTS.md` (truncated 8KB cap). **Defeats context compression** — старые reminder'ы в compressed history → агент дрейфует от правил → re-prime восстанавливает grounding.
+
+- **Reminder rule #8** добавлен в `prompt-inject.sh`: «BEFORE any destructive — explicitly ASK USER + WAIT for «да»/«yes». NEVER batch destructive without per-op confirm».
+
+**Strength rating:** ~9/10 (per pre-deployment analysis). Не 10/10 потому что агент с Bash может всегда найти obfuscation workaround (eval, dynamic command construction). Pragmatic ceiling.
+
+**Tests (W9 + W10, 25 ассертов):** clean pass, pattern block, protected-path block, bypass consume, fresh confirm-hash blocked, aged confirm-hash allowed, per-project opt-out, recursion guard, non-Bash skip, judge mock destructive=true block, judge clean pass, audit append, syntax. Re-prime: turn 1 no fire, turn 10 fires + CLAUDE.md content present, rule #8 in reminder.
+
+**Settings.json registration:** `pre-destructive.sh` в PreToolUse `Bash` matcher (НЕ gate'ится `--enable-wave3` — это default-on protection). Templates `destructive-patterns.txt` + `protected-paths.txt` install'ятся в `~/.claude/`.
+
 ### Wave 3 — pending (Phases 3-6 — Wave 3 design-FDR'd 2026-05-03)
 - Compoenents: `/fdr` skill, `fdr-validate.sh`, артефакт-гейт в `stop-guard.sh`, headless verifier для sensitive-paths, static-prepass.
 - **FDR pre-implementation выполнен**: 25 findings (5 HIGH + 8 MEDIUM + 12 LOW) — все закрыты в спеке (§15 amendments + точечные правки в §3-§7).

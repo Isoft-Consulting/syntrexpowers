@@ -2182,6 +2182,151 @@ fi
 rm -f "$HOME/.claude/state/fired-hashes-${W8MVSID}.log" "$HOME/.claude/state/fdr-cycles-${W8MVSID}.jsonl"
 
 echo ""
+echo "=== W9: pre-destructive.sh (Phase A+B+C) ==="
+
+# Setup: install templates в test HOME
+mkdir -p "$HOME/.claude"
+cp /Users/andrey/strict-mode-bundle/templates/destructive-patterns.txt "$HOME/.claude/destructive-patterns.txt"
+cp /Users/andrey/strict-mode-bundle/templates/protected-paths.txt "$HOME/.claude/protected-paths.txt"
+
+# W9.1: clean command — exit 0
+out=$(echo '{"session_id":"w9-clean","tool_name":"Bash","tool_input":{"command":"ls -la /tmp"}}' | "$HOOKS_DIR/pre-destructive.sh" 2>&1); ec=$?
+assert_exit "w9-clean-pass" 0 $ec
+
+# W9.2: rm -rf pattern → block exit 2
+out=$(echo '{"session_id":"w9-rm","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x"}}' | "$HOOKS_DIR/pre-destructive.sh" 2>&1); ec=$?
+assert_exit "w9-rm-blocked" 2 $ec
+assert_contains "w9-rm-pattern" "matched pattern" "$out"
+
+# W9.3: DROP TABLE → block
+out=$(echo '{"session_id":"w9-drop","tool_name":"Bash","tool_input":{"command":"mysql -e \"DROP TABLE users\""}}' | "$HOOKS_DIR/pre-destructive.sh" 2>&1); ec=$?
+assert_exit "w9-drop-blocked" 2 $ec
+
+# W9.4: protected path /etc/passwd → block
+out=$(echo '{"session_id":"w9-etc","tool_name":"Bash","tool_input":{"command":"echo bad > /etc/passwd"}}' | "$HOOKS_DIR/pre-destructive.sh" 2>&1); ec=$?
+assert_exit "w9-etc-blocked" 2 $ec
+assert_contains "w9-etc-protected" "protected path" "$out"
+
+# W9.5: bypass file → allow + consume
+SID="w9-bypass-$(date +%s%N | head -c 12)"
+echo "test bypass" > "$HOME/.claude/state/bypass-destructive-${SID}"
+out=$(echo "{\"session_id\":\"$SID\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"rm -rf /tmp/x\"}}" | "$HOOKS_DIR/pre-destructive.sh" 2>&1); ec=$?
+assert_exit "w9-bypass-allow" 0 $ec
+if [[ ! -f "$HOME/.claude/state/bypass-destructive-${SID}" ]]; then
+  printf '  ✓ w9-bypass-consumed\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w9-bypass-consumed (file still exists)\n'; FAIL_NAMES+=("w9-bypass-consumed"); FAILED=$((FAILED + 1))
+fi
+
+# W9.6: confirmation hash too fresh (< 5s) → block
+SID="w9-fresh-$(date +%s%N | head -c 12)"
+CMD='rm -rf /tmp/y'
+HASH=$(printf '%s' "$CMD" | head -c 4096 | shasum -a 256 | awk '{print $1}' | cut -c1-32)
+echo "user confirmed" > "$HOME/.claude/state/confirm-${SID}-${HASH}"
+out=$(echo "{\"session_id\":\"$SID\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$CMD\"}}" | "$HOOKS_DIR/pre-destructive.sh" 2>&1); ec=$?
+assert_exit "w9-confirm-fresh-blocked" 2 $ec
+rm -f "$HOME/.claude/state/confirm-${SID}-${HASH}"
+
+# W9.7: confirmation hash old enough (≥ 5s, simulated через backdate touch) → allow
+SID="w9-aged-$(date +%s%N | head -c 12)"
+CMD='rm -rf /tmp/aged'
+HASH=$(printf '%s' "$CMD" | head -c 4096 | shasum -a 256 | awk '{print $1}' | cut -c1-32)
+echo "user confirmed earlier" > "$HOME/.claude/state/confirm-${SID}-${HASH}"
+# Backdate 10s ago
+touch -t "$(date -v-10S +%Y%m%d%H%M.%S 2>/dev/null || date -d '10 seconds ago' +%Y%m%d%H%M.%S 2>/dev/null)" "$HOME/.claude/state/confirm-${SID}-${HASH}" 2>/dev/null
+out=$(echo "{\"session_id\":\"$SID\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$CMD\"}}" | "$HOOKS_DIR/pre-destructive.sh" 2>&1); ec=$?
+assert_exit "w9-confirm-aged-allow" 0 $ec
+if [[ ! -f "$HOME/.claude/state/confirm-${SID}-${HASH}" ]]; then
+  printf '  ✓ w9-confirm-aged-consumed\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w9-confirm-aged-consumed\n'; FAIL_NAMES+=("w9-confirm-aged-consumed"); FAILED=$((FAILED + 1))
+fi
+
+# W9.8: per-project opt-out
+W9DIR=$(mktemp -d -t w9-optout.XXXXXX)
+mkdir -p "$W9DIR/.claude"
+touch "$W9DIR/.claude/no-destructive-gate"
+out=$(CLAUDE_PROJECT_DIR="$W9DIR" echo '{"session_id":"w9-opt","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x"}}' | CLAUDE_PROJECT_DIR="$W9DIR" "$HOOKS_DIR/pre-destructive.sh" 2>&1); ec=$?
+assert_exit "w9-optout-allow" 0 $ec
+rm -rf "$W9DIR"
+
+# W9.9: STRICT_MODE_NESTED=1 → exit 0 (recursion guard)
+out=$(echo '{"session_id":"x","tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' | STRICT_MODE_NESTED=1 "$HOOKS_DIR/pre-destructive.sh" 2>&1); ec=$?
+assert_exit "w9-recursion-guard" 0 $ec
+
+# W9.10: non-Bash tool → exit 0 (only gate Bash)
+out=$(echo '{"session_id":"x","tool_name":"Read","tool_input":{"file_path":"/etc/passwd"}}' | "$HOOKS_DIR/pre-destructive.sh" 2>&1); ec=$?
+assert_exit "w9-non-bash-pass" 0 $ec
+
+# W9.11: semantic judge (mock) — destructive=true → block
+out=$(echo '{"session_id":"w9-judge","tool_name":"Bash","tool_input":{"command":"php artisan migrate"}}' | STRICT_DESTRUCTIVE_JUDGE=1 STRICT_DESTRUCTIVE_JUDGE_MOCK='{"destructive":true,"reason":"prod migration"}' "$HOOKS_DIR/pre-destructive.sh" 2>&1); ec=$?
+# Note: php artisan migrate уже в pattern list — match ДО judge'а. Используем команду НЕ в pattern:
+out=$(echo '{"session_id":"w9-judge","tool_name":"Bash","tool_input":{"command":"curl -X DELETE https://api.prod.com/users/all"}}' | STRICT_DESTRUCTIVE_JUDGE=1 STRICT_DESTRUCTIVE_JUDGE_MOCK='{"destructive":true,"reason":"API delete prod"}' "$HOOKS_DIR/pre-destructive.sh" 2>&1); ec=$?
+assert_exit "w9-judge-blocked" 2 $ec
+assert_contains "w9-judge-reason" "semantic judge" "$out"
+
+# W9.12: semantic judge mock destructive=false → allow (если нет других matches)
+out=$(echo '{"session_id":"w9-jclean","tool_name":"Bash","tool_input":{"command":"curl https://api.example.com/health"}}' | STRICT_DESTRUCTIVE_JUDGE=1 STRICT_DESTRUCTIVE_JUDGE_MOCK='{"destructive":false,"reason":"read-only"}' "$HOOKS_DIR/pre-destructive.sh" 2>&1); ec=$?
+assert_exit "w9-judge-clean" 0 $ec
+
+# W9.13: audit log appends (block + bypass tracked)
+LOG="$HOME/.claude/state/destructive-log.jsonl"
+LINES_BEFORE=$(wc -l < "$LOG" 2>/dev/null | tr -d ' ' || echo 0)
+echo '{"session_id":"w9-audit","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/audit"}}' | "$HOOKS_DIR/pre-destructive.sh" >/dev/null 2>&1
+LINES_AFTER=$(wc -l < "$LOG" 2>/dev/null | tr -d ' ' || echo 0)
+if [[ "$LINES_AFTER" -gt "$LINES_BEFORE" ]]; then
+  printf '  ✓ w9-audit-appends\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w9-audit-appends (no new line)\n'; FAIL_NAMES+=("w9-audit-appends"); FAILED=$((FAILED + 1))
+fi
+
+# W9.14: syntax check
+if bash -n "$HOOKS_DIR/pre-destructive.sh" 2>/dev/null; then
+  printf '  ✓ w9-pre-destructive-syntax\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w9-pre-destructive-syntax\n'; FAIL_NAMES+=("w9-pre-destructive-syntax"); FAILED=$((FAILED + 1))
+fi
+if bash -n "$HOOKS_DIR/destructive-judge.sh" 2>/dev/null; then
+  printf '  ✓ w9-destructive-judge-syntax\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w9-destructive-judge-syntax\n'; FAIL_NAMES+=("w9-destructive-judge-syntax"); FAILED=$((FAILED + 1))
+fi
+
+echo ""
+echo "=== W10: prompt-inject periodic re-prime (Phase B-5) ==="
+# Setup: установить fake CLAUDE.md в test HOME
+echo "# Test rules global" > "$HOME/.claude/CLAUDE.md"
+
+# W10.1: turn 1 — нет re-prime
+out=$(echo '{"session_id":"w10-test"}' | "$HOOKS_DIR/prompt-inject.sh" 2>&1)
+if ! echo "$out" | grep -q "periodic re-prime"; then
+  printf '  ✓ w10-no-reprime-turn1\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w10-no-reprime-turn1 (re-prime fired too early)\n'; FAIL_NAMES+=("w10-no-reprime-turn1"); FAILED=$((FAILED + 1))
+fi
+
+# W10.2: turn 10 (interval=2 для теста ускорения) — re-prime fires
+SID="w10-rp-$(date +%s%N | head -c 12)"
+echo "1" > "$HOME/.claude/state/turn-counter-${SID}"  # turn 2 will trigger при interval=2
+out=$(echo "{\"session_id\":\"$SID\"}" | STRICT_REPRIME_INTERVAL=2 "$HOOKS_DIR/prompt-inject.sh" 2>&1)
+if echo "$out" | grep -q "periodic re-prime, turn #2"; then
+  printf '  ✓ w10-reprime-fires-on-interval\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w10-reprime-fires-on-interval\n'; FAIL_NAMES+=("w10-reprime-fires-on-interval"); FAILED=$((FAILED + 1))
+fi
+if echo "$out" | grep -q "Test rules global"; then
+  printf '  ✓ w10-claude-md-injected\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w10-claude-md-injected (CLAUDE.md content missing)\n'; FAIL_NAMES+=("w10-claude-md-injected"); FAILED=$((FAILED + 1))
+fi
+rm -f "$HOME/.claude/state/turn-counter-${SID}"
+rm -f "$HOME/.claude/CLAUDE.md"
+
+# W10.3: rule #8 (destructive ops gate) присутствует в reminder
+out=$(echo '{"session_id":"w10-r8"}' | "$HOOKS_DIR/prompt-inject.sh" 2>&1)
+assert_contains "w10-rule-8-destructive" "DESTRUCTIVE OPS GATE" "$out"
+
+echo ""
 echo "==========================================="
 printf 'PASSED: %d\nFAILED: %d\n' "$PASSED" "$FAILED"
 if [[ $FAILED -gt 0 ]]; then

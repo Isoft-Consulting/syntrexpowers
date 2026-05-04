@@ -1,0 +1,60 @@
+# destructive-patterns.txt — ERE regex per line, blank lines + #-comments ignored.
+# Used by ~/.claude/hooks/pre-destructive.sh in PreToolUse(Bash).
+# Matched against the resolved Bash command string (.tool_input.command from hook stdin).
+# Per-project override: place patterns at <project>/.claude/destructive-patterns.txt
+# (extends global list, doesn't replace).
+
+# === DB destructive ===
+\bDROP[[:space:]]+(TABLE|DATABASE|SCHEMA|INDEX|VIEW)\b
+\bTRUNCATE([[:space:]]+TABLE)?\b
+\bALTER[[:space:]]+TABLE\b
+\bDELETE[[:space:]]+FROM[[:space:]]+\w+
+\bUPDATE[[:space:]]+\w+[[:space:]]+SET\b
+
+# === Filesystem destructive ===
+\brm[[:space:]]+-[a-zA-Z]*[rf]
+\bdd[[:space:]]+if=
+:[[:space:]]*>[[:space:]]*/
+
+# === Git destructive ===
+git[[:space:]]+reset[[:space:]]+--hard
+git[[:space:]]+push[[:space:]]+.*--force
+git[[:space:]]+checkout[[:space:]]+--
+git[[:space:]]+branch[[:space:]]+-D
+git[[:space:]]+clean[[:space:]]+-f
+
+# === Service control ===
+systemctl[[:space:]]+(restart|stop|kill|disable|mask)
+\bkill[[:space:]]+-9
+\bpkill[[:space:]]
+\bservice[[:space:]]+\w+[[:space:]]+(restart|stop)
+
+# === Package managers ===
+apt(-get)?[[:space:]]+(remove|purge|autoremove)
+\bpip[[:space:]]+uninstall
+\bnpm[[:space:]]+uninstall
+\byarn[[:space:]]+remove
+\bbrew[[:space:]]+(uninstall|remove|cleanup)
+
+# === Network destructive ===
+iptables[[:space:]]+-F
+iptables[[:space:]]+-X
+ipset[[:space:]]+destroy
+
+# === Migration runners ===
+php[[:space:]]+artisan[[:space:]]+migrate(:fresh|:reset|:rollback)?
+rake[[:space:]]+db:(migrate|reset|drop|rollback)
+alembic[[:space:]]+(downgrade|stamp)
+\bflyway[[:space:]]+(clean|undo)
+
+# === Container/orchestration destructive ===
+docker[[:space:]]+rm[[:space:]]+-f
+docker[[:space:]]+volume[[:space:]]+rm
+docker[[:space:]]+system[[:space:]]+prune
+kubectl[[:space:]]+delete
+helm[[:space:]]+(uninstall|delete)
+
+# === Shell mass-destruction ===
+chmod[[:space:]]+(0?000|-R[[:space:]]+0?77)
+chown[[:space:]]+-R[[:space:]]+root
+shred[[:space:]]

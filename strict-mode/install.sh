@@ -67,6 +67,7 @@ done
 echo "[4/7] Установка хуков..."
 WAVE2_HOOKS=(health-check.sh prompt-inject.sh pre-write-scan.sh record-edit.sh stop-guard.sh stub-scan.sh fdr-challenge.sh judge.sh prune-mem.py)
 WAVE3_HOOKS=(is-trivial-diff.sh fdr-validate.sh static-prepass.sh)
+WAVE4_HOOKS=(pre-destructive.sh destructive-judge.sh)
 
 # Orphan cleanup: предыдущие install runs могли оставить .new.<PID> файлы при kill
 # mid-cp. Sweep'аем перед deploy чтобы избежать накопления (~5KB × N kills).
@@ -129,7 +130,7 @@ backup_unique_path() {
   echo "$BACKUP_DIR/${f}.bak-${DATE_TAG}-$$"
 }
 
-for f in "${WAVE2_HOOKS[@]}" "${WAVE3_HOOKS[@]}"; do
+for f in "${WAVE2_HOOKS[@]}" "${WAVE3_HOOKS[@]}" "${WAVE4_HOOKS[@]}"; do
   if [[ -f "$BUNDLE_DIR/hooks/$f" ]]; then
     # Бекап существующего хука перед перезаписью (collision-resistant naming).
     if [[ -f "$HOOKS_DIR/$f" ]] && ! cmp -s "$BUNDLE_DIR/hooks/$f" "$HOOKS_DIR/$f"; then
@@ -157,6 +158,19 @@ if [[ ! -f "$CLAUDE_DIR/stub-allowlist.txt" ]]; then
   echo "  ✓ stub-allowlist.txt (пустой шаблон с примерами)"
 else
   echo "  ⏭ stub-allowlist.txt уже существует, не трогаю"
+fi
+# Wave 4: destructive-patterns.txt + protected-paths.txt
+if [[ ! -f "$CLAUDE_DIR/destructive-patterns.txt" ]]; then
+  cp "$BUNDLE_DIR/templates/destructive-patterns.txt" "$CLAUDE_DIR/destructive-patterns.txt"
+  echo "  ✓ destructive-patterns.txt (Wave 4 templates)"
+else
+  echo "  ⏭ destructive-patterns.txt уже существует, не трогаю"
+fi
+if [[ ! -f "$CLAUDE_DIR/protected-paths.txt" ]]; then
+  cp "$BUNDLE_DIR/templates/protected-paths.txt" "$CLAUDE_DIR/protected-paths.txt"
+  echo "  ✓ protected-paths.txt (Wave 4 templates)"
+else
+  echo "  ⏭ protected-paths.txt уже существует, не трогаю"
 fi
 cp "$BUNDLE_DIR/docs/claude-code-strict-mode-v1.md" "$CLAUDE_DIR/specs/claude-code-strict-mode-v1.md"
 echo "  ✓ specs/claude-code-strict-mode-v1.md"
@@ -200,7 +214,9 @@ hooks_block = {
     ],
     "PreToolUse": [
         {"matcher": "Write|Edit|MultiEdit",
-         "hooks": [{"type": "command", "command": "\$HOME/.claude/hooks/pre-write-scan.sh", "timeout": 5000}]}
+         "hooks": [{"type": "command", "command": "\$HOME/.claude/hooks/pre-write-scan.sh", "timeout": 5000}]},
+        {"matcher": "Bash",
+         "hooks": [{"type": "command", "command": "\$HOME/.claude/hooks/pre-destructive.sh", "timeout": 5000}]}
     ],
     "PostToolUse": [
         {"matcher": "Write|Edit|MultiEdit",

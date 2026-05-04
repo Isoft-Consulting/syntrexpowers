@@ -1,0 +1,45 @@
+# protected-paths.txt — ERE regex per line.
+# ANY write/delete/redirect targeting these paths triggers pre-destructive block.
+# Hook scans Bash command for path-like tokens, matches against this list.
+# Per-project override: <project>/.claude/protected-paths.txt extends global.
+
+# === System config ===
+^/etc/
+^/usr/local/
+^/usr/bin/
+^/usr/sbin/
+^/boot/
+^/sys/
+^/proc/
+
+# === Service state ===
+^/var/log/
+^/var/lib/
+^/var/cache/
+
+# === User-critical ===
+.*/\.ssh/.*
+.*/\.gnupg/.*
+.*/\.config/[^/]+/auth
+.*/\.aws/credentials
+.*/\.kube/config
+
+# === Project secrets ===
+.*\.env(\.[^/]+)?$
+.*/secrets?/.*
+.*/credentials?/.*
+.*/\.env\.local
+.*/\.env\.production
+
+# === Migrations / schema ===
+.*/migrations?/.*
+.*/db/migrate/.*
+.*/schema\.sql$
+.*/schema\.rb$
+.*/schema\.prisma$
+
+# === Critical scripts ===
+.*/\.git/(hooks|config)
+.*/\.claude/hooks/.*
+^/Users/[^/]+/\.claude/hooks/.*
+^/home/[^/]+/\.claude/hooks/.*
