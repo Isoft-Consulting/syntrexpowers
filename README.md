@@ -90,6 +90,13 @@ Full feature list, install instructions, troubleshooting → [`strict-mode/READM
 # Install (idempotent):
 cd strict-mode && bash install.sh
 # Then restart Claude Code session (settings.json read at session start).
+
+# IMPORTANT: Phase 2 ships an FDR artifact-gate that blocks every Stop
+# with code edits if Phase 3 (/fdr skill) is not yet deployed. Until
+# Phase 3 ships, set the transitional flag in your shell rc:
+export STRICT_NO_ARTIFACT_GATE=1
+# This disables artifact-gate checks (a) and (c). Wave 2.5 honesty
+# challenge + Wave 3 validator (b) + sensitive verifier (d) remain active.
 ```
 
 ## Workflow
