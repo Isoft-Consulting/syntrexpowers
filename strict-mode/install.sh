@@ -68,15 +68,40 @@ echo "[4/7] Установка хуков..."
 WAVE2_HOOKS=(health-check.sh prompt-inject.sh pre-write-scan.sh record-edit.sh stop-guard.sh stub-scan.sh fdr-challenge.sh judge.sh prune-mem.py)
 WAVE3_HOOKS=(is-trivial-diff.sh fdr-validate.sh)
 
+# Orphan cleanup: предыдущие install runs могли оставить .new.<PID> файлы при kill
+# mid-cp. Sweep'аем перед deploy чтобы избежать накопления (~5KB × N kills).
+# nullglob: если matches нет — pattern expands to пустой список (а не литерал).
+ORPHAN_COUNT=0
+shopt -s nullglob
+for orphan in "$HOOKS_DIR"/*.new.* "$HOOKS_DIR"/tests/*.new.*; do
+  [[ -f "$orphan" ]] || continue
+  rm -f "$orphan" 2>/dev/null && ORPHAN_COUNT=$((ORPHAN_COUNT + 1))
+done
+shopt -u nullglob
+[[ "$ORPHAN_COUNT" -gt 0 ]] && echo "  ↻ swept $ORPHAN_COUNT orphan .new.* file(s) from prior interrupted install"
+
 # Atomic deploy helper: cp в .new + chmod + atomic mv через rename(2) на той же FS.
-# POSIX cp НЕ atomic (open O_TRUNC + write loop) — kill mid-copy = partial file.
-# mv на same filesystem использует rename(2), atomic — либо старый, либо новый файл.
+# Passive safety guarantees:
+#   - POSIX cp НЕ atomic (open O_TRUNC + write loop) — kill mid-copy = partial .new.PID
+#   - mv на same FS использует rename(2), POSIX-atomic — dst либо старый, либо новый
+#   - kill между cp и mv → .new.PID orphan + dst untouched (cleanup-сweep на следующем install)
+#   - kill внутри cp → .new.PID partial + dst untouched (cleanup на следующем install)
+# Trap на EXIT/INT/TERM удаляет наш текущий .new.PID если script killed.
+# НЕ guarantees: fsync перед mv (теоретически possible data-loss на reboot mid-deploy
+# для hooks ~5KB на современной SSD pagecache flush window единицы ms; mitigation —
+# повторный install).
+ACTIVE_TMP=""
+cleanup_active_tmp() { [[ -n "$ACTIVE_TMP" && -f "$ACTIVE_TMP" ]] && rm -f "$ACTIVE_TMP" 2>/dev/null; }
+trap cleanup_active_tmp EXIT INT TERM
+
 atomic_deploy() {
   local src="$1" dst="$2"
   local tmp="${dst}.new.$$"
+  ACTIVE_TMP="$tmp"
   cp "$src" "$tmp"
   chmod +x "$tmp"
   mv -f "$tmp" "$dst"
+  ACTIVE_TMP=""
 }
 
 # Collision-resistant backup naming: timestamp + PID + filename.

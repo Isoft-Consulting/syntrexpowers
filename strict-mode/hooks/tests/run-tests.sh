@@ -1723,6 +1723,33 @@ else
 fi
 rm -rf "$W6EMPTY"
 
+# W6.7: orphan .new.* cleanup — pre-existing orphan убирается на старте install
+W6OFAKE=$(mktemp -d -t w6-orphan.XXXXXX)
+HOME="$W6OFAKE" bash "$INSTALL_SH" >/dev/null 2>&1
+# Создаём orphan имитирующий kill mid-cp от прошлого install
+echo "stale partial content" > "$W6OFAKE/.claude/hooks/judge.sh.new.99999"
+echo "stale partial content" > "$W6OFAKE/.claude/hooks/tests/run-tests.sh.new.99998"
+# Re-install — должен sweep orphans
+out=$(HOME="$W6OFAKE" bash "$INSTALL_SH" 2>&1)
+if echo "$out" | grep -qE "swept [0-9]+ orphan"; then
+  printf '  ✓ w6-orphan-cleanup-detected\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-orphan-cleanup-detected (no sweep message)\n'; FAIL_NAMES+=("w6-orphan-cleanup-detected"); FAILED=$((FAILED + 1))
+fi
+if [[ ! -f "$W6OFAKE/.claude/hooks/judge.sh.new.99999" ]] && [[ ! -f "$W6OFAKE/.claude/hooks/tests/run-tests.sh.new.99998" ]]; then
+  printf '  ✓ w6-orphan-removed\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-orphan-removed\n'; FAIL_NAMES+=("w6-orphan-removed"); FAILED=$((FAILED + 1))
+fi
+rm -rf "$W6OFAKE"
+
+# W6.8: trap on EXIT/INT/TERM defined в install.sh
+if grep -qE "trap.*cleanup_active_tmp.*EXIT" "$INSTALL_SH"; then
+  printf '  ✓ w6-install-trap-defined\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w6-install-trap-defined\n'; FAIL_NAMES+=("w6-install-trap-defined"); FAILED=$((FAILED + 1))
+fi
+
 # W6.6: install/rollback bash -n syntax
 if bash -n "$INSTALL_SH" 2>/dev/null; then
   printf '  ✓ w6-install-syntax\n'; PASSED=$((PASSED + 1))
