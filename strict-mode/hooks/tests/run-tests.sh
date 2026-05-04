@@ -1111,6 +1111,9 @@ cycles: 1
 ## Scope
 - file1.php
 
+## Layer 0 (static prepass)
+phpstan: 0 errors | staticcheck: skipped | eslint: skipped
+
 ## Findings
 
 ## Verdict
@@ -1400,6 +1403,8 @@ cat > "$ART" <<'MD'
 cycles: 1
 ## Scope
 - x.php
+## Layer 0
+phpstan: 0 errors
 ## Findings
 ## Verdict
 status: complete
@@ -1454,6 +1459,8 @@ cat > "$ART" <<'MD'
 cycles: 1
 ## Scope
 - x.php
+## Layer 0
+phpstan: 0 errors
 ## Findings
 ### F1
 file: app/x.php:42
@@ -1540,6 +1547,8 @@ cat > "$ART" <<'MD'
 cycles: 1
 ## Scope
 - file1.php
+## Layer 0
+phpstan: 0 errors
 ## Findings
 ### F1: race condition in transfer
 file: app/x.php:42
@@ -1806,6 +1815,143 @@ if bash -n "$ROLLBACK_SH" 2>/dev/null; then
   printf '  ✓ w6-rollback-syntax\n'; PASSED=$((PASSED + 1))
 else
   printf '  ✗ w6-rollback-syntax\n'; FAIL_NAMES+=("w6-rollback-syntax"); FAILED=$((FAILED + 1))
+fi
+
+echo ""
+echo "=== W7: static-prepass.sh (Phase 4) ==="
+
+# W7.1: STRICT_MODE_NESTED=1 → exit 0 без работы (recursion guard)
+out=$(echo '{"session_id":"test","tool_input":{"file_path":"/tmp/x.php"}}' | STRICT_MODE_NESTED=1 "$HOOKS_DIR/static-prepass.sh" 2>&1); ec=$?
+assert_exit "w7-recursion-guard-exit" 0 $ec
+if [[ -z "$out" ]]; then
+  printf '  ✓ w7-recursion-guard-silent\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w7-recursion-guard-silent\n'; FAIL_NAMES+=("w7-recursion-guard-silent"); FAILED=$((FAILED + 1))
+fi
+
+# W7.2: empty SID/file → exit 0 (defensive)
+out=$(echo '{}' | "$HOOKS_DIR/static-prepass.sh" 2>&1); ec=$?
+assert_exit "w7-empty-input" 0 $ec
+
+# W7.3: non-existent file → exit 0
+out=$(echo '{"session_id":"x","tool_input":{"file_path":"/nonexistent/file.php"}}' | "$HOOKS_DIR/static-prepass.sh" 2>&1); ec=$?
+assert_exit "w7-nonexistent-file" 0 $ec
+
+# W7.4: per-project opt-out (.claude/no-static-prepass)
+W7DIR=$(mktemp -d -t w7-optout.XXXXXX)
+mkdir -p "$W7DIR/.claude"
+touch "$W7DIR/.claude/no-static-prepass"
+echo "<?php echo 1;" > "$W7DIR/x.php"
+out=$(CLAUDE_PROJECT_DIR="$W7DIR" echo "{\"session_id\":\"w7-optout\",\"tool_input\":{\"file_path\":\"$W7DIR/x.php\"}}" | CLAUDE_PROJECT_DIR="$W7DIR" "$HOOKS_DIR/static-prepass.sh" 2>&1); ec=$?
+assert_exit "w7-optout-exit" 0 $ec
+sleep 0.3  # дать nohup'у возможность стартовать (хотя не должен)
+if ls "$HOME/.claude/state/prepass-w7-optout-"* 2>/dev/null | grep -q .; then
+  printf '  ✗ w7-optout-no-prepass-log (log created despite opt-out)\n'; FAIL_NAMES+=("w7-optout-no-prepass-log"); FAILED=$((FAILED + 1))
+else
+  printf '  ✓ w7-optout-no-prepass-log\n'; PASSED=$((PASSED + 1))
+fi
+rm -f "$HOME/.claude/state/prepass-w7-optout-"* 2>/dev/null
+rm -rf "$W7DIR"
+
+# W7.5: unsupported extension → exit 0, no logs
+W7DIR=$(mktemp -d -t w7-unsupp.XXXXXX)
+echo "data" > "$W7DIR/file.txt"
+out=$(echo "{\"session_id\":\"w7-unsupp\",\"tool_input\":{\"file_path\":\"$W7DIR/file.txt\"}}" | "$HOOKS_DIR/static-prepass.sh" 2>&1); ec=$?
+assert_exit "w7-unsupp-exit" 0 $ec
+sleep 0.3
+if ls "$HOME/.claude/state/prepass-w7-unsupp-"* 2>/dev/null | grep -q .; then
+  printf '  ✗ w7-unsupp-no-log\n'; FAIL_NAMES+=("w7-unsupp-no-log"); FAILED=$((FAILED + 1))
+else
+  printf '  ✓ w7-unsupp-no-log\n'; PASSED=$((PASSED + 1))
+fi
+rm -f "$HOME/.claude/state/prepass-w7-unsupp-"* 2>/dev/null
+rm -rf "$W7DIR"
+
+# W7.6: PHP без vendor/bin/phpstan → no analyzers → no logs
+W7DIR=$(mktemp -d -t w7-php-noph.XXXXXX)
+echo "<?php echo 1;" > "$W7DIR/x.php"
+out=$(CLAUDE_PROJECT_DIR="$W7DIR" "$HOOKS_DIR/static-prepass.sh" <<< "{\"session_id\":\"w7-noph\",\"tool_input\":{\"file_path\":\"$W7DIR/x.php\"}}" 2>&1); ec=$?
+assert_exit "w7-php-noph-exit" 0 $ec
+sleep 0.3
+if ls "$HOME/.claude/state/prepass-w7-noph-"* 2>/dev/null | grep -q .; then
+  printf '  ✗ w7-php-noph-no-log\n'; FAIL_NAMES+=("w7-php-noph-no-log"); FAILED=$((FAILED + 1))
+else
+  printf '  ✓ w7-php-noph-no-log\n'; PASSED=$((PASSED + 1))
+fi
+rm -f "$HOME/.claude/state/prepass-w7-noph-"* 2>/dev/null
+rm -rf "$W7DIR"
+
+# W7.7: Go проект с go.mod → go-vet запускается, log создаётся
+if command -v go >/dev/null 2>&1; then
+  W7DIR=$(mktemp -d -t w7-go.XXXXXX)
+  cat > "$W7DIR/go.mod" <<'EOF'
+module test
+go 1.21
+EOF
+  cat > "$W7DIR/main.go" <<'EOF'
+package main
+func main() {}
+EOF
+  out=$(CLAUDE_PROJECT_DIR="$W7DIR" "$HOOKS_DIR/static-prepass.sh" <<< "{\"session_id\":\"w7-go\",\"tool_input\":{\"file_path\":\"$W7DIR/main.go\"}}" 2>&1); ec=$?
+  assert_exit "w7-go-exit" 0 $ec
+  # Wait для nohup'a — analyzer должен finish < 5s на trivial файле
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    sleep 0.5
+    if ls "$HOME/.claude/state/prepass-w7-go-"*go-vet*.log 2>/dev/null | grep -q .; then break; fi
+  done
+  LOG=$(ls "$HOME/.claude/state/prepass-w7-go-"*go-vet*.log 2>/dev/null | head -1)
+  if [[ -n "$LOG" && -f "$LOG" ]] && grep -q "static-prepass.*go-vet" "$LOG"; then
+    printf '  ✓ w7-go-vet-log-created\n'; PASSED=$((PASSED + 1))
+  else
+    printf '  ✗ w7-go-vet-log-created (log not found or malformed)\n'; FAIL_NAMES+=("w7-go-vet-log-created"); FAILED=$((FAILED + 1))
+  fi
+  # Lock должен быть удалён (cleanup trap)
+  if ls "$HOME/.claude/state/prepass-w7-go-"*.lock 2>/dev/null | grep -q .; then
+    printf '  ✗ w7-go-lock-cleaned (lock still present)\n'; FAIL_NAMES+=("w7-go-lock-cleaned"); FAILED=$((FAILED + 1))
+  else
+    printf '  ✓ w7-go-lock-cleaned\n'; PASSED=$((PASSED + 1))
+  fi
+  rm -f "$HOME/.claude/state/prepass-w7-go-"* 2>/dev/null
+  rm -rf "$W7DIR"
+else
+  printf '  ⏭ w7-go-vet-log-created (go not installed, skipped)\n'
+  printf '  ⏭ w7-go-lock-cleaned (go not installed, skipped)\n'
+fi
+
+# W7.8: safe-path naming — два файла с одним basename в разных папках = разные log files
+W7DIR=$(mktemp -d -t w7-safe.XXXXXX)
+mkdir -p "$W7DIR/a" "$W7DIR/b"
+cat > "$W7DIR/go.mod" <<'EOF'
+module test
+go 1.21
+EOF
+cat > "$W7DIR/a/util.go" <<'EOF'
+package a
+EOF
+cat > "$W7DIR/b/util.go" <<'EOF'
+package b
+EOF
+if command -v go >/dev/null 2>&1; then
+  CLAUDE_PROJECT_DIR="$W7DIR" "$HOOKS_DIR/static-prepass.sh" <<< "{\"session_id\":\"w7-safe\",\"tool_input\":{\"file_path\":\"$W7DIR/a/util.go\"}}" >/dev/null 2>&1
+  CLAUDE_PROJECT_DIR="$W7DIR" "$HOOKS_DIR/static-prepass.sh" <<< "{\"session_id\":\"w7-safe\",\"tool_input\":{\"file_path\":\"$W7DIR/b/util.go\"}}" >/dev/null 2>&1
+  for i in 1 2 3 4 5 6 7 8; do sleep 0.5; LOGS=$(ls "$HOME/.claude/state/prepass-w7-safe-"* 2>/dev/null); [[ $(echo "$LOGS" | wc -l) -ge 2 ]] && break; done
+  COUNT=$(ls "$HOME/.claude/state/prepass-w7-safe-"*go-vet.log 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$COUNT" -eq 2 ]]; then
+    printf '  ✓ w7-safe-path-no-collision (2 distinct logs for same basename)\n'; PASSED=$((PASSED + 1))
+  else
+    printf '  ✗ w7-safe-path-no-collision (got %s logs, expected 2)\n' "$COUNT"; FAIL_NAMES+=("w7-safe-path-no-collision"); FAILED=$((FAILED + 1))
+  fi
+  rm -f "$HOME/.claude/state/prepass-w7-safe-"* 2>/dev/null
+else
+  printf '  ⏭ w7-safe-path-no-collision (go not installed, skipped)\n'
+fi
+rm -rf "$W7DIR"
+
+# W7.9: bash -n syntax check
+if bash -n "$HOOKS_DIR/static-prepass.sh" 2>/dev/null; then
+  printf '  ✓ w7-static-prepass-syntax\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w7-static-prepass-syntax\n'; FAIL_NAMES+=("w7-static-prepass-syntax"); FAILED=$((FAILED + 1))
 fi
 
 echo ""

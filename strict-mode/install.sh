@@ -66,7 +66,7 @@ done
 # ----- 4. Копирование hook-скриптов -----
 echo "[4/7] Установка хуков..."
 WAVE2_HOOKS=(health-check.sh prompt-inject.sh pre-write-scan.sh record-edit.sh stop-guard.sh stub-scan.sh fdr-challenge.sh judge.sh prune-mem.py)
-WAVE3_HOOKS=(is-trivial-diff.sh fdr-validate.sh)
+WAVE3_HOOKS=(is-trivial-diff.sh fdr-validate.sh static-prepass.sh)
 
 # Orphan cleanup: предыдущие install runs могли оставить .new.<PID> файлы при kill
 # mid-cp. Sweep'аем перед deploy чтобы избежать накопления (~5KB × N kills).
@@ -174,6 +174,11 @@ fi
 
 # ----- 7. settings.json merge -----
 echo "[7/7] Мердж settings.json (hooks block + permissions)..."
+# python3 heredoc не получает $* / sys.argv от bash — передаём флаг через bash var expansion.
+# Без этого "--enable-wave3" флаг был silently ignored (bug в оригинальном install.sh).
+ENABLE_WAVE3=false
+for arg in "$@"; do [[ "$arg" = "--enable-wave3" ]] && ENABLE_WAVE3=true; done
+
 python3 <<EOF
 import json, sys
 from pathlib import Path
@@ -223,14 +228,28 @@ s["hooks"] = existing
 
 # Permissions: Skill(*) и Agent(*) добавляются ТОЛЬКО при --enable-wave3 флаге
 # (Wave 1+2+2.5 их не используют, опен permissions без consumer = unnecessary surface)
-import sys
-enable_wave3 = "--enable-wave3" in sys.argv
+# Флаг передаётся из bash через ENABLE_WAVE3 env (heredoc не имеет sys.argv).
+enable_wave3 = "${ENABLE_WAVE3}" == "true"
 if enable_wave3:
     perms = s.setdefault("permissions", {}).setdefault("allow", [])
     for needed in ["Skill(*)", "Agent(*)"]:
         if needed not in perms:
             perms.append(needed)
     print("  ✓ Wave 3 permissions added (Skill, Agent)")
+
+    # Wave 3 hook registrations: static-prepass.sh добавляется в PostToolUse chain
+    # (Phase 4). Stop hook timeout повышается до 120000ms для fdr-verify.sh (Phase 5).
+    static_prepass_cmd = "\$HOME/.claude/hooks/static-prepass.sh"
+    posttool = s.get("hooks", {}).get("PostToolUse", [])
+    for grp in posttool:
+        existing_cmds = {h.get("command") for h in grp.get("hooks", [])}
+        if static_prepass_cmd not in existing_cmds:
+            grp.setdefault("hooks", []).append({
+                "type": "command",
+                "command": static_prepass_cmd,
+                "timeout": 3000,
+            })
+    print("  ✓ Wave 3 PostToolUse hook registered (static-prepass.sh)")
 
 tmp = p.with_suffix(".json.tmp")
 tmp.write_text(json.dumps(s, indent=2, ensure_ascii=False))
