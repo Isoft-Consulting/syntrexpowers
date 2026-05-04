@@ -67,20 +67,41 @@ done
 echo "[4/7] Установка хуков..."
 WAVE2_HOOKS=(health-check.sh prompt-inject.sh pre-write-scan.sh record-edit.sh stop-guard.sh stub-scan.sh fdr-challenge.sh judge.sh prune-mem.py)
 WAVE3_HOOKS=(is-trivial-diff.sh fdr-validate.sh)
+
+# Atomic deploy helper: cp в .new + chmod + atomic mv через rename(2) на той же FS.
+# POSIX cp НЕ atomic (open O_TRUNC + write loop) — kill mid-copy = partial file.
+# mv на same filesystem использует rename(2), atomic — либо старый, либо новый файл.
+atomic_deploy() {
+  local src="$1" dst="$2"
+  local tmp="${dst}.new.$$"
+  cp "$src" "$tmp"
+  chmod +x "$tmp"
+  mv -f "$tmp" "$dst"
+}
+
+# Collision-resistant backup naming: timestamp + PID + counter.
+# `$(date +%Y%m%d-%H%M%S)` granularity 1 sec — re-deploy в одну секунду overwrites.
+# Добавляем PID и шаг counter в один скрипт-run.
+BACKUP_COUNTER=0
+backup_unique_path() {
+  local f="$1"
+  BACKUP_COUNTER=$((BACKUP_COUNTER + 1))
+  echo "$BACKUP_DIR/${f}.bak-${DATE_TAG}-$$-${BACKUP_COUNTER}"
+}
+
 for f in "${WAVE2_HOOKS[@]}" "${WAVE3_HOOKS[@]}"; do
   if [[ -f "$BUNDLE_DIR/hooks/$f" ]]; then
-    # Бекап существующего хука перед перезаписью (защита от потери кастомизаций).
+    # Бекап существующего хука перед перезаписью (collision-resistant naming).
     if [[ -f "$HOOKS_DIR/$f" ]] && ! cmp -s "$BUNDLE_DIR/hooks/$f" "$HOOKS_DIR/$f"; then
-      cp "$HOOKS_DIR/$f" "$BACKUP_DIR/${f}.bak-${DATE_TAG}"
-      echo "  ↺ backed up $f → backups/${f}.bak-${DATE_TAG}"
+      backup_path=$(backup_unique_path "$f")
+      cp "$HOOKS_DIR/$f" "$backup_path"
+      echo "  ↺ backed up $f → ${backup_path##*/}"
     fi
-    cp "$BUNDLE_DIR/hooks/$f" "$HOOKS_DIR/$f"
-    chmod +x "$HOOKS_DIR/$f"
+    atomic_deploy "$BUNDLE_DIR/hooks/$f" "$HOOKS_DIR/$f"
     echo "  ✓ $f"
   fi
 done
-cp "$BUNDLE_DIR/hooks/tests/run-tests.sh" "$HOOKS_DIR/tests/run-tests.sh"
-chmod +x "$HOOKS_DIR/tests/run-tests.sh"
+atomic_deploy "$BUNDLE_DIR/hooks/tests/run-tests.sh" "$HOOKS_DIR/tests/run-tests.sh"
 echo "  ✓ tests/run-tests.sh"
 
 # ----- 5. Templates (sensitive-paths, stub-allowlist) -----
