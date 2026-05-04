@@ -129,6 +129,54 @@ Hook-расширения для Claude Code которые **механичес
 
 - **Hash namespace separation** (`v:`/`m:`) — verdict-trigger и missing-verdict не делят хеш-кэш.
 
+### Wave 3 Phase 2 — Core enforcement (deployed 2026-05-04)
+
+Foundation для full Wave 3. Включает три компонента поверх Wave 2.5:
+
+**`is-trivial-diff.sh`** — определяет можно ли пропустить ФДР для текущего git diff:
+- Tracked + untracked файлы (через `git ls-files --others --exclude-standard`).
+- Skip классы: whitespace-only, comments-only (PHP/Go/JS/TS/Python/Ruby/sh), lockfiles (composer/package/cargo/poetry/etc), translations (lang/i18n/locales).
+- Sensitive-paths overrides skip (auth/payment/migrations всегда триггерят ФДР).
+- **Docs (`*.md`/`*.rst`/`*.txt`/README/CHANGELOG) НЕ skip** — они часто содержат incorrectness в инструкциях, противоречиях, number-discrepancies. Триггерят ФДР через missing-verdict.
+- Exit codes: 0=trivial / 1=not trivial (FDR mandatory) / 1=not git repo (treated as non-trivial).
+
+**`fdr-validate.sh`** — артефакт-валидатор по схеме spec §4.2.1, 11 проверок:
+- C1 артефакт существует + не пустой
+- C2 каждый файл из edits-log в `## Scope` блоке
+- C3 каждый Finding имеет 7 полей (file/layer/scenario/expected/actual/severity/status); CRITICAL/HIGH ОБЯЗАТЕЛЬНО `:line` в file
+- C4 severity ∈ {CRITICAL, HIGH, MEDIUM, LOW}
+- C5 status ∈ {open, resolved, reopened, partial}
+- C6 Verdict 2-line format (`status: ...` + `counts: N open / M resolved`) + open-vs-complete consistency
+- C7 cycles ≥ 2 если findings были и все resolved
+- C8 запрещённые секции/фразы (Persistent Review Rule)
+- C9 `## Layer 0` секция если Phase 4 (static-prepass) активен
+- C10 status:resolved требует `fix-commit: <sha|pending>` + `re-check: <ISO> — <verifier>`
+- C11 bypass-файл (`~/.claude/state/bypass-<sid>`) пропускает валидацию (одноразово, логируется)
+
+**`stop-guard.sh` extended** — поверх Wave 2 stub-scan добавляет 4 проверки:
+- (a) edits-log непустой + НЕТ артефакта + не trivial-diff → block «FDR artifact missing»
+- (b) артефакт есть → run validator → пробросить C-fail messages в reason
+- (c) артефакт + open findings + `mtime(edits-log) > mtime(artifact)` → block «invoke /fdr to recheck»
+- (d) sensitive-paths detected → run `fdr-verify.sh` (Phase 5 hook, no-op без verifier executable)
+
+Все 4 idempotent через `[[ -x ]]` guards. Decision aggregation: множественные block reasons combine с `\n---\n` separator.
+
+**⚠️ КРИТИЧНО: `STRICT_NO_ARTIFACT_GATE=1` для Phase 2-only deploy**
+
+Phase 2 без Phase 3 (`/fdr` skill) **сломает workflow** — нет способа сгенерировать `fdr-<sid>.md`, и проверки (a) и (c) заблокируют каждый Stop с edits навсегда. Решение — env-флаг отключает (a) и (c):
+
+```bash
+# В ~/.zshrc или ~/.bash_profile (постоянно):
+export STRICT_NO_ARTIFACT_GATE=1
+
+# Или для одной сессии:
+STRICT_NO_ARTIFACT_GATE=1 claude
+```
+
+Это оставляет Wave 2.5 (challenge на verdict-pattern) полностью рабочим + добавляет Wave 3 (b) валидатор для случаев когда артефакт уже есть. После deploy Phase 3 (когда `/fdr` skill сможет генерировать артефакт) — снять флаг.
+
+**Тесты Phase 2:** 30 новых (W4.1-W4.22 для is-trivial-diff + fdr-validate, W5.1-W5.9 для stop-guard extensions, W5.7b для transitional flag). Combined block test (stub + invalid artifact в одном Stop chain) проверяет decision aggregation.
+
 ---
 
 ## Установка

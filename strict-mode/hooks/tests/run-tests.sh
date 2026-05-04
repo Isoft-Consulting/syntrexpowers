@@ -1532,6 +1532,36 @@ else
 fi
 rm -f "$EL"
 
+# W4.22: fdr-validate handles "### F1: title" finding header (trailing colon strip)
+ART="$TEST_STATE/w4-art-titled.md"
+EDITS="$TEST_STATE/w4-edits-titled.log"
+cat > "$ART" <<'MD'
+# FDR
+cycles: 1
+## Scope
+- file1.php
+## Findings
+### F1: race condition in transfer
+file: app/x.php:42
+layer: 6
+scenario: race
+expected: lock
+actual: race
+severity: CRITICAL
+status: open
+## Verdict
+status: incomplete
+counts: 1 open / 0 resolved
+MD
+echo "file1.php" > "$EDITS"
+out=$("$HOOKS_DIR/fdr-validate.sh" "$ART" "$EDITS" 2>&1); ec=$?
+# Должен принять (1 open finding с правильными полями). Любой C-fail = parser broke
+if [[ "$ec" = "2" ]]; then
+  printf '  ✗ w4-titled-finding (parser failed on "### F1: title" form)\n    actual: %s\n' "$out"; FAIL_NAMES+=("w4-titled-finding"); FAILED=$((FAILED + 1))
+else
+  printf '  ✓ w4-titled-finding\n'; PASSED=$((PASSED + 1))
+fi
+
 # W5.7b: STRICT_NO_ARTIFACT_GATE=1 → проверки (a) и (c) отключены, no block on missing artifact
 SID="w5-gate-off-$(date +%s%N | head -c 12)"
 REPO=$(mk_git_repo "$TEST_STATE/w5-gate-off-repo-$(date +%s%N | head -c 12)")
@@ -1548,6 +1578,37 @@ else
   printf '  ✓ w5-gate-off-no-block\n'; PASSED=$((PASSED + 1))
 fi
 rm -f "$HOME/.claude/state/edits-${SID}.log"
+
+# W5.9: combined block — stub finding + invalid artifact в одном Stop → обе reasons с --- separator
+SID="w5-combined-$(date +%s%N | head -c 12)"
+TMPFILE="$TEST_STATE/w5-combined-stub.go"
+printf 'package main\nfunc x() { panic("TODO") }\n' > "$TMPFILE"
+echo "$TMPFILE" > "$HOME/.claude/state/edits-${SID}.log"
+ART="$HOME/.claude/state/fdr-${SID}.md"
+cat > "$ART" <<'MD'
+# FDR
+cycles: 1
+## Scope
+- some.go
+## Findings
+### F1
+file: app/x.go
+layer: 6
+scenario: bad sev
+severity: BOGUS
+status: open
+## Verdict
+status: incomplete
+counts: 1 open / 0 resolved
+MD
+JSON="{\"session_id\":\"$SID\"}"
+out=$(echo "$JSON" | "$HOOKS_DIR/stop-guard.sh" 2>&1); ec=$?
+assert_exit "w5-combined-exit" 0 $ec
+assert_contains "w5-combined-block" '"decision":[[:space:]]*"block"' "$out"
+assert_contains "w5-combined-stub" "stubs" "$out"
+assert_contains "w5-combined-validation" "failed validation" "$out"
+assert_contains "w5-combined-separator" '\\n---\\n' "$out"
+rm -f "$ART" "$HOME/.claude/state/edits-${SID}.log"
 
 # W5.8: stop-guard syntax check
 if bash -n "$HOOKS_DIR/stop-guard.sh" 2>/dev/null; then

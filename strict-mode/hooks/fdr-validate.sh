@@ -98,8 +98,10 @@ printf '%s\n' "$ARTIFACT_BODY" | awk -v outdir="$FINDINGS_DIR" '
     in_findings=0; current_id=""; current_file=""; next
   }
   in_findings && /^### F[0-9]+/ {
+    # $2 может быть "F1" или "F1:" (если заголовок вида "### F1: some title").
+    # Убираем trailing colon чтобы имя файла было чистым ID без двоеточия.
     current_id=$2
-    sub(/^### /, "", current_id)
+    sub(/:$/, "", current_id)
     current_file=outdir "/" current_id ".txt"
     next
   }
