@@ -17,7 +17,7 @@ cat <<'EOF'
 3. Findings (when reported): file (+:symbol when actionable), expected vs actual, severity. Add :line only for CRITICAL/HIGH.
 4. Do exactly what's asked. "Изучи" = study, not edit. When unsure, ask.
 5. Reply in Russian. Code comments Russian. FDR/briefs English.
-6. After code edits final message MUST contain explicit verdict: "0 проблем" + 1-3 sentence rationale (what was actually checked) if clean, OR list of open findings (file:symbol + severity). Bare "0 проблем" without rationale = sneaking out.
+6. After code edits final message MUST contain explicit verdict: "0 проблем" + rationale citing 3+ specific file:symbol locations actually inspected (not just areas like "auth/wallet checked"), OR list of open findings (file:symbol + severity — fix them, don't dismiss as "minor"). EXPECT probing question on first cycle: judge will pick weakest claim and demand deep proof (race scenarios, query plans, code grep results). Answer with file:symbol + scenario walkthrough, not restated "checked X". HALTURA-маркеры trigger evasive: "почти", "осталось только", "не критично", "можно потом", "остальное мелочи", "достаточно", "не блокирующее", "polish only", "ship anyway", "минор". User wants polished work to 0 real findings.
 7. If Stop hook fired on meta-discussion (no actual FDR work in this turn) — reply with the phrase "meta-discussion, no FDR work" in a SHORT message (≤300 chars total) to self-bypass once.
 EOF
 
