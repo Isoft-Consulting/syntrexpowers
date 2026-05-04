@@ -2139,6 +2139,29 @@ else
   printf '  ✓ w8-no-i18n-reason-strings\n'; PASSED=$((PASSED + 1))
 fi
 
+# W8.4: stat fallback chain produces numeric mtime on current platform.
+# Regression guard: stat -c %Y || stat -f %m chain должен returning numeric on
+# macOS (BSD stat -f %m fallback) AND Linux (GNU stat -c %Y first). На Linux
+# `stat -f %m` возвращает mountpoint string '/' — НЕ numeric. Order matters.
+W8STAT=$(mktemp)
+echo data > "$W8STAT"
+W8MTIME=$(stat -c %Y "$W8STAT" 2>/dev/null || stat -f %m "$W8STAT" 2>/dev/null || echo 0)
+if [[ "$W8MTIME" =~ ^[0-9]+$ ]]; then
+  printf '  ✓ w8-stat-fallback-numeric (mtime=%s)\n' "$W8MTIME"; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w8-stat-fallback-numeric (got non-numeric: %s)\n' "$W8MTIME"; FAIL_NAMES+=("w8-stat-fallback-numeric"); FAILED=$((FAILED + 1))
+fi
+rm -f "$W8STAT"
+
+# W8.5: source-level guard — все stat calls в hooks должны иметь GNU first
+# (stat -c %Y до stat -f %m). BSD-first ломает Linux runtime.
+BSD_FIRST_FOUND=$(grep -rnE 'stat -f %m[^|]+\|\| stat -c %Y' "$HOOKS_DIR" "$(cd "$HOOKS_DIR/.." && pwd)/install.sh" 2>/dev/null)
+if [[ -z "$BSD_FIRST_FOUND" ]]; then
+  printf '  ✓ w8-stat-gnu-first-everywhere\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w8-stat-gnu-first-everywhere (BSD-first found: %s)\n' "$BSD_FIRST_FOUND"; FAIL_NAMES+=("w8-stat-gnu-first-everywhere"); FAILED=$((FAILED + 1))
+fi
+
 # W8.3: MV_REASON live newline rendering (cycle 0 missing-verdict path)
 W8MVSID="w8-mv-$(date +%s%N | head -c 12)"
 W8MVTR="$TEST_STATE/w8-mv-tr.jsonl"

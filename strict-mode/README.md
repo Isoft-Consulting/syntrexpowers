@@ -182,10 +182,16 @@ STRICT_NO_ARTIFACT_GATE=1 claude
 ## Установка
 
 **Требования:**
-- macOS или Linux
-- `bash`, `jq`, `git`, `python3`, `awk`
-- На macOS обязательно `brew install coreutils` для `gtimeout` (иначе judge может зависать)
-- Активная Claude Code сессия с Anthropic auth (для headless judge через Haiku)
+- macOS или Linux (см. cross-platform notes ниже)
+- `bash` 3.2+, `jq`, `git`, `python3`, `awk`
+- **macOS:** обязательно `brew install coreutils` для `gtimeout` (иначе judge зависает) и `gstat` (через тот же coreutils — `stat` BSD/GNU имеет несовместимые `-f` семантики).
+- **Linux:** GNU coreutils по умолчанию; ничего дополнительно не требуется.
+- Активная Claude Code сессия с Anthropic auth (для headless judge через Haiku).
+
+**Cross-platform notes:**
+- `stat` calls используют fallback chain `stat -c %Y || stat -f %m` (GNU first, BSD fallback). На Linux `stat -f %m` возвращает filesystem mountpoint, не mtime — поэтому GNU `-c %Y` обязательно первым. Regression guard: тест W8.5 в `run-tests.sh`.
+- `timeout` команда — на macOS через `brew install coreutils` (даёт и `timeout`, и `gtimeout`).
+- Tested live: macOS bash 3.2.57 на ARM. **Linux real-world untested** (нет Linux env на dev-машине); теоретически совместимо благодаря GNU-first stat order + bash 3.2+ syntax compliance — для production Linux deploy запустите `bash hooks/tests/run-tests.sh` на target machine.
 
 ```bash
 # Из этой папки:
