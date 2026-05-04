@@ -103,8 +103,10 @@ if $ARTIFACT_GATE_ENABLED && $ARTIFACT_EXISTS && $ARTIFACT_VALID; then
   }' "$FDR_ARTIFACT" | awk '{print $1}')
   OPEN_COUNT=${OPEN_COUNT:-0}
   if [[ "$OPEN_COUNT" -gt 0 ]]; then
-    EDITS_MTIME=$(stat -f %m "$EDITS_LOG" 2>/dev/null || stat -c %Y "$EDITS_LOG" 2>/dev/null || echo 0)
-    ART_MTIME=$(stat -f %m "$FDR_ARTIFACT" 2>/dev/null || stat -c %Y "$FDR_ARTIFACT" 2>/dev/null || echo 0)
+    # GNU first (см. note в fdr-challenge.sh): Linux `stat -f` = filesystem stats,
+    # возвращает mountpoint вместо mtime → ломает арифметическое сравнение.
+    EDITS_MTIME=$(stat -c %Y "$EDITS_LOG" 2>/dev/null || stat -f %m "$EDITS_LOG" 2>/dev/null || echo 0)
+    ART_MTIME=$(stat -c %Y "$FDR_ARTIFACT" 2>/dev/null || stat -f %m "$FDR_ARTIFACT" 2>/dev/null || echo 0)
     if [[ "$EDITS_MTIME" -gt "$ART_MTIME" ]]; then
       BLOCK_REASONS+=("Open findings ($OPEN_COUNT) + new edits detected after FDR artifact (edits mtime > artifact mtime). Invoke /fdr to recheck.")
     fi

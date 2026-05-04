@@ -81,7 +81,10 @@ PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 # old timeout, network failure judge'а etc), сбрасываем. Иначе stale state блокирует все
 # следующие сессии этого SID после рестарта.
 if [[ -f "$HISTORY_FILE" ]]; then
-  HIST_MTIME=$(stat -f %m "$HISTORY_FILE" 2>/dev/null || stat -c %Y "$HISTORY_FILE" 2>/dev/null || echo 0)
+  # GNU first: на Linux `stat -f %m FILE` возвращает mountpoint (filesystem info),
+  # exit 0 — fallback не сработает, и HIST_MTIME будет строкой "/" → арифметика падает.
+  # `stat -c %Y` (GNU) → fail на macOS → fallback к BSD `stat -f %m` (mtime epoch).
+  HIST_MTIME=$(stat -c %Y "$HISTORY_FILE" 2>/dev/null || stat -f %m "$HISTORY_FILE" 2>/dev/null || echo 0)
   HIST_AGE=$(( $(date +%s) - HIST_MTIME ))
   if [[ "$HIST_AGE" -gt "$STALE_AGE_SEC" ]]; then
     rm -f "$HISTORY_FILE" 2>/dev/null || true

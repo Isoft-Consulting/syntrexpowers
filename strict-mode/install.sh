@@ -81,7 +81,8 @@ NOW_EPOCH=$(date +%s)
 shopt -s nullglob
 for orphan in "$HOOKS_DIR"/*.new.* "$HOOKS_DIR"/tests/*.new.*; do
   [[ -f "$orphan" ]] || continue
-  ORPHAN_MTIME=$(stat -f %m "$orphan" 2>/dev/null || stat -c %Y "$orphan" 2>/dev/null || echo 0)
+  # GNU first: Linux `stat -f %m` = mountpoint (filesystem stats), не mtime epoch.
+  ORPHAN_MTIME=$(stat -c %Y "$orphan" 2>/dev/null || stat -f %m "$orphan" 2>/dev/null || echo 0)
   AGE=$(( NOW_EPOCH - ORPHAN_MTIME ))
   if [[ "$AGE" -lt 60 ]]; then
     ORPHAN_SKIPPED=$((ORPHAN_SKIPPED + 1))
