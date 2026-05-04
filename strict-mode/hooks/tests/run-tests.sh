@@ -820,6 +820,8 @@ declare -a F6_FIRE=(
   "Шаблон «Verdict: 4 findings closed»"
   "0 проблем"
   "Итог: **all findings resolved**"
+  "Все findings закрыто"
+  "5 замечаний закрыто"
 )
 for phrase in "${F6_FIRE[@]}"; do
   SID="f6f-$(date +%s%N | head -c 15)"
