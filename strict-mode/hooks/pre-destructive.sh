@@ -111,10 +111,39 @@ if [[ -n "$COMBINED_PROTECTED" ]]; then
   [[ -f "$PROJECT_PROTECTED" ]] && grep -v '^#' "$PROJECT_PROTECTED" 2>/dev/null | grep -v '^$' >> "$COMBINED_PROTECTED"
 fi
 
+# Read-only command skip: `cat /etc/passwd`, `ls /etc/`, `grep -r /etc/` — НЕ destructive,
+# не должны trigger'ить protected-path block. Проверяем первый non-env token команды.
+# Skip protected scan если первый command — из read-only allowlist.
+FIRST_CMD=$(printf '%s' "$CMD" | awk '
+  {
+    # Skip env-prefix tokens (FOO=bar, KEY=val) — берём первый command-name
+    for (i = 1; i <= NF; i++) {
+      if ($i !~ /=/) { print $i; exit }
+    }
+  }')
+SKIP_PROTECTED=false
+case "${FIRST_CMD##*/}" in
+  cat|less|more|head|tail|ls|grep|egrep|fgrep|rgrep|rg|awk|wc|file|stat|which|type|ps|history|env|printenv|md5|md5sum|shasum|sha256sum|cmp|diff|column|sort|uniq|cut|tr)
+    SKIP_PROTECTED=true
+    ;;
+  find)
+    # find — read-only ТОЛЬКО если нет -delete / -exec rm
+    if ! printf '%s' "$CMD" | grep -qE '\-delete\b|\-exec[[:space:]]+rm'; then
+      SKIP_PROTECTED=true
+    fi
+    ;;
+  sed)
+    # sed -n (no-print mode), sed -E без in-place edit — read-only
+    if ! printf '%s' "$CMD" | grep -qE '\-i\b|\-\-in-place'; then
+      SKIP_PROTECTED=true
+    fi
+    ;;
+esac
+
 # Extract path-like tokens из command: что после `>`, `>>`, mv/cp/rm targets, ssh paths.
 # Простая heuristic: сплит по space/tab/`,`/`;`/`>`/`<` и filter only path-like tokens.
 PROTECTED_HIT=""
-if [[ -s "$COMBINED_PROTECTED" ]]; then
+if [[ -s "$COMBINED_PROTECTED" ]] && ! $SKIP_PROTECTED; then
   # Извлекаем все subString'ы выглядящие как абс. пути или ~-relative.
   # tr пропускает remaining chars, awk фильтрует по starts-with-/ или ~.
   CMD_TOKENS=$(printf '%s' "$CMD" | tr ';|&<>(){}=' '\n\n\n\n\n\n\n\n\n\n' | tr -s '[:space:]' '\n' | awk '/^(\/|~\/|\.\.\/|\.\/)/ {print}' | sort -u)

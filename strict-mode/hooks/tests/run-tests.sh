@@ -2293,6 +2293,80 @@ else
 fi
 
 echo ""
+echo "=== W11: pre-destructive on real-world commands from session transcripts ==="
+# Реальные destructive команды извлечённые из ~/.claude/projects/*.jsonl
+# transcripts (balancer-prod, core, инвентори). Кейсы из field — не synthetic.
+
+declare -a W11_BLOCK=(
+  # Реальный rm-rf с variable expansion (из core deploy)
+  'rm -rf "$d/"'
+  # Real plugin cleanup (из core deploy скрипта)
+  'rm -f /opt/core-deploy/shared/plugins/bl-widgets/Actions/ListWidgets.php'
+  # User reported: ALTER TABLE на 23010 rows без backup
+  'mysql -u root -e "ALTER TABLE users ADD COLUMN x VARCHAR(255)"'
+  # User reported: systemctl restart рвал FastCGI workers
+  'systemctl restart php-fpm'
+  # Migration runner — pattern ловит
+  'php artisan migrate --force'
+  # Git destructive
+  'git reset --hard HEAD~1'
+  'git push --force-with-lease origin main'
+  'git checkout -- file.php'
+  # SSH remote destructive — host args содержат rm -rf
+  'ssh user@65.108.108.230 "rm -rf /tmp/cache"'
+  # Mass delete через find -delete (Phase A pattern coverage)
+  'find ./old-build -delete'
+  # Container/k8s destructive
+  'kubectl delete deployment api'
+  'docker rm -f mysql_test'
+  # Package
+  'apt-get remove --purge nginx'
+  # DROP variants
+  'psql -c "DROP DATABASE staging"'
+  'mysql -e "TRUNCATE TABLE sessions"'
+)
+
+declare -a W11_PASS=(
+  # Read-only commands — должны passing
+  'ls -la /tmp'
+  'cat /etc/hosts'
+  'grep -r "TODO" /Users/andrey/strict-mode-bundle/'
+  'git status'
+  'git log --oneline -10'
+  'find . -name "*.go" -type f'
+  'ps aux | grep nginx'
+  'docker ps'
+  'kubectl get pods'
+  # Build/compile — non-destructive
+  'npm run build'
+  'cargo test'
+)
+
+for cmd in "${W11_BLOCK[@]}"; do
+  ESC=$(printf '%s' "$cmd" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+  out=$(echo "{\"session_id\":\"w11-$$\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":$ESC}}" | "$HOOKS_DIR/pre-destructive.sh" 2>&1)
+  ec=$?
+  short=$(echo "$cmd" | head -c 50)
+  if [[ "$ec" = "2" ]]; then
+    printf '  ✓ w11-block: %s\n' "$short"; PASSED=$((PASSED + 1))
+  else
+    printf '  ✗ w11-block-MISSED: %s (exit=%s)\n' "$short" "$ec"; FAIL_NAMES+=("w11-block-$short"); FAILED=$((FAILED + 1))
+  fi
+done
+
+for cmd in "${W11_PASS[@]}"; do
+  ESC=$(printf '%s' "$cmd" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+  out=$(echo "{\"session_id\":\"w11-pass-$$\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":$ESC}}" | "$HOOKS_DIR/pre-destructive.sh" 2>&1)
+  ec=$?
+  short=$(echo "$cmd" | head -c 50)
+  if [[ "$ec" = "0" ]]; then
+    printf '  ✓ w11-pass: %s\n' "$short"; PASSED=$((PASSED + 1))
+  else
+    printf '  ✗ w11-pass-FALSE-POSITIVE: %s (exit=%s)\n' "$short" "$ec"; FAIL_NAMES+=("w11-pass-$short"); FAILED=$((FAILED + 1))
+  fi
+done
+
+echo ""
 echo "=== W10: prompt-inject periodic re-prime (Phase B-5) ==="
 # Setup: установить fake CLAUDE.md в test HOME
 echo "# Test rules global" > "$HOME/.claude/CLAUDE.md"
