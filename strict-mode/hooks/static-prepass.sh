@@ -95,12 +95,22 @@ elif command -v gtimeout >/dev/null 2>&1; then
   TIMEOUT_CMD="gtimeout 20"
 fi
 
-# Запуск каждого аналайзера в фоне, lock + log per analyzer.
+# Запуск каждого аналайзера в фоне, mkdir-mutex + log per analyzer.
+# mkdir() atomic на POSIX FS — кросс-платформенный mutex без flock dependency.
+# Concurrent same-file invocation (два быстрых Edit одного файла → две parallel
+# запусков static-prepass с одинаковым SAFE_PATH): второй увидит существующий
+# lockdir и skip'нет — primary analyzer завершит работу единолично.
 for analyzer in "${ANALYZERS[@]}"; do
   LOG_FILE="$STATE_DIR/prepass-${SID}-${SAFE_PATH}-${analyzer}.log"
-  LOCK_FILE="${LOG_FILE}.lock"
+  LOCK_DIR="${LOG_FILE}.lockdir"
+  LOCK_FILE="${LOG_FILE}.lock"  # mtime-marker для health-check sweep (spec §4.3.1)
 
-  # Creator: touch lock ДО запуска analyzer (spec §4.3.1 Lock contract)
+  # Atomic mutex: mkdir либо succeeds (мы — primary), либо fails (другой process).
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    # Уже есть active analyzer для этого (sid, file, analyzer) → skip.
+    continue
+  fi
+  # Marker file для legacy health-check sweep + observability
   touch "$LOCK_FILE" 2>/dev/null
 
   case "$analyzer" in
@@ -134,7 +144,7 @@ for analyzer in "${ANALYZERS[@]}"; do
   # Subshell с trap чтобы lock cleanup'нулся при kill (spec §4.3.1 Cleaner happy/stale)
   # nohup + & — detach от parent, tool result не ждёт
   (
-    trap 'rm -f "$LOCK_FILE" 2>/dev/null' EXIT INT TERM
+    trap 'rm -f "$LOCK_FILE" 2>/dev/null; rmdir "$LOCK_DIR" 2>/dev/null' EXIT INT TERM
     cd "$PROJECT_DIR" 2>/dev/null
     {
       echo "[static-prepass] analyzer=$analyzer file=$FILE pid=$$"
@@ -147,6 +157,7 @@ for analyzer in "${ANALYZERS[@]}"; do
       echo "[static-prepass] exit_code=$EC end: $(date -Iseconds 2>/dev/null || date)"
     } > "$LOG_FILE" 2>&1
     rm -f "$LOCK_FILE" 2>/dev/null
+    rmdir "$LOCK_DIR" 2>/dev/null
   ) &
   disown 2>/dev/null || true
 done

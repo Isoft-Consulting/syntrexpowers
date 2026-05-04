@@ -1947,6 +1947,145 @@ else
 fi
 rm -rf "$W7DIR"
 
+# W7.10: concurrent same-file invocation — second call видит lockdir и skip'ает
+if command -v go >/dev/null 2>&1; then
+  W7CDIR=$(mktemp -d -t w7-conc.XXXXXX)
+  cat > "$W7CDIR/go.mod" <<'EOF'
+module test
+go 1.21
+EOF
+  cat > "$W7CDIR/main.go" <<'EOF'
+package main
+func main() {}
+EOF
+  W7CSID="w7-conc-$(date +%s%N | head -c 12)"
+  # Симулируем active lockdir первого процесса вручную (создаём перед invocation)
+  PRESPATH=$(printf '%s' "$W7CDIR/main.go" | tr '/' '_' | tr -cd '[:alnum:]._-' | head -c 200)
+  EXISTING_LOCK="$HOME/.claude/state/prepass-${W7CSID}-${PRESPATH}-go-vet.log.lockdir"
+  mkdir -p "$EXISTING_LOCK"
+  # Invoke static-prepass — должен skip (lockdir уже existing)
+  CLAUDE_PROJECT_DIR="$W7CDIR" "$HOOKS_DIR/static-prepass.sh" <<< "{\"session_id\":\"$W7CSID\",\"tool_input\":{\"file_path\":\"$W7CDIR/main.go\"}}" >/dev/null 2>&1
+  sleep 1
+  # Лог НЕ должен быть создан (lock exists → skip)
+  LOG="$HOME/.claude/state/prepass-${W7CSID}-${PRESPATH}-go-vet.log"
+  if [[ ! -f "$LOG" ]]; then
+    printf '  ✓ w7-concurrent-skip-on-existing-lock\n'; PASSED=$((PASSED + 1))
+  else
+    printf '  ✗ w7-concurrent-skip-on-existing-lock (log created despite lock)\n'; FAIL_NAMES+=("w7-concurrent-skip-on-existing-lock"); FAILED=$((FAILED + 1))
+  fi
+  # Cleanup
+  rmdir "$EXISTING_LOCK" 2>/dev/null
+  rm -f "$HOME/.claude/state/prepass-${W7CSID}-"* 2>/dev/null
+  rm -rf "$W7CDIR"
+else
+  printf '  ⏭ w7-concurrent-skip-on-existing-lock (go not installed)\n'
+fi
+
+# W7.11: 20s timeout — analyzer которое hangs > timeout получает kill
+# Симулируем через mock-analyzer (sleep 30) в тестовом PROJECT_DIR с подменой PATH.
+W7TDIR=$(mktemp -d -t w7-timeout.XXXXXX)
+mkdir -p "$W7TDIR/fake-bin"
+cat > "$W7TDIR/fake-bin/staticcheck" <<'EOF'
+#!/usr/bin/env bash
+sleep 30
+echo "should not reach"
+EOF
+chmod +x "$W7TDIR/fake-bin/staticcheck"
+cat > "$W7TDIR/go.mod" <<'EOF'
+module test
+go 1.21
+EOF
+cat > "$W7TDIR/main.go" <<'EOF'
+package main
+func main() {}
+EOF
+W7TSID="w7-timeout-$(date +%s%N | head -c 12)"
+# Override PATH чтобы наш fake staticcheck находился первым
+T_START=$(date +%s)
+PATH="$W7TDIR/fake-bin:$PATH" CLAUDE_PROJECT_DIR="$W7TDIR" "$HOOKS_DIR/static-prepass.sh" <<< "{\"session_id\":\"$W7TSID\",\"tool_input\":{\"file_path\":\"$W7TDIR/main.go\"}}" >/dev/null 2>&1
+# Hook сразу exit'ит (nohup background). Wait для analyzer kill (timeout 20s + buffer)
+TPATH_SAFE=$(printf '%s' "$W7TDIR/main.go" | tr '/' '_' | tr -cd '[:alnum:]._-' | head -c 200)
+TLOG="$HOME/.claude/state/prepass-${W7TSID}-${TPATH_SAFE}-staticcheck.log"
+for i in $(seq 1 30); do
+  sleep 1
+  if [[ -f "$TLOG" ]] && grep -q "exit_code=" "$TLOG" 2>/dev/null; then break; fi
+done
+if [[ -f "$TLOG" ]] && grep -qE "exit_code=124|exit_code=137" "$TLOG"; then
+  T_DUR=$(( $(date +%s) - T_START ))
+  printf '  ✓ w7-timeout-kills-hung-analyzer (~%ss, timeout exit code)\n' "$T_DUR"; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w7-timeout-kills-hung-analyzer (log: %s)\n' "$(cat "$TLOG" 2>/dev/null | tail -3)"; FAIL_NAMES+=("w7-timeout-kills-hung-analyzer"); FAILED=$((FAILED + 1))
+fi
+rm -f "$HOME/.claude/state/prepass-${W7TSID}-"* 2>/dev/null
+rm -rf "$W7TDIR"
+
+# W7.12: trap cleanup при kill subshell — kill mid-analyzer удаляет lockdir
+W7KDIR=$(mktemp -d -t w7-kill.XXXXXX)
+cat > "$W7KDIR/go.mod" <<'EOF'
+module test
+go 1.21
+EOF
+cat > "$W7KDIR/main.go" <<'EOF'
+package main
+func main() {}
+EOF
+W7KSID="w7-kill-$(date +%s%N | head -c 12)"
+KPATH_SAFE=$(printf '%s' "$W7KDIR/main.go" | tr '/' '_' | tr -cd '[:alnum:]._-' | head -c 200)
+# Run static-prepass (запускает background subshell)
+if command -v go >/dev/null 2>&1; then
+  CLAUDE_PROJECT_DIR="$W7KDIR" "$HOOKS_DIR/static-prepass.sh" <<< "{\"session_id\":\"$W7KSID\",\"tool_input\":{\"file_path\":\"$W7KDIR/main.go\"}}" >/dev/null 2>&1
+  # Wait для completion + trap fire
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    sleep 0.5
+    if [[ ! -d "$HOME/.claude/state/prepass-${W7KSID}-${KPATH_SAFE}-go-vet.log.lockdir" ]] && [[ -f "$HOME/.claude/state/prepass-${W7KSID}-${KPATH_SAFE}-go-vet.log" ]]; then break; fi
+  done
+  # Lockdir должен быть удалён trap'ом после analyzer завершения
+  if [[ ! -d "$HOME/.claude/state/prepass-${W7KSID}-${KPATH_SAFE}-go-vet.log.lockdir" ]]; then
+    printf '  ✓ w7-trap-cleanup-lockdir\n'; PASSED=$((PASSED + 1))
+  else
+    printf '  ✗ w7-trap-cleanup-lockdir (lockdir still exists)\n'; FAIL_NAMES+=("w7-trap-cleanup-lockdir"); FAILED=$((FAILED + 1))
+  fi
+  rm -f "$HOME/.claude/state/prepass-${W7KSID}-"* 2>/dev/null
+  rmdir "$HOME/.claude/state/prepass-${W7KSID}-"*.lockdir 2>/dev/null
+else
+  printf '  ⏭ w7-trap-cleanup-lockdir (go not installed)\n'
+fi
+rm -rf "$W7KDIR"
+
+# W7.13: install.sh --enable-wave3 регистрирует static-prepass в settings.json
+W7ENV=$(mktemp -d -t w7-env.XXXXXX)
+HOME="$W7ENV" bash "$(cd "$HOOKS_DIR/.." && pwd)/install.sh" --enable-wave3 >/dev/null 2>&1
+PT_HOOKS=$(jq '.hooks.PostToolUse[0].hooks | length' "$W7ENV/.claude/settings.json" 2>/dev/null)
+if [[ "$PT_HOOKS" = "2" ]]; then
+  printf '  ✓ w7-enable-wave3-registers-prepass\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w7-enable-wave3-registers-prepass (PostToolUse hooks count=%s, expected 2)\n' "$PT_HOOKS"; FAIL_NAMES+=("w7-enable-wave3-registers-prepass"); FAILED=$((FAILED + 1))
+fi
+SP_PRESENT=$(jq -r '.hooks.PostToolUse[0].hooks[] | select(.command | contains("static-prepass")) | .command' "$W7ENV/.claude/settings.json" 2>/dev/null)
+if [[ -n "$SP_PRESENT" ]]; then
+  printf '  ✓ w7-static-prepass-cmd-in-settings\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w7-static-prepass-cmd-in-settings\n'; FAIL_NAMES+=("w7-static-prepass-cmd-in-settings"); FAILED=$((FAILED + 1))
+fi
+PERMS=$(jq -r '.permissions.allow[]' "$W7ENV/.claude/settings.json" 2>/dev/null | tr '\n' ' ')
+if [[ "$PERMS" == *"Skill(*)"* && "$PERMS" == *"Agent(*)"* ]]; then
+  printf '  ✓ w7-enable-wave3-permissions\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w7-enable-wave3-permissions (got: %s)\n' "$PERMS"; FAIL_NAMES+=("w7-enable-wave3-permissions"); FAILED=$((FAILED + 1))
+fi
+rm -rf "$W7ENV"
+
+# W7.14: install.sh БЕЗ --enable-wave3 НЕ регистрирует static-prepass
+W7DENV=$(mktemp -d -t w7-denv.XXXXXX)
+HOME="$W7DENV" bash "$(cd "$HOOKS_DIR/.." && pwd)/install.sh" >/dev/null 2>&1
+PT_HOOKS=$(jq '.hooks.PostToolUse[0].hooks | length' "$W7DENV/.claude/settings.json" 2>/dev/null)
+if [[ "$PT_HOOKS" = "1" ]]; then
+  printf '  ✓ w7-no-wave3-no-prepass-registration\n'; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w7-no-wave3-no-prepass-registration (count=%s, expected 1)\n' "$PT_HOOKS"; FAIL_NAMES+=("w7-no-wave3-no-prepass-registration"); FAILED=$((FAILED + 1))
+fi
+rm -rf "$W7DENV"
+
 # W7.9: bash -n syntax check
 if bash -n "$HOOKS_DIR/static-prepass.sh" 2>/dev/null; then
   printf '  ✓ w7-static-prepass-syntax\n'; PASSED=$((PASSED + 1))
@@ -1987,15 +2126,35 @@ else
 fi
 rm -f "$HOME/.claude/state/fdr-cycles-${W8SID}.jsonl" "$HOME/.claude/state/fired-hashes-${W8SID}.log"
 
-# W8.2: source-level guard — fdr-challenge.sh не должен содержать $"..." для REASON build
-# ($"..." это i18n localized strings, escape sequences не обрабатываются)
-if grep -nE 'REASON(=|\+=)\$"' "$HOOKS_DIR/fdr-challenge.sh" >/dev/null 2>&1; then
-  matches=$(grep -nE 'REASON(=|\+=)\$"' "$HOOKS_DIR/fdr-challenge.sh")
+# W8.2: source-level guard — fdr-challenge.sh не должен содержать $"..." для ANY REASON
+# build (включая MV_REASON, future *_REASON variables). $"..." это i18n localized strings,
+# escape sequences не обрабатываются.
+if grep -nE '[A-Z_]*REASON[A-Z_]*(=|\+=)\$"' "$HOOKS_DIR/fdr-challenge.sh" >/dev/null 2>&1; then
+  matches=$(grep -nE '[A-Z_]*REASON[A-Z_]*(=|\+=)\$"' "$HOOKS_DIR/fdr-challenge.sh")
   printf '  ✗ w8-no-i18n-reason-strings (found $\"...\":\n%s)\n' "$matches"
   FAIL_NAMES+=("w8-no-i18n-reason-strings"); FAILED=$((FAILED + 1))
 else
   printf '  ✓ w8-no-i18n-reason-strings\n'; PASSED=$((PASSED + 1))
 fi
+
+# W8.3: MV_REASON live newline rendering (cycle 0 missing-verdict path)
+W8MVSID="w8-mv-$(date +%s%N | head -c 12)"
+W8MVTR="$TEST_STATE/w8-mv-tr.jsonl"
+cat > "$W8MVTR" <<'JSONL'
+{"type":"user","message":{"content":"проведи фдр"}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"x.go"}}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Закончил round-7 fixes. Двигаемся дальше."}]}}
+JSONL
+W8MVJSON="{\"session_id\":\"$W8MVSID\",\"transcript_path\":\"$W8MVTR\",\"hook_event_name\":\"Stop\"}"
+W8MVOUT=$(echo "$W8MVJSON" | "$HOOKS_DIR/fdr-challenge.sh" 2>&1)
+W8MVREASON=$(printf '%s' "$W8MVOUT" | jq -r '.reason' 2>/dev/null)
+W8MVLINES=$(printf '%s' "$W8MVREASON" | wc -l | tr -d ' ')
+if [[ "$W8MVLINES" -ge 4 ]] && ! printf '%s' "$W8MVREASON" | grep -q '\\n'; then
+  printf '  ✓ w8-mv-reason-real-newlines (%s lines)\n' "$W8MVLINES"; PASSED=$((PASSED + 1))
+else
+  printf '  ✗ w8-mv-reason-real-newlines (lines=%s, literal-bs-n=%s)\n' "$W8MVLINES" "$(printf '%s' "$W8MVREASON" | grep -c '\\n')"; FAIL_NAMES+=("w8-mv-reason-real-newlines"); FAILED=$((FAILED + 1))
+fi
+rm -f "$HOME/.claude/state/fired-hashes-${W8MVSID}.log" "$HOME/.claude/state/fdr-cycles-${W8MVSID}.jsonl"
 
 echo ""
 echo "==========================================="
