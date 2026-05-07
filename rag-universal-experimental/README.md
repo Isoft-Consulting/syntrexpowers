@@ -81,7 +81,7 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
 | Tool | Surface | Purpose |
 |---|---|---|
 | `index` / `rag_reindex` | CLI, MCP | Build the local `.rag-index`. |
-| `status` / `rag_status` | CLI, MCP | Inspect index counts, manifest, and stale config state. |
+| `status` / `rag_status` | CLI, MCP | Inspect index counts, manifest, stale config state, and source-change state. |
 | `search` / `rag_search` | CLI, MCP | Ranked chunk retrieval with source/type filters. |
 | `symbol` / `rag_symbol` | CLI, MCP | Exact symbol lookup. |
 | `deps` / `rag_deps` | CLI, MCP | Forward or reverse dependency edge lookup. |
@@ -95,9 +95,10 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
   symbols.json
   deps.json
   files.json
+  search.sqlite
 ```
 
-Do not commit generated index artifacts. The repository `.gitignore` excludes `.rag-index/`.
+`search.sqlite` stores precomputed postings/vector data used by `rag_search`, and `manifest.json` stores a source-state fingerprint so `rag_status` can report when indexed files changed. Do not commit generated index artifacts. The repository `.gitignore` excludes `.rag-index/`.
 
 ## Tests
 
@@ -115,16 +116,16 @@ python3 tools/rag.py index --root .. --config rag.config.example.json
 python3 tools/rag.py eval-quality --root .. --config rag.config.example.json --cases evals/syntrexpowers-gold.json
 ```
 
-Current `syntrexpowers` gold-set result after v2 lexical ranking:
+Current `syntrexpowers` gold-set result after v5 lexical ranking:
 
 | Mode | Top-1 | Top-3 | Top-5 | MRR |
 |---|---:|---:|---:|---:|
-| RAG v2 | 8/10 | 10/10 | 10/10 | 0.900 |
+| RAG v5 | 8/10 | 10/10 | 10/10 | 0.900 |
 | Keyword baseline | 6/10 | 10/10 | 10/10 | 0.767 |
 
 ## Current Limits
 
 - Search is lexical in v0, not embedding-semantic.
-- Partial reindex is not implemented.
+- Partial reindex is not implemented; use `rag_status` to detect stale source files and `rag_reindex` for a full rebuild.
 - Dependency extraction is shallow import/use extraction, not a call graph.
 - JSON schemas document artifact shape but are not enforced by an external validator in v0 tests.

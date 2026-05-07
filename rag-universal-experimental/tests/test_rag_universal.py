@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,6 +59,8 @@ class RagUniversalTest(unittest.TestCase):
         self.assertNotIn(".mcp.json", sources)
         self.assertFalse(any("should-not-be-indexed" in chunk["text"] for chunk in chunks))
         self.assertTrue((root / ".rag-index" / "manifest.json").exists())
+        self.assertTrue((root / ".rag-index" / "search.sqlite").exists())
+        self.assertEqual(manifest["artifacts"]["search_cache"], "search.sqlite")
 
     def test_search_symbol_and_deps(self) -> None:
         root = self.make_project()
@@ -89,6 +92,13 @@ class RagUniversalTest(unittest.TestCase):
         status = index_status(root)
         self.assertTrue(status["exists"])
         self.assertFalse(status["stale"])
+
+        (root / "CHANGELOG.md").write_text("# Changelog\n\nNew indexed document.", encoding="utf-8")
+        stale = index_status(root)
+        self.assertTrue(stale["stale"])
+        self.assertIn("source files changed", stale["reason"])
+        build_index(root)
+        self.assertFalse(index_status(root)["stale"])
 
         init = handle_message(
             {
@@ -139,6 +149,10 @@ class RagUniversalTest(unittest.TestCase):
         )
         results = json.loads(search.stdout)
         self.assertEqual(results[0]["source"], "README.md")
+
+        with mock.patch("rag_universal.core.load_chunks", side_effect=AssertionError("search cache was bypassed")):
+            cached_results = search_index(root, None, "strict stop guard", top_k=1)
+        self.assertEqual(cached_results[0]["source"], "README.md")
 
     def test_cli_config_can_be_relative_to_current_directory(self) -> None:
         root = self.make_project()

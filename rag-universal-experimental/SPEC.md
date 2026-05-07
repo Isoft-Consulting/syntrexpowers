@@ -54,9 +54,10 @@ Generated data is local and should not be committed:
   symbols.json
   deps.json
   files.json
+  search.sqlite
 ```
 
-`manifest.json` is the integrity entry point. It records schema version, project root, config hash, index counts, tokenizer/chunker versions, and generated artifact names.
+`manifest.json` is the integrity entry point. It records schema version, project root, config hash, index counts, tokenizer/chunker/search versions, a source-state fingerprint, and generated artifact names. `search.sqlite` stores precomputed postings/vector data for low-latency `rag_search`.
 
 ## Safety Defaults
 
@@ -82,7 +83,7 @@ Projects can loosen the rules explicitly in their own `rag.config.json`, but the
 ## Acceptance Criteria
 
 - `python3 tools/rag.py index --root <repo> --config <config>` builds all artifact files.
-- `python3 tools/rag.py status --root <repo> --config <config>` reports index counts and stale config state.
+- `python3 tools/rag.py status --root <repo> --config <config>` reports index counts, stale config state, and stale source-file state.
 - `python3 tools/rag.py search --root <repo> --config <config> "query"` returns ranked chunks.
 - `python3 tools/rag.py symbol --root <repo> --config <config> Name` returns exact symbol matches.
 - `python3 tools/rag.py deps --root <repo> --config <config> target` returns dependency edges.

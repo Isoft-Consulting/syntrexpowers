@@ -87,6 +87,7 @@
     "source_weight": 0.20,
     "heading_weight": 0.08,
     "max_chunks_per_source": 1,
+    "candidate_limit": 5000,
     "expand_english_synonyms": false,
     "preview_chars": 500
   }

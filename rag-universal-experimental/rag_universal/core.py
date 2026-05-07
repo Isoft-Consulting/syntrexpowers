@@ -7,6 +7,7 @@ import json
 import math
 import os
 import re
+import sqlite3
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -17,9 +18,13 @@ MANIFEST_VERSION = "rag.index-manifest.v1"
 CHUNK_VERSION = "rag.chunk.v1"
 SYMBOL_VERSION = "rag.symbol.v1"
 DEP_VERSION = "rag.dep-edge.v1"
+SOURCE_STATE_VERSION = "rag.source-state.v1"
+SEARCH_CACHE_VERSION = "rag.search-cache.v1"
 CHUNKER_VERSION = "lexical-chunker.v1"
 TOKENIZER_VERSION = "unicode-tokenizer.v1"
-SEARCH_VERSION = "hash-vector-bm25.v2"
+SEARCH_VERSION = "hash-vector-bm25.v5"
+
+_SEARCH_CACHE_CONNECTIONS: dict[tuple[str, float, int], sqlite3.Connection] = {}
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "schema_version": CONFIG_VERSION,
@@ -110,6 +115,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "source_weight": 0.20,
         "heading_weight": 0.08,
         "max_chunks_per_source": 1,
+        "candidate_limit": 5000,
         "preview_chars": 500,
         "expand_english_synonyms": False,
         "synonyms": {
@@ -528,10 +534,14 @@ def extract_deps(text: str, source: str) -> list[dict[str, Any]]:
     return deps
 
 
-def write_json_atomic(path: Path, value: Any) -> None:
+def write_json_atomic(path: Path, value: Any, *, pretty: bool = True) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + f".tmp-{os.getpid()}")
-    tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if pretty:
+        payload = json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
+    else:
+        payload = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=False)
+    tmp.write_text(payload + "\n", encoding="utf-8")
     os.replace(tmp, path)
 
 
@@ -539,6 +549,145 @@ def write_text_atomic(path: Path, value: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + f".tmp-{os.getpid()}")
     tmp.write_text(value, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def summarize_source_state(entries: list[tuple[str, int, int]]) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    for source, size, mtime_ns in sorted(entries):
+        digest.update(source.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(str(size).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(str(mtime_ns).encode("ascii"))
+        digest.update(b"\n")
+    return {
+        "schema_version": SOURCE_STATE_VERSION,
+        "fingerprint": digest.hexdigest(),
+        "num_files": len(entries),
+    }
+
+
+def scan_source_state(root: Path, config: dict[str, Any]) -> dict[str, Any]:
+    entries: list[tuple[str, int, int]] = []
+    for path in iter_indexable_files(root, config):
+        stat = path.stat()
+        entries.append((path.relative_to(root).as_posix(), stat.st_size, stat.st_mtime_ns))
+    return summarize_source_state(entries)
+
+
+def close_search_cache_connections(index_dir: Path) -> None:
+    index_key = str(index_dir.resolve())
+    for cache_key, connection in list(_SEARCH_CACHE_CONNECTIONS.items()):
+        if cache_key[0] == index_key:
+            connection.close()
+            _SEARCH_CACHE_CONNECTIONS.pop(cache_key, None)
+
+
+def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: dict[str, Any]) -> None:
+    search_cfg = config.get("search", {})
+    dim = int(search_cfg.get("hash_dim", 512))
+    preview_chars = int(search_cfg.get("preview_chars", 500))
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + f".tmp-{os.getpid()}")
+    if tmp.exists():
+        tmp.unlink()
+
+    connection = sqlite3.connect(tmp)
+    try:
+        connection.execute("PRAGMA journal_mode=OFF")
+        connection.execute("PRAGMA synchronous=OFF")
+        connection.executescript(
+            """
+            CREATE TABLE meta (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL
+            );
+            CREATE TABLE docs (
+              id INTEGER PRIMARY KEY,
+              source TEXT NOT NULL,
+              heading TEXT NOT NULL,
+              artifact_type TEXT NOT NULL,
+              start_line INTEGER NOT NULL,
+              preview TEXT NOT NULL,
+              source_terms TEXT NOT NULL,
+              heading_terms TEXT NOT NULL,
+              vector TEXT NOT NULL,
+              doc_length INTEGER NOT NULL
+            );
+            CREATE TABLE postings (
+              token TEXT NOT NULL,
+              doc_id INTEGER NOT NULL,
+              freq INTEGER NOT NULL,
+              PRIMARY KEY (token, doc_id)
+            ) WITHOUT ROWID;
+            """
+        )
+
+        doc_rows: list[tuple[int, str, str, str, int, str, str, str, str, int]] = []
+        posting_rows: list[tuple[str, int, int]] = []
+        total_doc_len = 0
+
+        def flush() -> None:
+            if doc_rows:
+                connection.executemany(
+                    "INSERT INTO docs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    doc_rows,
+                )
+                doc_rows.clear()
+            if posting_rows:
+                connection.executemany(
+                    "INSERT INTO postings VALUES (?, ?, ?)",
+                    posting_rows,
+                )
+                posting_rows.clear()
+
+        for doc_index, chunk in enumerate(chunks):
+            source = str(chunk.get("source", ""))
+            heading = str(chunk.get("heading", ""))
+            chunk_type = str(chunk.get("artifact_type", ""))
+            text = str(chunk.get("text", ""))
+            preview = re.sub(r"\s+", " ", text).strip()[:preview_chars]
+
+            counts = token_counts(weighted_document_text(chunk))
+            doc_length = sum(counts.values())
+            total_doc_len += doc_length
+            vector = serialize_vector(hashed_vector(counts, dim))
+            doc_rows.append(
+                (
+                    doc_index,
+                    source,
+                    heading,
+                    chunk_type,
+                    int(chunk.get("start_line", 1)),
+                    preview,
+                    " ".join(sorted(set(tokenize(source)))),
+                    " ".join(sorted(set(tokenize(heading)))),
+                    vector,
+                    doc_length,
+                )
+            )
+            posting_rows.extend((token, doc_index, int(freq)) for token, freq in counts.items())
+            if len(doc_rows) >= 500:
+                flush()
+        flush()
+
+        total_docs = len(chunks)
+        avg_len = total_doc_len / max(total_docs, 1)
+        connection.executemany(
+            "INSERT INTO meta VALUES (?, ?)",
+            [
+                ("schema_version", SEARCH_CACHE_VERSION),
+                ("search_version", SEARCH_VERSION),
+                ("hash_dim", str(dim)),
+                ("total_docs", str(total_docs)),
+                ("avg_len", repr(avg_len)),
+            ],
+        )
+        connection.commit()
+    finally:
+        connection.close()
     os.replace(tmp, path)
 
 
@@ -551,10 +700,13 @@ def build_index(root_arg: str | os.PathLike[str] | None = None, config_path: str
     symbols: list[dict[str, Any]] = []
     deps: list[dict[str, Any]] = []
     files: list[dict[str, Any]] = []
+    source_state_entries: list[tuple[str, int, int]] = []
 
     for path in iter_indexable_files(root, config):
+        stat = path.stat()
         file_chunks, text, raw = chunk_file(path, root, config)
         source = path.relative_to(root).as_posix()
+        source_state_entries.append((source, stat.st_size, stat.st_mtime_ns))
         chunks.extend(file_chunks)
         symbols.extend(extract_symbols(text, source))
         deps.extend(extract_deps(text, source))
@@ -572,6 +724,7 @@ def build_index(root_arg: str | os.PathLike[str] | None = None, config_path: str
         "symbols": "symbols.json",
         "deps": "deps.json",
         "files": "files.json",
+        "search_cache": "search.sqlite",
     }
     manifest = {
         "schema_version": MANIFEST_VERSION,
@@ -585,14 +738,20 @@ def build_index(root_arg: str | os.PathLike[str] | None = None, config_path: str
         "num_chunks": len(chunks),
         "num_symbols": len(symbols),
         "num_deps": len(deps),
+        "source_state": summarize_source_state(source_state_entries),
         "artifacts": artifact_names,
     }
 
     chunk_lines = "".join(json.dumps(chunk, ensure_ascii=False, sort_keys=True) + "\n" for chunk in chunks)
+    close_search_cache_connections(index_dir)
     write_text_atomic(index_dir / artifact_names["chunks"], chunk_lines)
     write_json_atomic(index_dir / artifact_names["symbols"], symbols)
     write_json_atomic(index_dir / artifact_names["deps"], deps)
     write_json_atomic(index_dir / artifact_names["files"], files)
+    write_search_cache_sqlite(index_dir / artifact_names["search_cache"], chunks, config)
+    legacy_search_cache = index_dir / "search-cache.json"
+    if legacy_search_cache.exists():
+        legacy_search_cache.unlink()
     write_json_atomic(index_dir / "manifest.json", manifest)
     return manifest
 
@@ -625,12 +784,54 @@ def load_json_list(path: Path) -> list[dict[str, Any]]:
     return value if isinstance(value, list) else []
 
 
+def load_search_cache(index_dir: Path) -> sqlite3.Connection | None:
+    manifest = load_manifest(index_dir)
+    if not manifest:
+        return None
+    cache_name = manifest.get("artifacts", {}).get("search_cache")
+    if not isinstance(cache_name, str):
+        return None
+    cache_path = index_dir / cache_name
+    if not cache_path.exists():
+        return None
+    stat = cache_path.stat()
+    cache_key = (str(index_dir.resolve()), stat.st_mtime, stat.st_size)
+    cached = _SEARCH_CACHE_CONNECTIONS.get(cache_key)
+    if cached is not None:
+        return cached
+
+    connection: sqlite3.Connection | None = None
+    try:
+        connection = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True)
+        connection.row_factory = sqlite3.Row
+        metadata = {str(row["key"]): str(row["value"]) for row in connection.execute("SELECT key, value FROM meta")}
+    except sqlite3.DatabaseError:
+        if connection is not None:
+            connection.close()
+        return None
+    if metadata.get("schema_version") != SEARCH_CACHE_VERSION:
+        connection.close()
+        return None
+    if metadata.get("search_version") != SEARCH_VERSION:
+        connection.close()
+        return None
+
+    index_key = cache_key[0]
+    for old_key, old_connection in list(_SEARCH_CACHE_CONNECTIONS.items()):
+        if old_key[0] == index_key:
+            old_connection.close()
+            _SEARCH_CACHE_CONNECTIONS.pop(old_key, None)
+    _SEARCH_CACHE_CONNECTIONS[cache_key] = connection
+    return connection
+
+
 def index_status(root_arg: str | os.PathLike[str] | None = None, config_path: str | os.PathLike[str] | None = None) -> dict[str, Any]:
     root = resolve_root(root_arg)
     config = load_config(root, config_path)
     index_dir = get_index_dir(root, config)
     manifest = load_manifest(index_dir)
     expected_hash = config_hash(config)
+    current_source_state = scan_source_state(root, config)
     if manifest is None:
         return {
             "exists": False,
@@ -638,6 +839,10 @@ def index_status(root_arg: str | os.PathLike[str] | None = None, config_path: st
             "config_hash": expected_hash,
             "stale": True,
             "reason": "missing manifest",
+            "source_state": {
+                "current": current_source_state,
+                "indexed": None,
+            },
         }
 
     stale_reasons = []
@@ -649,12 +854,21 @@ def index_status(root_arg: str | os.PathLike[str] | None = None, config_path: st
         stale_reasons.append("tokenizer version changed")
     if manifest.get("chunker_version") != CHUNKER_VERSION:
         stale_reasons.append("chunker version changed")
+    indexed_source_state = manifest.get("source_state")
+    if not isinstance(indexed_source_state, dict):
+        stale_reasons.append("missing source state")
+    elif indexed_source_state.get("fingerprint") != current_source_state.get("fingerprint"):
+        stale_reasons.append("source files changed")
     return {
         "exists": True,
         "index_dir": str(index_dir),
         "stale": bool(stale_reasons),
         "reason": ", ".join(stale_reasons) if stale_reasons else None,
         "manifest": manifest,
+        "source_state": {
+            "current": current_source_state,
+            "indexed": indexed_source_state if isinstance(indexed_source_state, dict) else None,
+        },
     }
 
 
@@ -750,6 +964,22 @@ def hashed_vector(counts: Counter[str], dim: int) -> dict[int, float]:
     return {key: value / norm for key, value in vector.items()}
 
 
+def serialize_vector(vector: dict[int, float]) -> str:
+    return " ".join(f"{bucket}:{value:.8g}" for bucket, value in sorted(vector.items()))
+
+
+def cosine_serialized(query_vector: dict[int, float], encoded_vector: str) -> float:
+    if not query_vector or not encoded_vector:
+        return 0.0
+    score = 0.0
+    for item in encoded_vector.split():
+        bucket_text, _, value_text = item.partition(":")
+        if not bucket_text or not value_text:
+            continue
+        score += query_vector.get(int(bucket_text), 0.0) * float(value_text)
+    return score
+
+
 def cosine_sparse(left: dict[int, float], right: dict[int, float]) -> float:
     if not left or not right:
         return 0.0
@@ -785,6 +1015,147 @@ def bm25_scores(query_counts: Counter[str], doc_counts: list[Counter[str]]) -> l
     return scores
 
 
+def overlap_terms(query_terms: set[str], terms: Any) -> float:
+    if not query_terms:
+        return 0.0
+    if isinstance(terms, str):
+        term_set = set(terms.split())
+    elif isinstance(terms, list):
+        term_set = set(str(term) for term in terms)
+    else:
+        return 0.0
+    return len(query_terms & term_set) / len(query_terms)
+
+
+def fetch_cached_docs(connection: sqlite3.Connection, doc_ids: set[int]) -> dict[int, sqlite3.Row]:
+    docs: dict[int, sqlite3.Row] = {}
+    ordered_ids = sorted(doc_ids)
+    for offset in range(0, len(ordered_ids), 800):
+        batch = ordered_ids[offset : offset + 800]
+        placeholders = ",".join("?" for _ in batch)
+        query = (
+            "SELECT id, source, heading, artifact_type, start_line, preview, source_terms, heading_terms, vector "
+            f"FROM docs WHERE id IN ({placeholders})"
+        )
+        for row in connection.execute(query, batch):
+            docs[int(row["id"])] = row
+    return docs
+
+
+def search_precomputed_cache(
+    connection: sqlite3.Connection,
+    config: dict[str, Any],
+    query: str,
+    top_k: int = 5,
+    filter_source: str | None = None,
+    filter_type: str | None = None,
+) -> list[dict[str, Any]]:
+    metadata = {str(row["key"]): str(row["value"]) for row in connection.execute("SELECT key, value FROM meta")}
+    search_cfg = config.get("search", {})
+    dim = int(search_cfg.get("hash_dim", int(metadata.get("hash_dim", 512))))
+    min_score = float(search_cfg.get("min_score", 0.02))
+    vector_weight = float(search_cfg.get("vector_weight", 0.45))
+    bm25_weight = float(search_cfg.get("bm25_weight", 0.35))
+    source_weight = float(search_cfg.get("source_weight", 0.14))
+    heading_weight = float(search_cfg.get("heading_weight", 0.06))
+    max_chunks_per_source = max(1, int(search_cfg.get("max_chunks_per_source", 2)))
+    candidate_limit = max(50, int(search_cfg.get("candidate_limit", 5000)))
+
+    expanded_query = expand_query(query, config)
+    query_counts = token_counts(expanded_query)
+    query_terms = set(query_counts)
+    query_vector = hashed_vector(query_counts, dim)
+
+    total_docs = int(metadata.get("total_docs", 0))
+    avg_len = float(metadata.get("avg_len", 1.0))
+    raw_bm25_by_doc: dict[int, float] = defaultdict(float)
+    k1 = 1.5
+    b = 0.75
+    for token in query_counts:
+        token_rows = list(
+            connection.execute(
+                """
+                SELECT postings.doc_id, postings.freq, docs.doc_length
+                FROM postings
+                JOIN docs ON docs.id = postings.doc_id
+                WHERE postings.token = ?
+                """,
+                (token,),
+            )
+        )
+        if not token_rows:
+            continue
+        df = len(token_rows)
+        idf = math.log((total_docs - df + 0.5) / (df + 0.5) + 1.0)
+        for row in token_rows:
+            doc_index = int(row["doc_id"])
+            freq = int(row["freq"])
+            doc_len = int(row["doc_length"])
+            denom = freq + k1 * (1.0 - b + b * doc_len / max(avg_len, 1.0))
+            raw_bm25_by_doc[doc_index] += idf * (freq * (k1 + 1.0)) / max(denom, 0.001)
+
+    max_bm25 = max(raw_bm25_by_doc.values()) if raw_bm25_by_doc else 0.0
+    if filter_source:
+        candidate_indexes = set(raw_bm25_by_doc)
+    else:
+        ranked_candidates = sorted(raw_bm25_by_doc, key=lambda item: raw_bm25_by_doc[item], reverse=True)
+        candidate_indexes = set(ranked_candidates[:candidate_limit])
+    docs_by_id = fetch_cached_docs(connection, candidate_indexes)
+
+    results: list[dict[str, Any]] = []
+    for index in candidate_indexes:
+        doc = docs_by_id.get(index)
+        if doc is None:
+            continue
+        source = str(doc["source"] or "")
+        chunk_type = str(doc["artifact_type"] or "")
+        if filter_source and filter_source not in source:
+            continue
+        if filter_type and not chunk_type.startswith(filter_type):
+            continue
+        vector_score = max(cosine_serialized(query_vector, str(doc["vector"] or "")), 0.0)
+        bm25 = raw_bm25_by_doc.get(index, 0.0) / max_bm25 if max_bm25 > 0 else 0.0
+        source_match = overlap_terms(query_terms, doc["source_terms"])
+        heading_match = overlap_terms(query_terms, doc["heading_terms"])
+        score = (
+            vector_weight * vector_score
+            + bm25_weight * bm25
+            + source_weight * source_match
+            + heading_weight * heading_match
+        )
+        score *= artifact_boost(source, chunk_type, config)
+        if score < min_score:
+            continue
+        results.append(
+            {
+                "score": round(score, 6),
+                "vector": round(vector_score, 6),
+                "bm25": round(bm25, 6),
+                "source_match": round(source_match, 6),
+                "heading_match": round(heading_match, 6),
+                "source": source,
+                "heading": doc["heading"] or "",
+                "artifact_type": chunk_type,
+                "start_line": doc["start_line"] or 1,
+                "preview": doc["preview"] or "",
+            }
+        )
+
+    results.sort(key=lambda item: (-item["score"], item["source"], item["start_line"]))
+    limit = max(1, min(int(top_k), 50))
+    diverse: list[dict[str, Any]] = []
+    source_counts: Counter[str] = Counter()
+    for result in results:
+        source = str(result["source"])
+        if source_counts[source] >= max_chunks_per_source:
+            continue
+        diverse.append(result)
+        source_counts[source] += 1
+        if len(diverse) >= limit:
+            break
+    return diverse
+
+
 def search_index(
     root_arg: str | os.PathLike[str] | None,
     config_path: str | os.PathLike[str] | None,
@@ -796,6 +1167,10 @@ def search_index(
     root = resolve_root(root_arg)
     config = load_config(root, config_path)
     index_dir = get_index_dir(root, config)
+    search_cache = load_search_cache(index_dir)
+    if search_cache is not None:
+        return search_precomputed_cache(search_cache, config, query, top_k, filter_source, filter_type)
+
     chunks = load_chunks(index_dir)
     if not chunks:
         return []
