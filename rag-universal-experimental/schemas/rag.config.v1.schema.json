@@ -39,6 +39,29 @@
         "max_chunks_per_source": { "type": "integer", "minimum": 1 },
         "candidate_limit": { "type": "integer", "minimum": 1 },
         "explicit_path_boost": { "type": "number", "minimum": 0 },
+        "source_penalties": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["pattern", "multiplier"],
+            "properties": {
+              "pattern": { "type": "string" },
+              "multiplier": { "type": "number", "minimum": 0, "maximum": 1 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "fdr_role_boosts": {
+          "type": "object",
+          "additionalProperties": { "type": "number", "minimum": 0 }
+        },
+        "fdr_query_expansions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
         "expand_english_synonyms": { "type": "boolean" },
         "preview_chars": { "type": "integer", "minimum": 1 },
         "synonyms": {

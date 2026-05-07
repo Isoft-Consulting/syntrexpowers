@@ -83,7 +83,7 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
 | `index` / `rag_reindex` | CLI, MCP | Build the local `.rag-index`. |
 | `status` / `rag_status` | CLI, MCP | Inspect index counts, manifest, stale config state, and source-change state. |
 | `coverage` / `rag_coverage` | CLI, MCP | Explain whether specific paths are indexed or excluded. |
-| `search` / `rag_search` | CLI, MCP | Ranked chunk retrieval with source/type filters. |
+| `search` / `rag_search` | CLI, MCP | Ranked chunk retrieval with source/type filters and optional `mode=fdr` evidence bundling. |
 | `symbol` / `rag_symbol` | CLI, MCP | Exact symbol lookup. |
 | `deps` / `rag_deps` | CLI, MCP | Forward or reverse dependency edge lookup. |
 
@@ -103,6 +103,8 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
 
 `force_include_globs` can include narrow review-critical files from otherwise excluded directories, for example `tests/Unit/*ContractTest.php` while keeping the rest of `tests/` out of the index. `Dockerfile`, `Dockerfile.*`, and `.dockerignore` are included by default because build contracts are common FDR evidence.
 
+Search applies configurable `source_penalties` to downrank high-noise generated artifacts such as `.snapshots/` and demo seeds. `mode=fdr` adds review-oriented query expansion, role boosts, and role-diverse result selection so one search is more likely to return a plan/spec, implementation, test, and build/config evidence bundle together.
+
 ## Tests
 
 ```bash
@@ -116,15 +118,15 @@ tests/run-tests.sh
 
 ```bash
 python3 tools/rag.py index --root .. --config rag.config.example.json
-python3 tools/rag.py eval-quality --root .. --config rag.config.example.json --cases evals/syntrexpowers-gold.json
+python3 tools/rag.py eval-quality --root .. --config rag.config.example.json --cases evals/syntrexpowers-gold.json --mode fdr
 ```
 
 Current `syntrexpowers` gold-set result after v5 lexical ranking:
 
-| Mode | Top-1 | Top-3 | Top-5 | MRR |
-|---|---:|---:|---:|---:|
-| RAG v5 | 8/10 | 10/10 | 10/10 | 0.900 |
-| Keyword baseline | 6/10 | 10/10 | 10/10 | 0.767 |
+| Mode | Top-1 | Top-3 | Top-5 | Top-10 | MRR |
+|---|---:|---:|---:|---:|---:|
+| RAG v5 | 8/10 | 10/10 | 10/10 | 10/10 | 0.900 |
+| Keyword baseline | 6/10 | 10/10 | 10/10 | 10/10 | 0.767 |
 
 ## Current Limits
 

@@ -97,6 +97,31 @@
     "max_chunks_per_source": 1,
     "candidate_limit": 5000,
     "explicit_path_boost": 0.75,
+    "source_penalties": [
+      { "pattern": "**/.snapshots/**", "multiplier": 0.12 },
+      { "pattern": "**/seeds/demo.yaml", "multiplier": 0.25 }
+    ],
+    "fdr_role_boosts": {
+      "plan": 1.06,
+      "spec": 1.06,
+      "implementation": 1.04,
+      "test": 1.08,
+      "build_file": 1.08,
+      "ignore_config": 1.08,
+      "compose_config": 1.04,
+      "config": 1.04,
+      "docs": 1.0,
+      "other": 1.0
+    },
+    "fdr_query_expansions": {
+      "autoload": ["bootstrap", "require", "include", "runtime dependency"],
+      "bash": ["shell script", "macos", "posix", "set -u", "declare"],
+      "dockerfile": ["dockerfile", "image", "build context", "copy", "entrypoint"],
+      "dockerignore": [".dockerignore", "build context", "secrets", ".env", "storage", "dist"],
+      "dry-run": ["dry_run", "--dry-run", "dry run", "exit code"],
+      "migration": ["migrate", "migrations", "run_migrations", "entrypoint"],
+      "rollout": ["deploy", "update", "dispatcher", "controller", "job"]
+    },
     "expand_english_synonyms": false,
     "preview_chars": 500
   }

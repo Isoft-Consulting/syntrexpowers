@@ -24,12 +24,13 @@ Included in v0:
 
 - Config-driven scanner with include, exclude, and secret-deny path rules.
 - Deterministic chunking for Markdown, JSON/YAML-like configs, scripts, and source files.
-- Standard-library lexical vector search and BM25 scoring.
+- Standard-library lexical vector search and BM25 scoring with configurable noise penalties.
+- Optional FDR/review search mode that expands review queries and returns role-diverse evidence bundles.
 - Symbol extraction for common docs and languages.
 - Dependency edge extraction for Python, Ruby, JavaScript/TypeScript, shell, and PHP import forms.
-- CLI commands: `index`, `status`, `search`, `symbol`, `deps`, `serve-mcp`.
+- CLI commands: `index`, `status`, `coverage`, `search`, `symbol`, `deps`, `eval-quality`, `serve-mcp`.
 - Quality command: `eval-quality` compares RAG retrieval against a keyword baseline on gold-query files.
-- MCP tools: `rag_search`, `rag_reindex`, `rag_status`, `rag_symbol`, `rag_deps`.
+- MCP tools: `rag_search`, `rag_reindex`, `rag_status`, `rag_coverage`, `rag_symbol`, `rag_deps`.
 - JSON schemas for config and generated artifacts.
 - Provider-neutral operation: Codex, DeepSeek, Claude, or another model client can use the same stdio server command if it supports MCP.
 
@@ -88,8 +89,9 @@ Projects can loosen the rules explicitly in their own `rag.config.json`, but the
 - `python3 tools/rag.py status --root <repo> --config <config>` reports index counts, stale config state, and stale source-file state.
 - `python3 tools/rag.py coverage --root <repo> --config <config> <path>...` reports whether exact paths are indexed or why they are excluded.
 - `python3 tools/rag.py search --root <repo> --config <config> "query"` returns ranked chunks.
+- `python3 tools/rag.py search --root <repo> --config <config> "query" --mode fdr` returns review-oriented evidence bundles across plan/spec, implementation, test, and build/config roles when available.
 - `python3 tools/rag.py symbol --root <repo> --config <config> Name` returns exact symbol matches.
 - `python3 tools/rag.py deps --root <repo> --config <config> target` returns dependency edges.
-- `python3 tools/rag.py eval-quality --root <repo> --config <config> --cases <cases.json>` reports Top-1, Top-3, Top-5, and MRR.
+- `python3 tools/rag.py eval-quality --root <repo> --config <config> --cases <cases.json>` reports Top-1, Top-3, Top-5, Top-10, and MRR.
 - `python3 tools/rag.py serve-mcp --root <repo> --config <config>` speaks MCP stdio.
 - Tests prove secret path exclusion, index artifact generation, search ranking, symbol lookup, dependency lookup, provider-neutral initialize handling, and MCP tool dispatch.

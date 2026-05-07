@@ -30,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--top-k", type=int, default=5)
     search.add_argument("--filter-source", default=None)
     search.add_argument("--filter-type", default=None)
+    search.add_argument("--mode", choices=["default", "fdr"], default="default")
 
     symbol = subparsers.add_parser("symbol", help="Look up exact symbols")
     symbol.add_argument("name")
@@ -44,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_quality = subparsers.add_parser("eval-quality", help="Compare RAG retrieval against keyword baseline")
     eval_quality.add_argument("--cases", required=True, help="Gold query JSON file.")
     eval_quality.add_argument("--top-k", type=int, default=10)
+    eval_quality.add_argument("--mode", choices=["default", "fdr"], default="default")
 
     subparsers.add_parser("serve-mcp", help="Run MCP stdio server")
     return parser
@@ -81,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         emit(index_coverage(args.root, args.config, args.paths))
         return 0
     if args.command == "search":
-        emit(search_index(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type))
+        emit(search_index(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode))
         return 0
     if args.command == "symbol":
         emit(lookup_symbol(args.root, args.config, args.name, args.kind, args.limit))
@@ -90,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         emit(lookup_deps(args.root, args.config, args.target, args.direction, args.limit))
         return 0
     if args.command == "eval-quality":
-        emit(evaluate_quality(args.root, args.config, args.cases, args.top_k))
+        emit(evaluate_quality(args.root, args.config, args.cases, args.top_k, args.mode))
         return 0
     if args.command == "serve-mcp":
         return run_stdio(args.root, args.config)

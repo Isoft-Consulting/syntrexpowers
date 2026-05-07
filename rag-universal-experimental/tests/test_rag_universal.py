@@ -125,13 +125,14 @@ class RagUniversalTest(unittest.TestCase):
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "tools/call",
-                "params": {"name": "rag_search", "arguments": {"query": "stop guard", "top_k": 1}},
+                "params": {"name": "rag_search", "arguments": {"query": "stop guard", "top_k": 1, "mode": "fdr"}},
             },
             str(root),
             None,
         )
         payload = json.loads(called["result"]["content"][0]["text"])
         self.assertEqual(payload[0]["source"], "README.md")
+        self.assertEqual(payload[0]["fdr_role"], "docs")
 
     def test_cli_accepts_root_after_subcommand(self) -> None:
         root = self.make_project()
@@ -226,6 +227,56 @@ class RagUniversalTest(unittest.TestCase):
         by_source = {item["source"]: item for item in results}
         self.assertEqual(by_source["docs/sub/foo_bar.md"]["path_match"], 0.85)
         self.assertEqual(by_source.get("docs/sub/fooXbar.md", {}).get("path_match", 0.0), 0.0)
+
+    def test_search_penalizes_snapshot_noise(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "plugins" / "demo" / ".snapshots" / "1.0.0" / "seeds").mkdir(parents=True)
+        (root / "plugins" / "demo" / ".snapshots" / "1.0.0" / "seeds" / "demo.yaml").write_text(
+            "env: storage\nsecret: dist\nbuild_context: true\n",
+            encoding="utf-8",
+        )
+        (root / "rag.config.json").write_text(
+            json.dumps({"schema_version": "rag.config.v1", "search": {"min_score": 0.0}}),
+            encoding="utf-8",
+        )
+        build_index(root)
+        results = search_index(root, None, "env storage dist secret build context", top_k=1, filter_source=".snapshots")
+        self.assertEqual(results[0]["source"], "plugins/demo/.snapshots/1.0.0/seeds/demo.yaml")
+        self.assertLess(results[0]["source_penalty"], 1.0)
+
+    def test_fdr_mode_returns_role_diverse_evidence_bundle(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "Docs" / "plans").mkdir(parents=True)
+        (root / "Docs" / "plans" / "rollout-plan.md").write_text(
+            "# Rollout migration plan\n\nRollout migration dry-run contract.",
+            encoding="utf-8",
+        )
+        (root / "src").mkdir()
+        (root / "src" / "rollout.py").write_text(
+            "def rollout_migration():\n    return 'dry-run contract'\n",
+            encoding="utf-8",
+        )
+        (root / "tests" / "Unit").mkdir(parents=True)
+        (root / "tests" / "Unit" / "RolloutContractTest.php").write_text(
+            "<?php\n// rollout migration dry-run contract test\n",
+            encoding="utf-8",
+        )
+        (root / "Dockerfile").write_text(
+            "FROM scratch\n# rollout migration dry-run contract image\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        results = search_index(root, None, "rollout migration dry-run contract", top_k=4, mode="fdr")
+        roles = {result["fdr_role"] for result in results}
+        self.assertEqual(len(results), 4)
+        self.assertIn("plan", roles)
+        self.assertIn("implementation", roles)
+        self.assertIn("test", roles)
+        self.assertIn("build_file", roles)
 
     def test_search_uses_path_tokens_and_source_diversity(self) -> None:
         temp = tempfile.TemporaryDirectory()

@@ -125,6 +125,31 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_chunks_per_source": 1,
         "candidate_limit": 5000,
         "explicit_path_boost": 0.75,
+        "source_penalties": [
+            {"pattern": "**/.snapshots/**", "multiplier": 0.12},
+            {"pattern": "**/seeds/demo.yaml", "multiplier": 0.25},
+        ],
+        "fdr_role_boosts": {
+            "plan": 1.06,
+            "spec": 1.06,
+            "implementation": 1.04,
+            "test": 1.08,
+            "build_file": 1.08,
+            "ignore_config": 1.08,
+            "compose_config": 1.04,
+            "config": 1.04,
+            "docs": 1.0,
+            "other": 1.0,
+        },
+        "fdr_query_expansions": {
+            "autoload": ["bootstrap", "require", "include", "runtime dependency"],
+            "bash": ["shell script", "macos", "posix", "set -u", "declare"],
+            "dockerfile": ["dockerfile", "image", "build context", "copy", "entrypoint"],
+            "dockerignore": [".dockerignore", "build context", "secrets", ".env", "storage", "dist"],
+            "dry-run": ["dry_run", "--dry-run", "dry run", "exit code"],
+            "migration": ["migrate", "migrations", "run_migrations", "entrypoint"],
+            "rollout": ["deploy", "update", "dispatcher", "controller", "job"],
+        },
         "preview_chars": 500,
         "expand_english_synonyms": False,
         "synonyms": {
@@ -1073,6 +1098,95 @@ def artifact_boost(source: str, artifact: str, config: dict[str, Any]) -> float:
     return 1.0
 
 
+def source_penalty(source: str, config: dict[str, Any]) -> float:
+    penalty = 1.0
+    for item in config.get("search", {}).get("source_penalties", []):
+        if not isinstance(item, dict):
+            continue
+        pattern = str(item.get("pattern", "")).strip()
+        if not pattern or not matches_pattern(source, pattern):
+            continue
+        try:
+            multiplier = max(0.0, min(float(item.get("multiplier", 1.0)), 1.0))
+        except (TypeError, ValueError):
+            continue
+        penalty *= multiplier
+    return penalty
+
+
+def normalize_search_mode(mode: str | None) -> str:
+    normalized = str(mode or "default").strip().lower()
+    if normalized in ("fdr", "review"):
+        return "fdr"
+    return "default"
+
+
+def fdr_role(source: str, artifact: str) -> str:
+    lower = source.lower()
+    wrapped = f"/{lower}"
+    name = Path(source).name.lower()
+    if lower.startswith("tests/") or "/tests/" in wrapped:
+        return "test"
+    if name == ".dockerignore":
+        return "ignore_config"
+    if name == "dockerfile" or name.startswith("dockerfile."):
+        return "build_file"
+    if "docker-compose" in name or name in ("compose.yaml", "compose.yml"):
+        return "compose_config"
+    if "/docs/plans/" in wrapped or lower.startswith("plans/"):
+        return "plan"
+    if "/docs/specs/" in wrapped or lower.startswith("specs/") or artifact == "markdown_spec":
+        return "spec"
+    if artifact in ("python_file", "ruby_file", "ts_module", "php_file", "shell_script"):
+        return "implementation"
+    if artifact in ("json_file", "json_schema", "yaml_config", "yaml_schema"):
+        return "config"
+    if artifact.startswith("markdown"):
+        return "docs"
+    return "other"
+
+
+def fdr_role_boost(source: str, artifact: str, config: dict[str, Any], mode: str) -> float:
+    if normalize_search_mode(mode) != "fdr":
+        return 1.0
+    role = fdr_role(source, artifact)
+    boosts = config.get("search", {}).get("fdr_role_boosts", {})
+    if not isinstance(boosts, dict):
+        return 1.0
+    try:
+        return float(boosts.get(role, 1.0))
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def expand_for_search_mode(query: str, config: dict[str, Any], mode: str) -> str:
+    expanded = expand_query(query, config)
+    if normalize_search_mode(mode) != "fdr":
+        return expanded
+    expansions_cfg = config.get("search", {}).get("fdr_query_expansions", {})
+    if not isinstance(expansions_cfg, dict):
+        return expanded
+    lower_query = query.lower()
+    query_terms = set(tokenize(query))
+    additions: list[str] = []
+    seen = {term.lower() for term in tokenize(expanded)}
+    for trigger, terms in expansions_cfg.items():
+        trigger_text = str(trigger).lower()
+        trigger_terms = set(tokenize(trigger_text))
+        if trigger_text not in lower_query and not (trigger_terms and trigger_terms <= query_terms):
+            continue
+        values = terms if isinstance(terms, list) else [terms]
+        for value in values[:8]:
+            normalized = str(value).strip()
+            key = normalized.lower()
+            if normalized and key not in seen:
+                additions.append(normalized)
+                seen.add(key)
+    if not additions:
+        return expanded
+    return f"{expanded} {' '.join(additions)}"
+
+
 def overlap_score(query_terms: set[str], text: str) -> float:
     if not query_terms:
         return 0.0
@@ -1217,6 +1331,7 @@ def search_precomputed_cache(
     top_k: int = 5,
     filter_source: str | None = None,
     filter_type: str | None = None,
+    mode: str = "default",
 ) -> list[dict[str, Any]]:
     metadata = {str(row["key"]): str(row["value"]) for row in connection.execute("SELECT key, value FROM meta")}
     search_cfg = config.get("search", {})
@@ -1230,7 +1345,8 @@ def search_precomputed_cache(
     candidate_limit = max(50, int(search_cfg.get("candidate_limit", 5000)))
     explicit_path_boost = float(search_cfg.get("explicit_path_boost", 0.75))
 
-    expanded_query = expand_query(query, config)
+    search_mode = normalize_search_mode(mode)
+    expanded_query = expand_for_search_mode(query, config, search_mode)
     query_counts = token_counts(expanded_query)
     query_terms = set(query_counts)
     query_vector = hashed_vector(query_counts, dim)
@@ -1296,7 +1412,11 @@ def search_precomputed_cache(
             + heading_weight * heading_match
             + explicit_path_boost * path_match
         )
+        penalty = source_penalty(source, config)
+        role = fdr_role(source, chunk_type)
         score *= artifact_boost(source, chunk_type, config)
+        score *= fdr_role_boost(source, chunk_type, config, search_mode)
+        score *= penalty
         if score < min_score:
             continue
         results.append(
@@ -1307,6 +1427,8 @@ def search_precomputed_cache(
                 "source_match": round(source_match, 6),
                 "heading_match": round(heading_match, 6),
                 "path_match": round(path_match, 6),
+                "source_penalty": round(penalty, 6),
+                "fdr_role": role,
                 "source": source,
                 "heading": doc["heading"] or "",
                 "artifact_type": chunk_type,
@@ -1316,18 +1438,51 @@ def search_precomputed_cache(
         )
 
     results.sort(key=lambda item: (-item["score"], item["source"], item["start_line"]))
+    return select_search_results(results, top_k, max_chunks_per_source, search_mode)
+
+
+def select_search_results(
+    results: list[dict[str, Any]],
+    top_k: int,
+    max_chunks_per_source: int,
+    mode: str,
+) -> list[dict[str, Any]]:
     limit = max(1, min(int(top_k), 50))
-    diverse: list[dict[str, Any]] = []
+    selected: list[dict[str, Any]] = []
     source_counts: Counter[str] = Counter()
-    for result in results:
+    selected_keys: set[tuple[str, int, str]] = set()
+
+    def add_result(result: dict[str, Any]) -> bool:
         source = str(result["source"])
-        if source_counts[source] >= max_chunks_per_source:
-            continue
-        diverse.append(result)
+        key = (source, int(result.get("start_line", 1)), str(result.get("heading", "")))
+        if key in selected_keys or source_counts[source] >= max_chunks_per_source:
+            return False
+        selected.append(result)
+        selected_keys.add(key)
         source_counts[source] += 1
-        if len(diverse) >= limit:
+        return True
+
+    if normalize_search_mode(mode) == "fdr":
+        selected_roles: set[str] = set()
+        seed_count = min(3, limit)
+        role_insert_limit = min(limit, seed_count + 2)
+        for result in results[:seed_count]:
+            if add_result(result):
+                selected_roles.add(str(result.get("fdr_role", "other")))
+        for result in results[seed_count:]:
+            if len(selected) >= role_insert_limit:
+                break
+            role = str(result.get("fdr_role", "other"))
+            if role in selected_roles:
+                continue
+            if add_result(result):
+                selected_roles.add(role)
+
+    for result in results:
+        if len(selected) >= limit:
             break
-    return diverse
+        add_result(result)
+    return selected
 
 
 def search_index(
@@ -1337,13 +1492,14 @@ def search_index(
     top_k: int = 5,
     filter_source: str | None = None,
     filter_type: str | None = None,
+    mode: str = "default",
 ) -> list[dict[str, Any]]:
     root = resolve_root(root_arg)
     config = load_config(root, config_path)
     index_dir = get_index_dir(root, config)
     search_cache = load_search_cache(index_dir)
     if search_cache is not None:
-        return search_precomputed_cache(search_cache, config, query, top_k, filter_source, filter_type)
+        return search_precomputed_cache(search_cache, config, query, top_k, filter_source, filter_type, mode)
 
     chunks = load_chunks(index_dir)
     if not chunks:
@@ -1359,7 +1515,8 @@ def search_index(
     heading_weight = float(search_cfg.get("heading_weight", 0.06))
     max_chunks_per_source = max(1, int(search_cfg.get("max_chunks_per_source", 2)))
 
-    expanded_query = expand_query(query, config)
+    search_mode = normalize_search_mode(mode)
+    expanded_query = expand_for_search_mode(query, config, search_mode)
     query_counts = token_counts(expanded_query)
     query_terms = set(query_counts)
     query_vector = hashed_vector(query_counts, dim)
@@ -1385,7 +1542,11 @@ def search_index(
             + source_weight * source_match
             + heading_weight * heading_match
         )
+        penalty = source_penalty(source, config)
+        role = fdr_role(source, chunk_type)
         score *= artifact_boost(source, chunk_type, config)
+        score *= fdr_role_boost(source, chunk_type, config, search_mode)
+        score *= penalty
         if score < min_score:
             continue
         preview = re.sub(r"\s+", " ", str(chunk.get("text", ""))).strip()[:preview_chars]
@@ -1396,6 +1557,8 @@ def search_index(
                 "bm25": round(bm25, 6),
                 "source_match": round(source_match, 6),
                 "heading_match": round(heading_match, 6),
+                "source_penalty": round(penalty, 6),
+                "fdr_role": role,
                 "source": source,
                 "heading": chunk.get("heading", ""),
                 "artifact_type": chunk_type,
@@ -1405,18 +1568,7 @@ def search_index(
         )
 
     results.sort(key=lambda item: (-item["score"], item["source"], item["start_line"]))
-    limit = max(1, min(int(top_k), 50))
-    diverse: list[dict[str, Any]] = []
-    source_counts: Counter[str] = Counter()
-    for result in results:
-        source = str(result["source"])
-        if source_counts[source] >= max_chunks_per_source:
-            continue
-        diverse.append(result)
-        source_counts[source] += 1
-        if len(diverse) >= limit:
-            break
-    return diverse
+    return select_search_results(results, top_k, max_chunks_per_source, search_mode)
 
 
 def lookup_symbol(

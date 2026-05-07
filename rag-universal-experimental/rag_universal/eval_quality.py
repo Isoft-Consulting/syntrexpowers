@@ -17,12 +17,13 @@ def hit_rank(sources: list[str], expected_sources: list[str]) -> int | None:
 def summarize_ranks(ranks: list[int | None]) -> dict[str, Any]:
     total = len(ranks)
     if total == 0:
-        return {"total": 0, "top1": 0, "top3": 0, "top5": 0, "mrr": 0.0}
+        return {"total": 0, "top1": 0, "top3": 0, "top5": 0, "top10": 0, "mrr": 0.0}
     return {
         "total": total,
         "top1": sum(1 for rank in ranks if rank == 1),
         "top3": sum(1 for rank in ranks if rank is not None and rank <= 3),
         "top5": sum(1 for rank in ranks if rank is not None and rank <= 5),
+        "top10": sum(1 for rank in ranks if rank is not None and rank <= 10),
         "mrr": round(sum((1.0 / rank) for rank in ranks if rank is not None) / total, 3),
     }
 
@@ -57,6 +58,7 @@ def evaluate_quality(
     config_path: str | Path | None,
     cases_path: str | Path,
     top_k: int = 10,
+    mode: str = "default",
 ) -> dict[str, Any]:
     root = resolve_root(root_arg)
     config = load_config(root, config_path)
@@ -73,7 +75,7 @@ def evaluate_quality(
     details: list[dict[str, Any]] = []
     for case in cases:
         expected = [str(item) for item in case["expected_sources"]]
-        rag_results = search_index(root, config_path, str(case["query"]), top_k=top_k)
+        rag_results = search_index(root, config_path, str(case["query"]), top_k=top_k, mode=mode)
         rag_sources = [str(item["source"]) for item in rag_results]
         baseline_sources = keyword_baseline(root, index_dir, str(case["query"]), top_k=top_k)
         rag_rank = hit_rank(rag_sources, expected)
@@ -102,6 +104,7 @@ def evaluate_quality(
                 "top1": rag["top1"] - baseline["top1"],
                 "top3": rag["top3"] - baseline["top3"],
                 "top5": rag["top5"] - baseline["top5"],
+                "top10": rag["top10"] - baseline["top10"],
                 "mrr": round(rag["mrr"] - baseline["mrr"], 3),
             },
         },

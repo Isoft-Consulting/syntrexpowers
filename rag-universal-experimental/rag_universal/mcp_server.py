@@ -19,6 +19,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "top_k": {"type": "integer", "default": 5, "minimum": 1, "maximum": 50},
                     "filter_source": {"type": ["string", "null"], "default": None},
                     "filter_type": {"type": ["string", "null"], "default": None},
+                    "mode": {"type": "string", "enum": ["default", "fdr"], "default": "default"},
                 },
                 "required": ["query"],
             },
@@ -99,6 +100,7 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
                 int(arguments.get("top_k", 5)),
                 arguments.get("filter_source"),
                 arguments.get("filter_type"),
+                str(arguments.get("mode", "default")),
             )
         )
     if name == "rag_reindex":
