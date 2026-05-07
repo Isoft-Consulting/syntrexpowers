@@ -168,7 +168,8 @@ def enable_codex_enforcement!(install_root, state_root)
     manifest.fetch("managed_hook_entries"),
     selected_output_contracts: selected,
     enforce: true,
-    install_root: install_root.to_s
+    install_root: install_root.to_s,
+    state_root: state_root.to_s
   )
   fixture_records = StrictModeFixtureReadiness.fixture_manifest_records(active_root, ["codex"])
   runtime_records = runtime_file_records(active_root)

@@ -46,6 +46,20 @@ run_case do
   assert(name, entries.size == 5, "unexpected discovery hook count", entries.inspect)
   assert(name, entries.none? { |entry| entry.fetch("hook_event") == "PermissionRequest" }, "PermissionRequest installed without proof", entries.inspect)
   assert(name, entries.all? { |entry| entry.fetch("enforcing") == false && entry.fetch("output_contract_id") == "" }, "discovery entries claimed enforcement", entries.inspect)
+  assert(name, entries.all? { |entry| entry.fetch("command").include?("STRICT_STATE_ROOT=\"/tmp/strict root/state\"") }, "commands do not bind default state root", entries.inspect)
+end
+
+run_case do
+  name = "discovery hook plan binds custom state root in command"
+  entries = StrictModeInstallHookPlan.managed_entries(
+    "codex",
+    Pathname.new("/tmp/codex-hooks.json"),
+    Pathname.new("/tmp/strict root"),
+    state_root: Pathname.new("/tmp/strict state")
+  )
+  errors = StrictModeHookEntryPlan.validate(entries, selected_output_contracts: [], enforce: false, install_root: "/tmp/strict root", state_root: "/tmp/strict state")
+  assert(name, errors.empty?, "custom state-root entries failed validation", errors.join("\n"))
+  assert(name, entries.all? { |entry| entry.fetch("command").include?("STRICT_STATE_ROOT=\"/tmp/strict state\"") }, "commands do not bind custom state root", entries.inspect)
 end
 
 run_case do

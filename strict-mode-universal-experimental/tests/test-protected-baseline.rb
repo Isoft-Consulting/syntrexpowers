@@ -187,7 +187,7 @@ with_install do |_root, home, install_root, state_root, project|
   baseline = read_json(baseline_path)
   entries = manifest.fetch("managed_hook_entries")
   stop = entries.find { |entry| entry.fetch("provider") == "codex" && entry.fetch("logical_event") == "stop" }
-  stop["command"] = "STRICT_HOOK_TIMEOUT_MS=60000 \"/tmp/other-strict/active/bin/strict-hook\" --provider codex stop"
+  stop["command"] = "STRICT_HOOK_TIMEOUT_MS=60000 STRICT_STATE_ROOT=\"#{state_root}\" \"/tmp/other-strict/active/bin/strict-hook\" --provider codex stop"
   stop["removal_selector"] = StrictModeHookEntryPlan.removal_selector_for(stop)
   manifest["managed_hook_entries"] = entries
   write_hash_bound_json(manifest_path, manifest, "manifest_hash")

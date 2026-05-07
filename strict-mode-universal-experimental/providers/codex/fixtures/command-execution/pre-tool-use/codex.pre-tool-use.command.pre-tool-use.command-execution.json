@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "proof_kind": "codex.command-execution.observed",
+  "provider": "codex",
+  "provider_version": "0.128.0",
+  "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+  "event": "pre-tool-use",
+  "hook_command_executed": true,
+  "discovery_recorded_at": "2026-05-07T15:25:20Z",
+  "provider_detection_decision": "match",
+  "payload_sha256": "72d98e256589b24b8d24fac645d93902dcf84cbd3e70bac5bb8b734b281ff093",
+  "raw_payload_captured": true,
+  "raw_payload_path": "/tmp/syntrexpowers-codex-discovery-state/discovery/raw/codex/pre-tool-use/20260507T152520-2971886-eededa48-72d98e256589.payload",
+  "hook_mode": "discovery-log-only"
+}

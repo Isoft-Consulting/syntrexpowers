@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "contract_id": "codex.pre-tool-use.block",
+  "provider": "codex",
+  "event": "pre-tool-use",
+  "logical_event": "pre-tool-use",
+  "provider_action": "block",
+  "stdout_mode": "json",
+  "stdout_required_fields": [
+    "decision",
+    "reason"
+  ],
+  "stderr_mode": "empty",
+  "stderr_required_fields": [
+
+  ],
+  "exit_code": 0,
+  "blocks_or_denies": 1,
+  "injects_context": 0,
+  "decision_contract_hash": "1a73ebefc67c25d12cbcaac770554902e1b66eda8475d813be9b1bb6bb335a25"
+}

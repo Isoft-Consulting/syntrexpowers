@@ -21,7 +21,10 @@ module StrictModeProtectedBaseline
     "destructive-patterns.txt" => "destructive-patterns",
     "stub-allowlist.txt" => "stub-allowlist"
   }.freeze
-  EXPECTED_GENERATED_HOOK_ENV = { "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix" }.freeze
+  EXPECTED_GENERATED_HOOK_ENV = {
+    "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix",
+    "STRICT_STATE_ROOT" => "per-install command prefix"
+  }.freeze
   FILE_RECORD_KINDS = %w[
     runtime-file
     runtime-config
@@ -385,7 +388,8 @@ module StrictModeProtectedBaseline
       manifest_entries,
       selected_output_contracts: manifest_outputs,
       enforce: enforcing_hook_plan?(manifest_entries, manifest_outputs),
-      install_root: manifest["install_root"]
+      install_root: manifest["install_root"],
+      state_root: manifest["state_root"]
     )
     errors.concat(plan_errors.map { |message| "managed hook entry plan invalid: #{message}" })
   end

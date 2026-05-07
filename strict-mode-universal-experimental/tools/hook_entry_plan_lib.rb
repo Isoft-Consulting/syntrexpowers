@@ -70,11 +70,11 @@ module StrictModeHookEntryPlan
   }.freeze
   SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze
 
-  def apply(entries, selected_output_contracts:, enforce:, install_root: nil)
+  def apply(entries, selected_output_contracts:, enforce:, install_root: nil, state_root: nil)
     planned = deep_copy(entries)
     selected = deep_copy(selected_output_contracts || [])
     normalize_removal_selectors(planned)
-    preflight_errors = validate_entry_shapes(planned, install_root)
+    preflight_errors = validate_entry_shapes(planned, install_root, state_root)
     raise preflight_errors.join("; ") unless preflight_errors.empty?
 
     if enforce
@@ -104,13 +104,13 @@ module StrictModeHookEntryPlan
     end
 
     planned = sort_entries(planned)
-    errors = validate(planned, selected_output_contracts: selected, enforce: enforce, install_root: install_root)
+    errors = validate(planned, selected_output_contracts: selected, enforce: enforce, install_root: install_root, state_root: state_root)
     raise errors.join("; ") unless errors.empty?
 
     planned
   end
 
-  def validate(entries, selected_output_contracts:, enforce:, install_root: nil)
+  def validate(entries, selected_output_contracts:, enforce:, install_root: nil, state_root: nil)
     return ["managed hook entries must be an array"] unless entries.is_a?(Array)
 
     errors = []
@@ -130,7 +130,7 @@ module StrictModeHookEntryPlan
         next
       end
 
-      errors.concat(entry_shape_errors(entry, index, install_root))
+      errors.concat(entry_shape_errors(entry, index, install_root, state_root))
       next unless exact_entry_shape?(entry)
 
       sortable_entries << entry
@@ -288,12 +288,12 @@ module StrictModeHookEntryPlan
     raise "hook entry #{index}: must be an object" unless entry.is_a?(Hash)
   end
 
-  def validate_entry_shapes(entries, install_root)
+  def validate_entry_shapes(entries, install_root, state_root)
     return ["managed hook entries must be an array"] unless entries.is_a?(Array)
 
     entries.each_with_index.each_with_object([]) do |(entry, index), errors|
       if entry.is_a?(Hash)
-        errors.concat(entry_shape_errors(entry, index, install_root))
+        errors.concat(entry_shape_errors(entry, index, install_root, state_root))
       else
         errors << "hook entry #{index}: must be an object"
       end
@@ -323,7 +323,7 @@ module StrictModeHookEntryPlan
       (entry["removal_selector"].keys - REMOVAL_SELECTOR_FIELDS).empty?
   end
 
-  def entry_shape_errors(entry, index, install_root)
+  def entry_shape_errors(entry, index, install_root, state_root)
     errors = []
     missing = ENTRY_FIELDS - entry.keys
     extra = entry.keys - ENTRY_FIELDS
@@ -360,7 +360,7 @@ module StrictModeHookEntryPlan
       end
     end
     errors << "hook entry #{index}: enforcing must be boolean" unless [true, false].include?(entry.fetch("enforcing"))
-    errors.concat(command_errors(entry, index, install_root))
+    errors.concat(command_errors(entry, index, install_root, state_root))
     if entry.fetch("logical_event").is_a?(String)
       expected_hook_event = LOGICAL_EVENT_TO_HOOK_EVENT[entry.fetch("logical_event")]
       errors << "hook entry #{index}: unsupported logical_event #{entry.fetch("logical_event").inspect}" unless expected_hook_event
@@ -410,19 +410,19 @@ module StrictModeHookEntryPlan
     ["hook entry #{index}: removal_selector hash verification failed: #{e.message}"]
   end
 
-  def command_errors(entry, index, install_root)
+  def command_errors(entry, index, install_root, state_root)
     return [] unless entry.fetch("command").is_a?(String)
 
     command = entry.fetch("command")
     errors = []
-    unless command.match?(/\ASTRICT_HOOK_TIMEOUT_MS=\d+\s+"(?:[^"\\]|\\.)+"\s+--provider\s+\S+\s+\S+\z/)
-      errors << "hook entry #{index}: command must be STRICT_HOOK_TIMEOUT_MS=<ms> \"<install-root>/active/bin/strict-hook\" --provider <provider> <logical_event>"
+    unless command.match?(/\ASTRICT_HOOK_TIMEOUT_MS=\d+\s+STRICT_STATE_ROOT="(?:[^"\\]|\\.)+"\s+"(?:[^"\\]|\\.)+"\s+--provider\s+\S+\s+\S+\z/)
+      errors << "hook entry #{index}: command must be STRICT_HOOK_TIMEOUT_MS=<ms> STRICT_STATE_ROOT=\"<state-root>\" \"<install-root>/active/bin/strict-hook\" --provider <provider> <logical_event>"
       return errors
     end
 
     parts = Shellwords.split(command)
-    unless parts.size == 5
-      errors << "hook entry #{index}: command must have exactly timeout assignment, hook path, --provider, provider, logical_event"
+    unless parts.size == 6
+      errors << "hook entry #{index}: command must have exactly timeout assignment, state-root assignment, hook path, --provider, provider, logical_event"
       return errors
     end
 
@@ -430,7 +430,19 @@ module StrictModeHookEntryPlan
     unless timeout_match && entry.fetch("self_timeout_ms").is_a?(Integer) && timeout_match[1].to_i == entry.fetch("self_timeout_ms")
       errors << "hook entry #{index}: command STRICT_HOOK_TIMEOUT_MS must match self_timeout_ms"
     end
-    hook_path = Pathname.new(parts.fetch(1))
+    state_root_match = parts.fetch(1).match(/\ASTRICT_STATE_ROOT=(.+)\z/)
+    unless state_root_match
+      errors << "hook entry #{index}: command must include STRICT_STATE_ROOT assignment"
+      return errors
+    end
+    state_root_path = Pathname.new(state_root_match[1])
+    errors << "hook entry #{index}: command state root must be absolute" unless state_root_path.absolute?
+    errors << "hook entry #{index}: command state root must be canonical lexical path" unless state_root_path.cleanpath.to_s == state_root_path.to_s
+    if state_root
+      expected_state_root = Pathname.new(state_root).to_s
+      errors << "hook entry #{index}: command state root must match state_root" unless state_root_path.to_s == expected_state_root
+    end
+    hook_path = Pathname.new(parts.fetch(2))
     errors << "hook entry #{index}: command hook path must be absolute" unless hook_path.absolute?
     errors << "hook entry #{index}: command hook path must be canonical lexical path" unless hook_path.cleanpath.to_s == hook_path.to_s
     errors << "hook entry #{index}: command hook path must end with /active/bin/strict-hook" unless hook_path.to_s.end_with?("/active/bin/strict-hook")
@@ -439,9 +451,9 @@ module StrictModeHookEntryPlan
       expected_hook_path = Pathname.new(install_root).join("active/bin/strict-hook").to_s
       errors << "hook entry #{index}: command hook path must match install_root active strict-hook" unless hook_path.to_s == expected_hook_path
     end
-    errors << "hook entry #{index}: command argv must include --provider" unless parts.fetch(2) == "--provider"
-    errors << "hook entry #{index}: command provider argv mismatch" unless parts.fetch(3) == entry.fetch("provider")
-    errors << "hook entry #{index}: command logical_event argv mismatch" unless parts.fetch(4) == entry.fetch("logical_event")
+    errors << "hook entry #{index}: command argv must include --provider" unless parts.fetch(3) == "--provider"
+    errors << "hook entry #{index}: command provider argv mismatch" unless parts.fetch(4) == entry.fetch("provider")
+    errors << "hook entry #{index}: command logical_event argv mismatch" unless parts.fetch(5) == entry.fetch("logical_event")
     errors
   rescue ArgumentError => e
     ["hook entry #{index}: command shell parsing failed: #{e.message}"]

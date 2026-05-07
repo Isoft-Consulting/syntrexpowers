@@ -288,12 +288,13 @@ def enforcing_hook_plan?(entries, selected_output_contracts)
     end
 end
 
-def validate_hook_entry_plan!(entries, selected_output_contracts, context, install_root)
+def validate_hook_entry_plan!(entries, selected_output_contracts, context, install_root, state_root)
   errors = StrictModeHookEntryPlan.validate(
     entries,
     selected_output_contracts: selected_output_contracts,
     enforce: enforcing_hook_plan?(entries, selected_output_contracts),
-    install_root: install_root
+    install_root: install_root,
+    state_root: state_root
   )
   return if errors.empty?
 
@@ -425,13 +426,13 @@ verify_hash!(manifest, "manifest_hash", manifest_path)
 fail_uninstall("#{manifest_path}: install_root mismatch") unless manifest["install_root"] == install_root.to_s
 manifest_entries = array_field!(manifest, "managed_hook_entries", manifest_path)
 manifest_output_contracts = array_field!(manifest, "selected_output_contracts", manifest_path)
-validate_hook_entry_plan!(manifest_entries, manifest_output_contracts, manifest_path, install_root)
+validate_hook_entry_plan!(manifest_entries, manifest_output_contracts, manifest_path, install_root, state_root)
 
 selected_entries = manifest_entries.select { |entry| providers.include?(entry.fetch("provider")) }
 selectors_by_path = selected_entries.map { |entry| entry.fetch("removal_selector") }.group_by { |selector| selector.fetch("config_path") }
 remaining_entries = manifest_entries - selected_entries
 remaining_output_contracts = manifest_output_contracts.reject { |record| record.is_a?(Hash) && providers.include?(record["provider"]) }
-validate_hook_entry_plan!(remaining_entries, remaining_output_contracts, "#{manifest_path} post-uninstall plan", install_root)
+validate_hook_entry_plan!(remaining_entries, remaining_output_contracts, "#{manifest_path} post-uninstall plan", install_root, state_root)
 previous_manifest_hash = Digest::SHA256.file(manifest_path).hexdigest
 baseline_path = state_root.join("protected-install-baseline.json")
 previous_baseline_hash = baseline_path.file? ? Digest::SHA256.file(baseline_path).hexdigest : ZERO_HASH
@@ -441,7 +442,7 @@ if baseline_path.file?
   verify_hash!(baseline, "baseline_hash", baseline_path)
   baseline_entries = array_field!(baseline, "managed_hook_entries", baseline_path)
   baseline_output_contracts = array_field!(baseline, "selected_output_contracts", baseline_path)
-  validate_hook_entry_plan!(baseline_entries, baseline_output_contracts, baseline_path, install_root)
+  validate_hook_entry_plan!(baseline_entries, baseline_output_contracts, baseline_path, install_root, state_root)
   fail_uninstall("#{baseline_path}: managed_hook_entries mismatch install manifest") unless baseline_entries == manifest_entries
   fail_uninstall("#{baseline_path}: selected_output_contracts mismatch install manifest") unless baseline_output_contracts == manifest_output_contracts
 end

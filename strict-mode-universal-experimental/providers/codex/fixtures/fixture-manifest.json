@@ -2,7 +2,448 @@
   "schema_version": 1,
   "generated_at": "1970-01-01T00:00:00Z",
   "records": [
-
+    {
+      "schema_version": 1,
+      "contract_id": "codex.post-tool-use.command",
+      "provider": "codex",
+      "provider_version": "0.128.0",
+      "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+      "platform": "x86_64-linux-gnu",
+      "event": "post-tool-use",
+      "contract_kind": "command-execution",
+      "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "command_execution_contract_hash": "573e66902fbe02c62e588e4b819b8913f5e206694b38496d29f3dfc24d096f48",
+      "fixture_file_hashes": [
+        {
+          "path": "providers/codex/fixtures/command-execution/post-tool-use/codex.post-tool-use.command.post-tool-use.command-execution.json",
+          "content_sha256": "aa566c45736199c30f6184f5dbb0f5057e5201fe1d229db7cfef14b96968e18b"
+        }
+      ],
+      "captured_at": "2026-05-07T15:28:17Z",
+      "compatibility_range": {
+        "mode": "exact",
+        "min_version": "0.128.0",
+        "max_version": "0.128.0",
+        "version_comparator": "",
+        "provider_build_hashes": [
+          "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+        ]
+      },
+      "fixture_record_hash": "a3c144d0e92a326f9c7b47fc38fd77d6ec98b69e4510c2f049999d9de17c4fdc"
+    },
+    {
+      "schema_version": 1,
+      "contract_id": "codex.post-tool-use.payload.22f083bb063b",
+      "provider": "codex",
+      "provider_version": "0.128.0",
+      "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+      "platform": "x86_64-linux-gnu",
+      "event": "post-tool-use",
+      "contract_kind": "payload-schema",
+      "payload_schema_hash": "e1c4ac7b8bf0cceeae4090a4e40b426ed49bd8a30674dcc96ddac16081a4e29d",
+      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "fixture_file_hashes": [
+        {
+          "path": "providers/codex/fixtures/normalized/post-tool-use/22f083bb063b7f9b.event.normalized.json",
+          "content_sha256": "8d1c3129ef7313e5c425903efefbd1629ca8252c4d9a5f07787a1b50b5856e4c"
+        },
+        {
+          "path": "providers/codex/fixtures/payloads/post-tool-use/22f083bb063b7f9b.json",
+          "content_sha256": "22f083bb063b7f9b686e8c206931fb5e54ebaf29124e0488ec28fdf64d02cfc5"
+        },
+        {
+          "path": "providers/codex/fixtures/provider-proof/post-tool-use/22f083bb063b7f9b.provider-detection.json",
+          "content_sha256": "c600e60b4267f38a4e11e6f6df7d7f46fadc2c982ccd02ec1d60e80040aeffa1"
+        }
+      ],
+      "captured_at": "2026-05-07T15:25:21Z",
+      "compatibility_range": {
+        "mode": "exact",
+        "min_version": "0.128.0",
+        "max_version": "0.128.0",
+        "version_comparator": "",
+        "provider_build_hashes": [
+          "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+        ]
+      },
+      "fixture_record_hash": "56228d5b21afe0033e95e0afc26afa8d748c17c7ad9dbb9a95017a35dbc5e1c2"
+    },
+    {
+      "schema_version": 1,
+      "contract_id": "codex.pre-tool-use.block",
+      "provider": "codex",
+      "provider_version": "0.128.0",
+      "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+      "platform": "x86_64-linux-gnu",
+      "event": "pre-tool-use",
+      "contract_kind": "decision-output",
+      "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "decision_contract_hash": "1a73ebefc67c25d12cbcaac770554902e1b66eda8475d813be9b1bb6bb335a25",
+      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "fixture_file_hashes": [
+        {
+          "path": "providers/codex/fixtures/decision-output/pre-tool-use/codex.pre-tool-use.block.exit-code",
+          "content_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        {
+          "path": "providers/codex/fixtures/decision-output/pre-tool-use/codex.pre-tool-use.block.provider-output.json",
+          "content_sha256": "50c612c0e5e329e608bb75e66afaee948914bdb30576760a520f13e6aaa0ceff"
+        },
+        {
+          "path": "providers/codex/fixtures/decision-output/pre-tool-use/codex.pre-tool-use.block.stderr",
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "providers/codex/fixtures/decision-output/pre-tool-use/codex.pre-tool-use.block.stdout",
+          "content_sha256": "9a5bb7392548445381f60e44b995746e02dba312cb82e5f3c27a74a8a2b64608"
+        }
+      ],
+      "captured_at": "2026-05-07T15:32:01Z",
+      "compatibility_range": {
+        "mode": "exact",
+        "min_version": "0.128.0",
+        "max_version": "0.128.0",
+        "version_comparator": "",
+        "provider_build_hashes": [
+          "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+        ]
+      },
+      "fixture_record_hash": "d4d88cc627d3b091dd2a7890c1725a6e355b8dc613f731fe0c390d1a67e0cf1d"
+    },
+    {
+      "schema_version": 1,
+      "contract_id": "codex.pre-tool-use.command",
+      "provider": "codex",
+      "provider_version": "0.128.0",
+      "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+      "platform": "x86_64-linux-gnu",
+      "event": "pre-tool-use",
+      "contract_kind": "command-execution",
+      "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "command_execution_contract_hash": "0ab2af619628937b5555b91579d43bedebcf72a88cffebba82a7ee562bdee37b",
+      "fixture_file_hashes": [
+        {
+          "path": "providers/codex/fixtures/command-execution/pre-tool-use/codex.pre-tool-use.command.pre-tool-use.command-execution.json",
+          "content_sha256": "568812493f8c1b29c67a24540ce079a02fedf367629c14d74fc41dd74534970c"
+        }
+      ],
+      "captured_at": "2026-05-07T15:28:12Z",
+      "compatibility_range": {
+        "mode": "exact",
+        "min_version": "0.128.0",
+        "max_version": "0.128.0",
+        "version_comparator": "",
+        "provider_build_hashes": [
+          "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+        ]
+      },
+      "fixture_record_hash": "b68c3857255f5f8db99c347913c24b318d29089055aca9e48d27c8cb781f2b48"
+    },
+    {
+      "schema_version": 1,
+      "contract_id": "codex.pre-tool-use.matcher",
+      "provider": "codex",
+      "provider_version": "0.128.0",
+      "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+      "platform": "x86_64-linux-gnu",
+      "event": "pre-tool-use",
+      "contract_kind": "matcher",
+      "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "fixture_file_hashes": [
+        {
+          "path": "providers/codex/fixtures/matcher/pre-tool-use/codex.pre-tool-use.matcher.pre-tool-use.matcher.json",
+          "content_sha256": "5768346d58f93bbdffc6f177015816356c078c17e476098d3eced6fd3035378b"
+        }
+      ],
+      "captured_at": "2026-05-07T15:28:27Z",
+      "compatibility_range": {
+        "mode": "exact",
+        "min_version": "0.128.0",
+        "max_version": "0.128.0",
+        "version_comparator": "",
+        "provider_build_hashes": [
+          "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+        ]
+      },
+      "fixture_record_hash": "b5c264af13e772a882094319b1bee71b0b704a336250c9a7a6eeefc117441a1c"
+    },
+    {
+      "schema_version": 1,
+      "contract_id": "codex.pre-tool-use.payload.72d98e256589",
+      "provider": "codex",
+      "provider_version": "0.128.0",
+      "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+      "platform": "x86_64-linux-gnu",
+      "event": "pre-tool-use",
+      "contract_kind": "payload-schema",
+      "payload_schema_hash": "65d49893dca4f17ca5537d7c72bc7dec4544119f3a57274b62eb1a3e9187986f",
+      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "fixture_file_hashes": [
+        {
+          "path": "providers/codex/fixtures/normalized/pre-tool-use/72d98e256589b24b.event.normalized.json",
+          "content_sha256": "f201c006caf512f20648d86243e71cea3a10e90d33b454c8d92fd7a86ea61e16"
+        },
+        {
+          "path": "providers/codex/fixtures/payloads/pre-tool-use/72d98e256589b24b.json",
+          "content_sha256": "72d98e256589b24b8d24fac645d93902dcf84cbd3e70bac5bb8b734b281ff093"
+        },
+        {
+          "path": "providers/codex/fixtures/provider-proof/pre-tool-use/72d98e256589b24b.provider-detection.json",
+          "content_sha256": "dc8e237b1af9dec0ae9badad126509a7cd10c8b7b50fa6b0bacf357f952a3532"
+        }
+      ],
+      "captured_at": "2026-05-07T15:25:20Z",
+      "compatibility_range": {
+        "mode": "exact",
+        "min_version": "0.128.0",
+        "max_version": "0.128.0",
+        "version_comparator": "",
+        "provider_build_hashes": [
+          "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+        ]
+      },
+      "fixture_record_hash": "ed11a9cb7b3e15907249bc656f9c9af15294c66248ec46c835ab923a0f6b4dac"
+    },
+    {
+      "schema_version": 1,
+      "contract_id": "codex.session-start.command",
+      "provider": "codex",
+      "provider_version": "0.128.0",
+      "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+      "platform": "x86_64-linux-gnu",
+      "event": "session-start",
+      "contract_kind": "command-execution",
+      "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "command_execution_contract_hash": "1e14eaa6d0ef1e89b22319271c452535d73571f47df20e7abc85a565e23a754b",
+      "fixture_file_hashes": [
+        {
+          "path": "providers/codex/fixtures/command-execution/session-start/codex.session-start.command.session-start.command-execution.json",
+          "content_sha256": "443f2e9ea70e81bb8fe92efde4b5eb1f1b80e68919b330a94ec2b25b57a9ff28"
+        }
+      ],
+      "captured_at": "2026-05-07T15:28:02Z",
+      "compatibility_range": {
+        "mode": "exact",
+        "min_version": "0.128.0",
+        "max_version": "0.128.0",
+        "version_comparator": "",
+        "provider_build_hashes": [
+          "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+        ]
+      },
+      "fixture_record_hash": "cf0731688784d72b21c343cf35c7de771f774a93824d4243a3b6284ea324e9f2"
+    },
+    {
+      "schema_version": 1,
+      "contract_id": "codex.session-start.order",
+      "provider": "codex",
+      "provider_version": "0.128.0",
+      "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+      "platform": "x86_64-linux-gnu",
+      "event": "session-start",
+      "contract_kind": "event-order",
+      "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "fixture_file_hashes": [
+        {
+          "path": "providers/codex/fixtures/event-order/session-start/codex.session-start.order.session-start.event-order.json",
+          "content_sha256": "558f5706a0f554ac7f5c64e3693f1b9439353f8fdd0bbcac1a336d6aa0b4ff98"
+        }
+      ],
+      "captured_at": "2026-05-07T15:28:35Z",
+      "compatibility_range": {
+        "mode": "exact",
+        "min_version": "0.128.0",
+        "max_version": "0.128.0",
+        "version_comparator": "",
+        "provider_build_hashes": [
+          "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+        ]
+      },
+      "fixture_record_hash": "11c98a3cd3d8dee7dcef9531b8d612e8f538e17feab434b6cac84696e58b9bc0"
+    },
+    {
+      "schema_version": 1,
+      "contract_id": "codex.session-start.payload.7f47abc95f2d",
+      "provider": "codex",
+      "provider_version": "0.128.0",
+      "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+      "platform": "x86_64-linux-gnu",
+      "event": "session-start",
+      "contract_kind": "payload-schema",
+      "payload_schema_hash": "7e6237eca549c7e895914bc75fa62475be9188fc028a635334d00df3e1ff7e0a",
+      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "fixture_file_hashes": [
+        {
+          "path": "providers/codex/fixtures/normalized/session-start/7f47abc95f2d537f.event.normalized.json",
+          "content_sha256": "031997af6d2221a04ee633d9be204666e967911d9171940d6d3500e99de297fb"
+        },
+        {
+          "path": "providers/codex/fixtures/payloads/session-start/7f47abc95f2d537f.json",
+          "content_sha256": "7f47abc95f2d537ff28fd02cb7e2581a1e2101da5e863c4813adc4fcc5567825"
+        },
+        {
+          "path": "providers/codex/fixtures/provider-proof/session-start/7f47abc95f2d537f.provider-detection.json",
+          "content_sha256": "6771ef164d48f68dcdf39562c26027805f498cfdbce20c66470617142092fbda"
+        }
+      ],
+      "captured_at": "2026-05-07T15:25:18Z",
+      "compatibility_range": {
+        "mode": "exact",
+        "min_version": "0.128.0",
+        "max_version": "0.128.0",
+        "version_comparator": "",
+        "provider_build_hashes": [
+          "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+        ]
+      },
+      "fixture_record_hash": "b15b178def28b03f40486fec749c562b87e8ae9b31344d6e0f40a87ee19ff830"
+    },
+    {
+      "schema_version": 1,
+      "contract_id": "codex.stop.command",
+      "provider": "codex",
+      "provider_version": "0.128.0",
+      "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+      "platform": "x86_64-linux-gnu",
+      "event": "stop",
+      "contract_kind": "command-execution",
+      "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "command_execution_contract_hash": "9ae86958fd46f8c858cda6463c3b0f16514d30526f054d04179ee389b9d794d0",
+      "fixture_file_hashes": [
+        {
+          "path": "providers/codex/fixtures/command-execution/stop/codex.stop.command.stop.command-execution.json",
+          "content_sha256": "6800223ba9e0d3728a00b97ceee03457137bb573774122bd10486092b41b0457"
+        }
+      ],
+      "captured_at": "2026-05-07T15:28:21Z",
+      "compatibility_range": {
+        "mode": "exact",
+        "min_version": "0.128.0",
+        "max_version": "0.128.0",
+        "version_comparator": "",
+        "provider_build_hashes": [
+          "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+        ]
+      },
+      "fixture_record_hash": "033bfa154a1be9a551233800f74476419d48c7d63249253ec92e920d44b67419"
+    },
+    {
+      "schema_version": 1,
+      "contract_id": "codex.stop.payload.bb7c003149e2",
+      "provider": "codex",
+      "provider_version": "0.128.0",
+      "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+      "platform": "x86_64-linux-gnu",
+      "event": "stop",
+      "contract_kind": "payload-schema",
+      "payload_schema_hash": "9ed62a31c9e94255cf30c72c94d3d2045e6cadd8c8ae6435e07569d7a6fbd1ed",
+      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "fixture_file_hashes": [
+        {
+          "path": "providers/codex/fixtures/normalized/stop/bb7c003149e29902.event.normalized.json",
+          "content_sha256": "f7e113f828bac14d5cac38b2706381805ed8f2ae65280591eff238bad2e9818b"
+        },
+        {
+          "path": "providers/codex/fixtures/payloads/stop/bb7c003149e29902.json",
+          "content_sha256": "bb7c003149e29902e8ea27fcfc697529d1ba72ebc44cf333a58fbe1aeb52beb4"
+        },
+        {
+          "path": "providers/codex/fixtures/provider-proof/stop/bb7c003149e29902.provider-detection.json",
+          "content_sha256": "55d7e200420bcf1b0ac09f0342e8560789fb19b2b943e41b13dbd9298b2d5d43"
+        }
+      ],
+      "captured_at": "2026-05-07T15:25:23Z",
+      "compatibility_range": {
+        "mode": "exact",
+        "min_version": "0.128.0",
+        "max_version": "0.128.0",
+        "version_comparator": "",
+        "provider_build_hashes": [
+          "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+        ]
+      },
+      "fixture_record_hash": "3709a0e8b82e747b0c6f4cf392bff231fbfd02f9b14fa9905a049480b460facf"
+    },
+    {
+      "schema_version": 1,
+      "contract_id": "codex.user-prompt-submit.command",
+      "provider": "codex",
+      "provider_version": "0.128.0",
+      "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+      "platform": "x86_64-linux-gnu",
+      "event": "user-prompt-submit",
+      "contract_kind": "command-execution",
+      "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "command_execution_contract_hash": "958e5d0619d9fc3b3b31c115a897509581d2536ca63ccf3bd7a580dd0a22a20c",
+      "fixture_file_hashes": [
+        {
+          "path": "providers/codex/fixtures/command-execution/user-prompt-submit/codex.user-prompt-submit.command.user-prompt-submit.command-execution.json",
+          "content_sha256": "2a2462b58bffde1cd87df4e120b57b7155747ebef13872f821291e4ce6c18357"
+        }
+      ],
+      "captured_at": "2026-05-07T15:28:06Z",
+      "compatibility_range": {
+        "mode": "exact",
+        "min_version": "0.128.0",
+        "max_version": "0.128.0",
+        "version_comparator": "",
+        "provider_build_hashes": [
+          "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+        ]
+      },
+      "fixture_record_hash": "a0e6d5813ea3c7bd304be0d8c7ab6d98d036880c2bca99530f2fd65b907cdb72"
+    },
+    {
+      "schema_version": 1,
+      "contract_id": "codex.user-prompt-submit.payload.35db9d84b5a9",
+      "provider": "codex",
+      "provider_version": "0.128.0",
+      "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+      "platform": "x86_64-linux-gnu",
+      "event": "user-prompt-submit",
+      "contract_kind": "payload-schema",
+      "payload_schema_hash": "18ceed0d89a5aa819e4456bed4a519cceacaed6e584b7982351047127e6ddcf8",
+      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "fixture_file_hashes": [
+        {
+          "path": "providers/codex/fixtures/normalized/user-prompt-submit/35db9d84b5a9dc17.event.normalized.json",
+          "content_sha256": "e55a9f034e2dd93604d570cc6c5e3ce223acfd287eaeb489cd047055b70f025a"
+        },
+        {
+          "path": "providers/codex/fixtures/payloads/user-prompt-submit/35db9d84b5a9dc17.json",
+          "content_sha256": "35db9d84b5a9dc1784b374c477d3c70b506f5e4d85a45628cb05f965ebe666b7"
+        },
+        {
+          "path": "providers/codex/fixtures/provider-proof/user-prompt-submit/35db9d84b5a9dc17.provider-detection.json",
+          "content_sha256": "7e0b1cbd833efd64a19d3ee3a0a43cd53feec54ba636ffeeccbe0d32d778f1d6"
+        }
+      ],
+      "captured_at": "2026-05-07T15:25:18Z",
+      "compatibility_range": {
+        "mode": "exact",
+        "min_version": "0.128.0",
+        "max_version": "0.128.0",
+        "version_comparator": "",
+        "provider_build_hashes": [
+          "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+        ]
+      },
+      "fixture_record_hash": "fb9b3907ec2a6ff862d2b9717e4c2fefea69180ab74b1d2179d63187185303f2"
+    }
   ],
-  "manifest_hash": "5ebf8e5c9dddb0db3d3a716981cd550a1edf2c82daf11cf4cebe26de6dfd9d6d"
+  "manifest_hash": "8d00a7b5b27ccf8035b37dc4e7d7e5e2e714f6491b959e38ddb2400cb2b2b81c"
 }

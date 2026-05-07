@@ -30,8 +30,8 @@ module StrictModeProviderDetection
     provider_proof_hash
   ].freeze
   SHA256_PATTERN = /\A[a-f0-9]{64}\z/
-  CLAUDE_NATIVE_EVENTS = %w[SessionStart UserPromptSubmit PreToolUse PostToolUse Stop SubagentStop].freeze
-  CLAUDE_TOOL_NAMES = %w[Bash Write Edit MultiEdit Read Glob Grep LS Task WebFetch WebSearch].freeze
+  CLAUDE_NATIVE_EVENTS = %w[SubagentStop].freeze
+  CLAUDE_TOOL_NAMES = %w[Write Edit MultiEdit Read Glob Grep LS Task WebFetch WebSearch].freeze
   CODEX_LOGICAL_EVENTS = %w[session-start user-prompt-submit pre-tool-use post-tool-use stop permission-request].freeze
   CODEX_TOOL_NAMES = %w[apply_patch exec_command].freeze
 
@@ -124,11 +124,10 @@ module StrictModeProviderDetection
 
   def claude_indicators(payload)
     indicators = []
-    indicators << "key:hook_event_name" if payload.key?("hook_event_name") || payload.key?("hookEventName")
-    indicators << "key:transcript_path" if payload.key?("transcript_path") || payload.key?("transcriptPath")
-    indicators << "key:session_id" if payload.key?("session_id")
     event_name = string_value(payload, "hook_event_name", "hookEventName")
     indicators << "event:#{event_name}" if CLAUDE_NATIVE_EVENTS.include?(event_name)
+    transcript_path = string_value(payload, "transcript_path", "transcriptPath")
+    indicators << "path:claude-transcript" if provider_path?(transcript_path, ".claude")
     tool_name = string_value(payload, "tool_name", "toolName", "name") || string_value(hash_value(payload, "tool_input", "tool", "input") || {}, "name", "tool_name")
     indicators << "tool:#{tool_name}" if CLAUDE_TOOL_NAMES.include?(tool_name)
     indicators.uniq.sort
@@ -142,6 +141,8 @@ module StrictModeProviderDetection
     indicators << "key:approval_request_id" if payload.key?("approval_request_id") || payload.key?("request_id")
     event_name = string_value(payload, "event", "type", "hook_event_name")
     indicators << "event:#{event_name}" if CODEX_LOGICAL_EVENTS.include?(event_name)
+    transcript_path = string_value(payload, "transcript_path", "transcriptPath")
+    indicators << "path:codex-transcript" if provider_path?(transcript_path, ".codex")
     tool_name = string_value(payload, "tool_name", "toolName", "name") || string_value(hash_value(payload, "tool_input", "tool", "input") || {}, "name", "tool_name")
     indicators << "tool:#{tool_name}" if CODEX_TOOL_NAMES.include?(tool_name.to_s.downcase)
     indicators.uniq.sort
@@ -189,6 +190,13 @@ module StrictModeProviderDetection
       return value if value.is_a?(String)
     end
     nil
+  end
+
+  def provider_path?(path, directory)
+    return false unless path.is_a?(String)
+
+    normalized = path.tr("\\", "/")
+    normalized.include?("/#{directory}/")
   end
 
   def sha?(value)

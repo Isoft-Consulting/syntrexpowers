@@ -440,7 +440,7 @@ end
 expect_pass("importer records unknown provider version as unknown-only") do |root|
   source = root.join("capture/stop.json")
   source.dirname.mkpath
-  source.write("{\"hook_event_name\":\"Stop\",\"session_id\":\"s1\"}\n")
+  source.write("{\"hook_event_name\":\"Stop\",\"session_id\":\"s1\",\"transcript_path\":\"/home/user/.claude/projects/session.jsonl\"}\n")
   exitstatus, output = run_cmd(IMPORTER, "--root", root, "--provider", "claude", "--event", "stop", "--source", source, "--captured-at", "2026-05-06T00:00:00Z")
   assert_no_stacktrace("importer records unknown provider version as unknown-only", output)
   unless exitstatus.zero?

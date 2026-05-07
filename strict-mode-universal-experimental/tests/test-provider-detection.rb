@@ -88,8 +88,41 @@ expect_match("Codex indicators match Codex", "codex", {
 
 expect_fail("Claude indicators reject Codex provider", "codex", {
   "hook_event_name" => "Stop",
-  "tool_name" => "Bash"
+  "tool_name" => "Write"
 }, "provider codex mismatches detected claude")
+
+expect_match("Codex hook envelope with Bash tool matches Codex", "codex", {
+  "hook_event_name" => "PreToolUse",
+  "session_id" => "019e02f8-f722",
+  "transcript_path" => "/home/user/.codex/sessions/session.jsonl",
+  "turn_id" => "turn-1",
+  "cwd" => "/repo",
+  "model" => "gpt-5.3-codex-spark",
+  "tool_name" => "Bash",
+  "tool_input" => {
+    "command" => "printf codex-hook-smoke"
+  }
+})
+
+expect_match("Codex session-start transcript path matches Codex", "codex", {
+  "hook_event_name" => "SessionStart",
+  "session_id" => "019e02f8-f722",
+  "transcript_path" => "/home/user/.codex/sessions/session.jsonl",
+  "cwd" => "/repo",
+  "model" => "gpt-5.3-codex-spark",
+  "source" => "startup"
+})
+
+expect_match("Codex stop hook envelope matches Codex", "codex", {
+  "hook_event_name" => "Stop",
+  "session_id" => "019e02f8-f722",
+  "transcript_path" => "/home/user/.codex/sessions/session.jsonl",
+  "turn_id" => "turn-1",
+  "cwd" => "/repo",
+  "model" => "gpt-5.3-codex-spark",
+  "stop_hook_active" => false,
+  "last_assistant_message" => "done"
+})
 
 expect_fail("Conflicting indicators reject provider", "codex", {
   "hook_event_name" => "PreToolUse",

@@ -236,8 +236,8 @@
         "managed hook entry"
       ],
       "requires": [
-        "STRICT_HOOK_TIMEOUT_MS=<ms> \"<install-root>/active/bin/strict-hook\" --provider <provider> <logical_event>",
-        "timeout/provider/event parity"
+        "STRICT_HOOK_TIMEOUT_MS=<ms> STRICT_STATE_ROOT=\"<state-root>\" \"<install-root>/active/bin/strict-hook\" --provider <provider> <logical_event>",
+        "timeout/state-root/provider/event parity"
       ],
       "forbids": [
         "release realpath",
@@ -339,5 +339,5 @@
   "fixture_requirements": [
     "install manifest parser and nested managed-hook record validator"
   ],
-  "profile_hash": "d1c2e2282a5e5e34ea6a6fb9ec576d0e78bf82299af6cae8de0f87d3c01b8674"
+  "profile_hash": "3427f96f8e1ef8eb59518176bd5ce210b238e26a2a7366fd64fc8f7cf51d2764"
 }

@@ -386,6 +386,9 @@ end
 
 def copied_project_with_codex_enforcing_fixtures(root, provider_version: "unknown", provider_build_hash: "")
   project_root = copy_project_root(root.join("project-root"))
+  fixture_root = project_root.join("providers/codex/fixtures")
+  fixture_root.children.each { |child| FileUtils.rm_rf(child) unless child.basename.to_s == "README.md" }
+  StrictModeFixtures.write_manifest(StrictModeFixtures.manifest_path(project_root, "codex"), StrictModeFixtures.empty_manifest("2026-05-06T00:00:00Z"))
   payload_records = []
   %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
     status, output = import_payload_fixture(project_root, "codex", event, provider_version: provider_version, provider_build_hash: provider_build_hash)
@@ -530,6 +533,7 @@ with_fixture do |_root, home, install_root|
   assert(name, baseline.fetch("selected_output_contracts") == [], "discovery baseline must not select output contracts")
   assert(name, entries.all? { |entry| entry["enforcing"] == false && entry["output_contract_id"] == "" }, "discovery hooks must not claim enforcement")
   assert(name, entries.all? { |entry| entry["command"].include?("\"#{install_root}/active/bin/strict-hook\"") }, "commands do not use quoted lexical active hook path")
+  assert(name, entries.all? { |entry| entry["command"].include?("STRICT_STATE_ROOT=\"#{install_root}/state\"") }, "commands do not bind state root")
   assert(name, entries.none? { |entry| entry["command"].include?("/releases/") }, "commands must not point at release realpath")
   assert(name, entries.all? { |entry| entry["command"].include?("--provider #{entry.fetch("provider")}") }, "commands must pass provider argv")
   provider_config_paths = manifest.fetch("provider_config_records").map { |record| record.fetch("path") }
@@ -548,6 +552,10 @@ with_fixture do |_root, home, install_root|
   runtime_env = install_root.join("config/runtime.env")
   runtime = runtime_settings(runtime_env)
   assert(name, runtime.fetch("STRICT_NO_CLAUDE_WORKER") == "1", "installed runtime.env enables Claude worker before fixture proof")
+  assert(name, baseline.fetch("generated_hook_env") == {
+    "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix",
+    "STRICT_STATE_ROOT" => "per-install command prefix"
+  }, "baseline generated hook env mismatch")
   assert(name, runtime.fetch("STRICT_NO_CODEX_WORKER") == "1", "installed runtime.env enables Codex worker before fixture proof")
   assert(name, manifest.fetch("runtime_config_records").any? { |record| record.fetch("path") == runtime_env.to_s && record.fetch("content_sha256") == Digest::SHA256.file(runtime_env).hexdigest }, "runtime.env worker defaults are not manifest-covered")
 
@@ -557,6 +565,47 @@ with_fixture do |_root, home, install_root|
   assert(name, !codex.fetch("hooks").key?("PermissionRequest"), "Codex PermissionRequest installed without fixture proof")
   assert(name, home.join(".codex/config.toml").read.include?("existing = true"), "Codex TOML merge lost existing feature")
   assert(name, home.join(".codex/config.toml").read.include?("codex_hooks = true"), "Codex hooks feature not enabled")
+end
+
+with_fixture do |root, home, install_root|
+  name = "custom state root hook command trusts external baseline"
+  state_root = root.join("external state")
+  exitstatus, output = run_cmd({ "HOME" => home.to_s }, INSTALL, "--provider", "codex", "--install-root", install_root, "--state-root", state_root)
+  assert_no_stacktrace(name, output)
+  assert(name, exitstatus.zero?, "expected custom state-root install success, got #{exitstatus}", output)
+  manifest = assert_hash_valid(name, install_root.join("install-manifest.json"), "manifest_hash")
+  baseline = assert_hash_valid(name, state_root.join("protected-install-baseline.json"), "baseline_hash")
+  assert(name, manifest.fetch("state_root") == state_root.to_s, "manifest state_root mismatch")
+  assert(name, baseline.fetch("state_root") == state_root.to_s, "baseline state_root mismatch")
+  commands = strict_commands(read_json(home.join(".codex/hooks.json")))
+  assert(name, commands.all? { |command| command.include?("STRICT_STATE_ROOT=\"#{state_root}\"") }, "provider commands do not bind external state root", commands.join("\n"))
+
+  project = root.join("project")
+  project.mkpath
+  command = commands.find { |candidate| candidate.include?(" pre-tool-use") }
+  unless command
+    record_failure(name, "missing managed pre-tool-use command", commands.join("\n"))
+    next
+  end
+  payload = {
+    "hook_event_name" => "PreToolUse",
+    "session_id" => "s1",
+    "transcript_path" => home.join(".codex/sessions/s1.jsonl").to_s,
+    "turn_id" => "t1",
+    "cwd" => project.to_s,
+    "model" => "gpt-5.3-codex-spark",
+    "tool_name" => "Bash",
+    "tool_input" => {
+      "command" => "printf custom-state"
+    }
+  }
+  status, stdout, stderr = run_cmd_capture({ "HOME" => home.to_s }, "/bin/sh", "-c", command, stdin_data: JSON.generate(payload) + "\n", chdir: project)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "strict hook command failed", stdout + stderr)
+  record = JSON.parse(state_root.join("discovery/codex-pre-tool-use.jsonl").read.lines.last)
+  assert(name, record.fetch("provider_detection_decision") == "match", "custom state-root hook did not trust Codex provider", record.inspect)
+  assert(name, record.fetch("preflight").fetch("trusted") == true, "custom state-root hook did not trust protected baseline", record.inspect)
+  assert(name, record.fetch("preflight").fetch("reason_code") == "shell-read-only-or-unmatched", "custom state-root hook classified unexpected preflight", record.inspect)
 end
 
 with_fixture do |_root, home, install_root|
@@ -573,6 +622,35 @@ with_fixture do |_root, home, install_root|
   assert(name, strict_commands(codex).size == 5, "Codex strict hook entries duplicated")
   assert(name, claude.fetch("hooks").fetch("Stop").any? { |entry| entry.fetch("hooks").any? { |hook| hook["command"] == "echo keep-claude" } }, "Claude unrelated hook was not preserved")
   assert(name, codex.fetch("hooks").fetch("Stop").any? { |entry| entry.fetch("hooks").any? { |hook| hook["command"] == "echo keep-codex" } }, "Codex unrelated hook was not preserved")
+end
+
+with_fixture do |_root, home, install_root|
+  name = "reinstall removes legacy managed commands after command shape upgrade"
+  exitstatus, output = run_cmd({ "HOME" => home.to_s }, INSTALL, "--provider", "codex", "--install-root", install_root)
+  assert_no_stacktrace(name, output)
+  assert(name, exitstatus.zero?, "initial install failed", output)
+
+  config_path = home.join(".codex/hooks.json")
+  config = read_json(config_path)
+  config.fetch("hooks").each_value do |entries|
+    legacy_entries = entries.map do |entry|
+      legacy = JSON.parse(JSON.generate(entry))
+      legacy.fetch("hooks").each do |hook|
+        hook["command"] = hook.fetch("command").sub(/ STRICT_STATE_ROOT="[^"]+"/, "")
+      end
+      legacy
+    end
+    entries.unshift(*legacy_entries)
+  end
+  config_path.write(JSON.pretty_generate(config) + "\n")
+  assert(name, strict_commands(read_json(config_path)).size == 10, "setup did not create legacy duplicate commands")
+
+  exitstatus, output = run_cmd({ "HOME" => home.to_s }, INSTALL, "--provider", "codex", "--install-root", install_root)
+  assert_no_stacktrace(name, output)
+  assert(name, exitstatus.zero?, "reinstall failed", output)
+  commands = strict_commands(read_json(config_path))
+  assert(name, commands.size == 5, "reinstall left legacy managed hook duplicates", commands.join("\n"))
+  assert(name, commands.all? { |command| command.include?("STRICT_STATE_ROOT=\"#{install_root}/state\"") }, "reinstall left command without state-root binding", commands.join("\n"))
 end
 
 with_fixture do |_root, home, install_root|
@@ -2248,7 +2326,7 @@ with_fixture do |_root, home, install_root|
 
   state_root = install_root.join("state")
   hook = install_root.join("active/bin/strict-hook")
-  payload = "{\"hook_event_name\":\"Stop\",\"session_id\":\"s1\"}\n"
+  payload = "{\"hook_event_name\":\"Stop\",\"session_id\":\"s1\",\"tool_name\":\"Write\"}\n"
   env = {
     "HOME" => home.to_s,
     "STRICT_STATE_ROOT" => state_root.to_s

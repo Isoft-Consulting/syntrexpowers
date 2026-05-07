@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "provider": "codex",
+  "logical_event": "post-tool-use",
+  "raw_event": "PostToolUse",
+  "session_id": "019e030b-0929-7742-960a-64d384366243",
+  "parent_session_id": "",
+  "turn_id": "",
+  "cwd": "/var/www/syntrexpowers",
+  "project_dir": "/var/www/syntrexpowers",
+  "transcript_path": "/home/bachinsky1/.codex/sessions/2026/05/07/rollout-2026-05-07T15-25-15-019e030b-0929-7742-960a-64d384366243.jsonl",
+  "turn": {
+    "assistant_text": "",
+    "assistant_text_bytes": 0,
+    "assistant_text_truncated": 0,
+    "edit_count": 0,
+    "has_fdr_context": false
+  },
+  "tool": {
+    "name": "Bash",
+    "kind": "shell",
+    "write_intent": "unknown",
+    "command": "printf codex-hook-smoke-3",
+    "file_path": "",
+    "file_paths": [
+
+    ],
+    "file_changes": [
+
+    ],
+    "content": "",
+    "old_string": "",
+    "new_string": "",
+    "patch": ""
+  },
+  "permission": {
+    "request_id": "",
+    "operation": "unknown",
+    "access_mode": "unknown",
+    "requested_tool_kind": "unknown",
+    "requested_command": "",
+    "requested_paths": [
+      "unknown"
+    ],
+    "filesystem": {
+      "access_mode": "unknown",
+      "paths": [
+        "unknown"
+      ],
+      "recursive": "unknown",
+      "scope": "unknown"
+    },
+    "network": {
+      "scheme": "unknown",
+      "host": "unknown",
+      "port": "unknown",
+      "operation": "unknown",
+      "url": "unknown"
+    },
+    "can_approve": "unknown"
+  },
+  "prompt": {
+    "text": ""
+  },
+  "assistant": {
+    "last_message": ""
+  },
+  "raw": {
+    "payload_sha256": "22f083bb063b7f9b686e8c206931fb5e54ebaf29124e0488ec28fdf64d02cfc5",
+    "event_name": "PostToolUse",
+    "logical_event_mismatch": false,
+    "provider_indicators": [
+      "codex.transcript_path",
+      "shared.hook_event_name",
+      "shared.session_id"
+    ]
+  }
+}

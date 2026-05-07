@@ -29,7 +29,7 @@ end
 def entry_for(provider, logical_event, output_contract_id: "", enforcing: false, matcher: "")
   hook_event = hook_event_for(logical_event)
   matcher = ".*" if matcher.empty? && %w[pre-tool-use post-tool-use permission-request].include?(logical_event)
-  command = "STRICT_HOOK_TIMEOUT_MS=5000 \"/tmp/strict root/active/bin/strict-hook\" --provider #{provider} #{logical_event}"
+  command = "STRICT_HOOK_TIMEOUT_MS=5000 STRICT_STATE_ROOT=\"/tmp/strict state\" \"/tmp/strict root/active/bin/strict-hook\" --provider #{provider} #{logical_event}"
   entry = {
     "provider" => provider,
     "provider_version" => "unknown",
@@ -161,7 +161,7 @@ end
 run_case do
   name = "validation rejects managed hook command not using lexical active strict-hook"
   entry = entry_for("codex", "stop")
-  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 \"/tmp/strict root/releases/tx/bin/strict-hook\" --provider codex stop"
+  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 STRICT_STATE_ROOT=\"/tmp/strict state\" \"/tmp/strict root/releases/tx/bin/strict-hook\" --provider codex stop"
   entry["removal_selector"] = StrictModeHookEntryPlan.removal_selector_for(entry)
   errors = StrictModeHookEntryPlan.validate([entry], selected_output_contracts: [], enforce: false)
   assert(name, errors.any? { |error| error.include?("must end with /active/bin/strict-hook") }, "missing lexical active path diagnostic", errors.join("\n"))
@@ -171,7 +171,7 @@ end
 run_case do
   name = "validation rejects managed hook command provider and event drift"
   entry = entry_for("codex", "pre-tool-use")
-  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 \"/tmp/strict root/active/bin/strict-hook\" --provider claude stop"
+  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 STRICT_STATE_ROOT=\"/tmp/strict state\" \"/tmp/strict root/active/bin/strict-hook\" --provider claude stop"
   entry["removal_selector"] = StrictModeHookEntryPlan.removal_selector_for(entry)
   errors = StrictModeHookEntryPlan.validate([entry], selected_output_contracts: [], enforce: false)
   assert(name, errors.any? { |error| error.include?("command provider argv mismatch") }, "missing provider argv diagnostic", errors.join("\n"))
@@ -186,9 +186,16 @@ run_case do
 end
 
 run_case do
+  name = "validation rejects managed hook command outside state root when state root is known"
+  entry = entry_for("codex", "stop")
+  errors = StrictModeHookEntryPlan.validate([entry], selected_output_contracts: [], enforce: false, state_root: "/other/strict state")
+  assert(name, errors.any? { |error| error.include?("command state root must match state_root") }, "missing state-root command diagnostic", errors.join("\n"))
+end
+
+run_case do
   name = "validation rejects shell wrapper or extra managed hook command argv"
   entry = entry_for("codex", "stop")
-  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 \"/tmp/strict root/active/bin/strict-hook\" --provider codex stop && echo bypass"
+  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 STRICT_STATE_ROOT=\"/tmp/strict state\" \"/tmp/strict root/active/bin/strict-hook\" --provider codex stop && echo bypass"
   entry["removal_selector"] = StrictModeHookEntryPlan.removal_selector_for(entry)
   errors = StrictModeHookEntryPlan.validate([entry], selected_output_contracts: [], enforce: false)
   assert(name, errors.any? { |error| error.include?("command must be STRICT_HOOK_TIMEOUT_MS") }, "missing command shape diagnostic", errors.join("\n"))

@@ -7,6 +7,7 @@ require "json"
 require "optparse"
 require "pathname"
 require "securerandom"
+require "shellwords"
 require "time"
 require_relative "fixture_readiness_lib"
 require_relative "global_ledger_lib"
@@ -50,8 +51,8 @@ def double_quote_shell(path)
   StrictModeInstallHookPlan.double_quote_shell(path)
 end
 
-def command_for(install_root, provider, logical_event, timeout_ms)
-  StrictModeInstallHookPlan.command_for(install_root, provider, logical_event, timeout_ms)
+def command_for(install_root, state_root, provider, logical_event, timeout_ms)
+  StrictModeInstallHookPlan.command_for(install_root, state_root, provider, logical_event, timeout_ms)
 end
 
 def json_hash(record, field)
@@ -465,11 +466,12 @@ def hook_specs(provider, include_permission_request: false)
   StrictModeInstallHookPlan.hook_specs(provider, include_permission_request: include_permission_request)
 end
 
-def managed_entries(provider, config_path, install_root, selected_output_contracts: [], enforce: false)
+def managed_entries(provider, config_path, install_root, state_root, selected_output_contracts: [], enforce: false)
   StrictModeInstallHookPlan.managed_entries(
     provider,
     config_path,
     install_root,
+    state_root: state_root,
     selected_output_contracts: selected_output_contracts,
     enforce: enforce
   )
@@ -479,9 +481,27 @@ def hook_config_entry(entry)
   StrictModeInstallHookPlan.hook_config_entry(entry)
 end
 
-def remove_managed_hooks(root, commands)
+def managed_command_identity(command)
+  parts = Shellwords.split(command.to_s)
+  hook_index = parts.index { |part| part.end_with?("/active/bin/strict-hook") }
+  return nil unless hook_index
+  return nil unless parts[hook_index + 1] == "--provider"
+
+  provider = parts[hook_index + 2]
+  logical_event = parts[hook_index + 3]
+  return nil if provider.to_s.empty? || logical_event.to_s.empty?
+
+  [parts[hook_index], provider, logical_event]
+rescue ArgumentError
+  nil
+end
+
+def remove_managed_hooks(root, entries)
   hooks = root["hooks"]
   return unless hooks.is_a?(Hash)
+
+  commands = entries.map { |entry| entry.fetch("command") }
+  managed_identities = entries.map { |entry| managed_command_identity(entry.fetch("command")) }.compact
 
   hooks.each_value do |entries|
     next unless entries.is_a?(Array)
@@ -490,7 +510,12 @@ def remove_managed_hooks(root, commands)
       hook_list = entry.is_a?(Hash) ? entry["hooks"] : nil
       next false unless hook_list.is_a?(Array)
 
-      hook_list.reject! { |hook| hook.is_a?(Hash) && commands.include?(hook["command"]) }
+      hook_list.reject! do |hook|
+        next false unless hook.is_a?(Hash)
+
+        command = hook["command"]
+        commands.include?(command) || managed_identities.include?(managed_command_identity(command))
+      end
       hook_list.empty?
     end
   end
@@ -499,7 +524,7 @@ end
 def install_json_hooks(path, entries)
   root = load_json(path)
   root["hooks"] = {} unless root["hooks"].is_a?(Hash)
-  remove_managed_hooks(root, entries.map { |entry| entry.fetch("command") })
+  remove_managed_hooks(root, entries)
   entries.each do |entry|
     event = entry.fetch("hook_event")
     root["hooks"][event] = [] unless root["hooks"][event].is_a?(Array)
@@ -659,6 +684,7 @@ def build_install_plan(home, install_root, state_root, providers, enforce:, prov
       provider,
       provider_hook_config_path(provider, home),
       install_root,
+      state_root,
       selected_output_contracts: selected_output_contracts,
       enforce: enforce
     )
@@ -678,7 +704,10 @@ def build_install_plan(home, install_root, state_root, providers, enforce:, prov
     "provider_config_paths" => provider_config_plan_paths(providers, home),
     "managed_hook_entries" => provider_entries,
     "generated_hook_commands" => provider_entries.map { |entry| entry.slice("provider", "hook_event", "logical_event", "command") },
-    "generated_hook_env" => { "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix" },
+    "generated_hook_env" => {
+      "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix",
+      "STRICT_STATE_ROOT" => "per-install command prefix"
+    },
     "fixture_manifest_records" => StrictModeFixtureReadiness.fixture_manifest_records(StrictModeMetadata.project_root, providers),
     "selected_output_contracts" => selected_output_contracts
   }
@@ -843,7 +872,7 @@ begin
     case provider
     when "claude"
       path = home.join(".claude/settings.json")
-      entries = managed_entries(provider, path, install_root, selected_output_contracts: selected_output_contracts, enforce: options[:enforce])
+      entries = managed_entries(provider, path, install_root, state_root, selected_output_contracts: selected_output_contracts, enforce: options[:enforce])
       install_json_hooks(path, entries)
       provider_entries.concat(entries)
       provider_config_paths[provider] = path
@@ -852,7 +881,7 @@ begin
       hooks_path = home.join(".codex/hooks.json")
       config_path = home.join(".codex/config.toml")
       ensure_codex_hooks_feature(config_path)
-      entries = managed_entries(provider, hooks_path, install_root, selected_output_contracts: selected_output_contracts, enforce: options[:enforce])
+      entries = managed_entries(provider, hooks_path, install_root, state_root, selected_output_contracts: selected_output_contracts, enforce: options[:enforce])
       install_json_hooks(hooks_path, entries)
       provider_entries.concat(entries)
       provider_config_paths[provider] = hooks_path
@@ -924,7 +953,10 @@ begin
     "provider_config_paths" => provider_config_records.map { |record| record.fetch("path") }.sort,
     "managed_hook_entries" => provider_entries,
     "generated_hook_commands" => provider_entries.map { |entry| entry.slice("provider", "hook_event", "logical_event", "command") },
-    "generated_hook_env" => { "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix" },
+    "generated_hook_env" => {
+      "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix",
+      "STRICT_STATE_ROOT" => "per-install command prefix"
+    },
     "package_version" => PACKAGE_VERSION,
     "install_manifest_hash" => manifest.fetch("manifest_hash"),
     "runtime_file_records" => runtime_records,
