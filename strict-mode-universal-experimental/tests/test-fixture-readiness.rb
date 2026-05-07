@@ -49,8 +49,10 @@ def fixture_hash_entry(root, path)
   }
 end
 
-def record_for(root, provider:, contract_id:, contract_kind:, event:, provider_action: "block")
-  return decision_output_record_for(root, provider: provider, contract_id: contract_id, event: event, provider_action: provider_action) if contract_kind == "decision-output"
+def record_for(root, provider:, contract_id:, contract_kind:, event:, provider_action: "block", provider_build_hash: "")
+  if contract_kind == "decision-output"
+    return decision_output_record_for(root, provider: provider, contract_id: contract_id, event: event, provider_action: provider_action, provider_build_hash: provider_build_hash)
+  end
 
   fixture = fixture_file(root, provider, "#{contract_kind}/#{event}/#{contract_id}.txt", "#{contract_id}\n")
   record = {
@@ -58,7 +60,7 @@ def record_for(root, provider:, contract_id:, contract_kind:, event:, provider_a
     "contract_id" => contract_id,
     "provider" => provider,
     "provider_version" => "1.0.0",
-    "provider_build_hash" => "",
+    "provider_build_hash" => provider_build_hash,
     "platform" => RUBY_PLATFORM,
     "event" => event,
     "contract_kind" => contract_kind,
@@ -72,7 +74,7 @@ def record_for(root, provider:, contract_id:, contract_kind:, event:, provider_a
       "min_version" => "1.0.0",
       "max_version" => "1.0.0",
       "version_comparator" => "",
-      "provider_build_hashes" => []
+      "provider_build_hashes" => provider_build_hash.empty? ? [] : [provider_build_hash]
     },
     "fixture_record_hash" => ""
   }
@@ -90,7 +92,7 @@ def record_for(root, provider:, contract_id:, contract_kind:, event:, provider_a
   record
 end
 
-def decision_output_record_for(root, provider:, contract_id:, event:, provider_action: "block")
+def decision_output_record_for(root, provider:, contract_id:, event:, provider_action: "block", provider_build_hash: "")
   dir = root.join("providers/#{provider}/fixtures/decision-output/#{event}")
   blocks_or_denies = %w[block deny].include?(provider_action) ? 1 : 0
   metadata = {
@@ -119,7 +121,7 @@ def decision_output_record_for(root, provider:, contract_id:, event:, provider_a
     "contract_id" => contract_id,
     "provider" => provider,
     "provider_version" => "1.0.0",
-    "provider_build_hash" => "",
+    "provider_build_hash" => provider_build_hash,
     "platform" => RUBY_PLATFORM,
     "event" => event,
     "contract_kind" => "decision-output",
@@ -133,7 +135,7 @@ def decision_output_record_for(root, provider:, contract_id:, event:, provider_a
       "min_version" => "1.0.0",
       "max_version" => "1.0.0",
       "version_comparator" => "",
-      "provider_build_hashes" => []
+      "provider_build_hashes" => provider_build_hash.empty? ? [] : [provider_build_hash]
     },
     "fixture_record_hash" => ""
   }
@@ -144,6 +146,7 @@ end
 def unknown_only(record)
   copy = JSON.parse(JSON.generate(record))
   copy["provider_version"] = "unknown"
+  copy["provider_build_hash"] = ""
   copy["compatibility_range"] = {
     "mode" => "unknown-only",
     "min_version" => "unknown",
@@ -158,6 +161,7 @@ end
 def range_compatible(record)
   copy = JSON.parse(JSON.generate(record))
   copy["provider_version"] = "1.0.0"
+  copy["provider_build_hash"] = ""
   copy["compatibility_range"] = {
     "mode" => "range",
     "min_version" => "1.0.0",
@@ -169,7 +173,7 @@ def range_compatible(record)
   copy
 end
 
-def import_codex_payload(root, event, provider_version: "unknown")
+def import_codex_payload(root, event, provider_version: "unknown", provider_build_hash: "")
   source = root.join("capture/#{event}.json")
   source.dirname.mkpath
   source.write(JSON.generate({
@@ -181,7 +185,9 @@ def import_codex_payload(root, event, provider_version: "unknown")
   project = root.join("project")
   cwd = project.join("src")
   cwd.mkpath
-  run_cmd(IMPORTER, "--root", root, "--provider", "codex", "--event", event, "--source", source, "--cwd", cwd, "--project-dir", project, "--captured-at", "2026-05-06T00:00:00Z", "--provider-version", provider_version)
+  args = [IMPORTER, "--root", root, "--provider", "codex", "--event", event, "--source", source, "--cwd", cwd, "--project-dir", project, "--captured-at", "2026-05-06T00:00:00Z", "--provider-version", provider_version]
+  args.concat(["--provider-build-hash", provider_build_hash]) unless provider_build_hash.empty?
+  run_cmd(*args)
 end
 
 def import_codex_contract(root, event, contract_kind, contract_id)
@@ -387,6 +393,71 @@ with_root do |root|
 end
 
 with_root do |root|
+  name = "exact provider build hashes gate enforcing readiness"
+  build_hash = "a" * 64
+  wrong_build_hash = "b" * 64
+  payload_records = []
+  %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
+    status, output = import_codex_payload(root, event, provider_version: "1.0.0", provider_build_hash: build_hash)
+    assert_no_stacktrace("#{name} payload #{event}", output)
+    if status.zero?
+      payload_records = StrictModeFixtures.load_json(StrictModeFixtures.manifest_path(root, "codex")).fetch("records")
+    else
+      record_failure(name, "payload import failed for #{event}", output)
+    end
+  end
+  records = [
+    record_for(root, provider: "codex", contract_id: "codex.order", contract_kind: "event-order", event: "session-start", provider_build_hash: build_hash),
+    record_for(root, provider: "codex", contract_id: "codex.pre.matcher", contract_kind: "matcher", event: "pre-tool-use", provider_build_hash: build_hash)
+  ]
+  %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
+    records << record_for(root, provider: "codex", contract_id: "codex.#{event}.command", contract_kind: "command-execution", event: event, provider_build_hash: build_hash)
+  end
+  %w[pre-tool-use stop].each do |event|
+    records << record_for(root, provider: "codex", contract_id: "codex.#{event}.decision", contract_kind: "decision-output", event: event, provider_build_hash: build_hash)
+  end
+  write_manifest(root, "codex", payload_records + records)
+
+  status, output = run_cmd(CHECKER, "--root", root, "--provider", "codex", "--provider-version", "codex=1.0.0")
+  assert_no_stacktrace("#{name} missing build", output)
+  record_failure(name, "expected missing build hash exit 1, got #{status}", output) unless status == 1
+  record_failure(name, "missing build-gated readiness diagnostic", output) unless output.include?("missing codex stop decision-output fixture")
+
+  status, output = run_cmd(CHECKER, "--root", root, "--provider", "codex", "--provider-version", "codex=1.0.0", "--provider-build-hash", "codex=#{wrong_build_hash}")
+  assert_no_stacktrace("#{name} wrong build", output)
+  record_failure(name, "expected wrong build hash exit 1, got #{status}", output) unless status == 1
+  record_failure(name, "missing wrong-build readiness diagnostic", output) unless output.include?("missing codex stop decision-output fixture")
+
+  status, output = run_cmd(CHECKER, "--root", root, "--provider", "codex", "--provider-version", "codex=1.0.0", "--provider-build-hash", "codex=#{build_hash}")
+  assert_no_stacktrace("#{name} matching build", output)
+  record_failure(name, "expected matching build hash exit 0, got #{status}", output) unless status.zero?
+  record_failure(name, "missing checker success diagnostic", output) unless output.include?("fixture readiness passed")
+
+  status, output = run_cmd(REPORTER, "--root", root, "--provider", "codex", "--provider-version", "codex=1.0.0", "--provider-build-hash", "codex=#{build_hash}", "--format", "json")
+  assert_no_stacktrace("#{name} reporter", output)
+  record_failure(name, "expected reporter exit 0, got #{status}", output) unless status.zero?
+  parsed = JSON.parse(output)
+  provider = parsed.fetch("providers").first
+  selected = provider.fetch("selected_output_contracts")
+  record_failure(name, "report build hash missing", output) unless provider.fetch("installed_build_hash") == build_hash
+  record_failure(name, "selected contracts did not preserve build hash", output) unless selected.length == 2 && selected.all? { |record| record.fetch("provider_build_hash") == build_hash }
+
+  status, output = run_cmd(PLANNER, "--root", root, "--provider", "codex", "--provider-version", "codex=1.0.0", "--provider-build-hash", "codex=#{build_hash}", "--format", "json")
+  assert_no_stacktrace("#{name} planner", output)
+  record_failure(name, "expected planner exit 0, got #{status}", output) unless status.zero?
+  parsed = JSON.parse(output)
+  provider = parsed.fetch("providers").first
+  optional_command = provider.fetch("missing_optional").first.fetch("example_command")
+  record_failure(name, "planner required gaps should be empty", output) unless provider.fetch("missing_required").empty?
+  record_failure(name, "planner command missing provider build hash", output) unless optional_command.include?("--provider-build-hash #{build_hash}")
+
+  status, output = run_cmd(REPORTER, "--root", root, "--provider", "codex", "--provider-build-hash", "claude=#{build_hash}")
+  assert_no_stacktrace("#{name} invalid selector", output)
+  record_failure(name, "expected invalid build selector exit 2, got #{status}", output) unless status == 2
+  record_failure(name, "missing invalid build selector diagnostic", output) unless output.include?("outside --provider selection")
+end
+
+with_root do |root|
   name = "importer CLI workflow can satisfy Codex enforcing readiness"
   %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
     status, output = import_codex_payload(root, event)
@@ -473,10 +544,14 @@ end
 with_root do |root|
   name = "enforceable fixture identity respects exact and unknown-only versions"
   exact = record_for(root, provider: "claude", contract_id: "claude.stop.command", contract_kind: "command-execution", event: "stop")
+  build_exact = record_for(root, provider: "claude", contract_id: "claude.stop.build.command", contract_kind: "command-execution", event: "stop", provider_build_hash: "a" * 64)
   unknown = unknown_only(exact)
   range = range_compatible(exact)
   record_failure(name, "exact record should match known installed version") unless StrictModeFixtureReadiness.enforceable_record?(exact, "1.0.0")
   record_failure(name, "exact record should not match unknown installed version") if StrictModeFixtureReadiness.enforceable_record?(exact, "unknown")
+  record_failure(name, "build-bound exact record should require build hash") if StrictModeFixtureReadiness.enforceable_record?(build_exact, "1.0.0")
+  record_failure(name, "build-bound exact record should reject wrong build hash") if StrictModeFixtureReadiness.enforceable_record?(build_exact, "1.0.0", "b" * 64)
+  record_failure(name, "build-bound exact record should match known build hash") unless StrictModeFixtureReadiness.enforceable_record?(build_exact, "1.0.0", "a" * 64)
   record_failure(name, "unknown-only record should match unknown installed version") unless StrictModeFixtureReadiness.enforceable_record?(unknown, "unknown")
   record_failure(name, "unknown-only record should not match known installed version") if StrictModeFixtureReadiness.enforceable_record?(unknown, "1.0.0")
   record_failure(name, "range record must not be enforceable before comparator implementation") if StrictModeFixtureReadiness.enforceable_record?(range, "1.5.0")

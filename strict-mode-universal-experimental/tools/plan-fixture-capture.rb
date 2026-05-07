@@ -48,18 +48,23 @@ def provider_version_args(provider_version)
   ["--provider-version", provider_version]
 end
 
+def provider_build_hash_args(provider_build_hash)
+  provider_build_hash.empty? ? [] : ["--provider-build-hash", provider_build_hash]
+end
+
 def command_tokens(tokens)
   tokens.map do |token|
     token.to_s.start_with?("<") && token.to_s.end_with?(">") ? token.to_s : Shellwords.escape(token.to_s)
   end.join(" ")
 end
 
-def command_example(check, importer, required_inputs, provider_version)
+def command_example(check, importer, required_inputs, provider_version, provider_build_hash)
   provider = check.fetch("provider")
   event = event_argument(check)
   contract_kind = check.fetch("contract_kind")
   base = ["ruby", importer, "--provider", provider, "--event", event]
   base.concat(provider_version_args(provider_version))
+  base.concat(provider_build_hash_args(provider_build_hash))
   case contract_kind
   when "payload-schema"
     command_tokens(base + ["--source", "<captured-payload.json>", "--cwd", "<provider-cwd>", "--project-dir", "<project-root>"])
@@ -116,7 +121,7 @@ def required_inputs_for(contract_kind)
   end
 end
 
-def capture_step(check, provider_version)
+def capture_step(check, provider_version, provider_build_hash)
   contract_kind = check.fetch("contract_kind")
   importer = importer_for(contract_kind)
   required_inputs = required_inputs_for(contract_kind)
@@ -129,22 +134,24 @@ def capture_step(check, provider_version)
     "message" => check.fetch("message"),
     "importer" => importer,
     "required_inputs" => required_inputs,
-    "example_command" => command_example(check, importer, required_inputs, provider_version)
+    "example_command" => command_example(check, importer, required_inputs, provider_version, provider_build_hash)
   }
 end
 
-def missing_steps(checks, provider_version)
-  checks.reject { |check| check.fetch("ready") }.map { |check| capture_step(check, provider_version) }
+def missing_steps(checks, provider_version, provider_build_hash)
+  checks.reject { |check| check.fetch("ready") }.map { |check| capture_step(check, provider_version, provider_build_hash) }
 end
 
 def fixture_capture_plan(report)
   providers = report.fetch("providers").map do |provider_report|
     provider_version = provider_report.fetch("installed_version")
-    missing_required = missing_steps(provider_report.fetch("required_checks"), provider_version)
-    missing_optional = missing_steps(provider_report.fetch("optional_checks"), provider_version)
+    provider_build_hash = provider_report.fetch("installed_build_hash")
+    missing_required = missing_steps(provider_report.fetch("required_checks"), provider_version, provider_build_hash)
+    missing_optional = missing_steps(provider_report.fetch("optional_checks"), provider_version, provider_build_hash)
     {
       "provider" => provider_report.fetch("provider"),
       "installed_version" => provider_version,
+      "installed_build_hash" => provider_build_hash,
       "manifest_valid" => provider_report.fetch("manifest_valid"),
       "manifest_errors" => provider_report.fetch("manifest_errors"),
       "enforceable_record_count" => provider_report.fetch("enforceable_record_count"),
@@ -188,7 +195,8 @@ options = {
   root: StrictModeFixtures.project_root,
   provider: "all",
   format: "text",
-  provider_versions: {}
+  provider_versions: {},
+  provider_build_hashes: {}
 }
 
 begin
@@ -200,6 +208,10 @@ begin
       provider, version = StrictModeFixtureReadiness.parse_provider_version_assignment(value)
       options[:provider_versions][provider] = version
     end
+    opts.on("--provider-build-hash PROVIDER=SHA256") do |value|
+      provider, build_hash = StrictModeFixtureReadiness.parse_provider_build_hash_assignment(value)
+      options[:provider_build_hashes][provider] = build_hash
+    end
   end.parse!(ARGV)
 rescue OptionParser::ParseError, ArgumentError => e
   usage_error(e.message)
@@ -210,12 +222,13 @@ usage_error("--format must be text or json") unless %w[text json].include?(optio
 begin
   providers = StrictModeFixtures.provider_list(options[:provider])
   StrictModeFixtureReadiness.validate_provider_versions!(options[:provider_versions], providers)
+  StrictModeFixtureReadiness.validate_provider_build_hashes!(options[:provider_build_hashes], providers)
 rescue ArgumentError => e
   usage_error(e.message)
 end
 
 begin
-  report = StrictModeFixtureReadiness.enforcing_report(options[:root], providers, options[:provider_versions])
+  report = StrictModeFixtureReadiness.enforcing_report(options[:root], providers, options[:provider_versions], options[:provider_build_hashes])
   plan = fixture_capture_plan(report)
 rescue RuntimeError, ArgumentError => e
   warn "fixture capture plan failed: #{e.message}"

@@ -29,6 +29,16 @@ module StrictModeFixtureReadiness
     [provider, version]
   end
 
+  def parse_provider_build_hash_assignment(value)
+    provider, build_hash = value.to_s.split("=", 2)
+    if provider.nil? || provider.empty? || build_hash.nil? || build_hash.empty?
+      raise ArgumentError, "--provider-build-hash must be PROVIDER=SHA256"
+    end
+    raise ArgumentError, "--provider-build-hash must be lowercase SHA-256" unless build_hash.match?(StrictModeFixtures::SHA256_PATTERN)
+
+    [provider, build_hash]
+  end
+
   def validate_provider_versions!(provider_versions, providers)
     unknown_version_providers = provider_versions.keys - providers
     unless unknown_version_providers.empty?
@@ -36,6 +46,15 @@ module StrictModeFixtureReadiness
     end
 
     provider_versions
+  end
+
+  def validate_provider_build_hashes!(provider_build_hashes, providers)
+    unknown_build_hash_providers = provider_build_hashes.keys - providers
+    unless unknown_build_hash_providers.empty?
+      raise ArgumentError, "--provider-build-hash includes provider outside --provider selection: #{unknown_build_hash_providers.join(", ")}"
+    end
+
+    provider_build_hashes
   end
 
   def fixture_manifest_records(root, providers)
@@ -64,12 +83,13 @@ module StrictModeFixtureReadiness
     end
   end
 
-  def selected_output_contracts(root, providers, provider_versions = {})
+  def selected_output_contracts(root, providers, provider_versions = {}, provider_build_hashes = {})
     root = Pathname.new(root)
     records_by_provider = load_manifest_records(root, providers)
     providers.flat_map do |provider|
       installed_version = provider_versions.fetch(provider, "unknown")
-      enforceable = records_by_provider.fetch(provider, []).select { |record| enforceable_record?(record, installed_version) }
+      installed_build_hash = provider_build_hashes.fetch(provider, "")
+      enforceable = records_by_provider.fetch(provider, []).select { |record| enforceable_record?(record, installed_version, installed_build_hash) }
       selected_events = REQUIRED_BLOCKING_EVENTS + OPTIONAL_BLOCKING_EVENTS.select { |event| optional_blocking_ready?(enforceable, event) }
       selected_events.map do |event|
         selected_blocking_decision_output(root, enforceable, provider, event)
@@ -90,7 +110,7 @@ module StrictModeFixtureReadiness
     end
   end
 
-  def enforcing_errors(root, providers, provider_versions = {})
+  def enforcing_errors(root, providers, provider_versions = {}, provider_build_hashes = {})
     root = Pathname.new(root)
     records_by_provider = {}
     errors = []
@@ -110,7 +130,8 @@ module StrictModeFixtureReadiness
     providers.each do |provider|
       records = records_by_provider.fetch(provider, [])
       installed_version = provider_versions.fetch(provider, "unknown")
-      enforceable = records.select { |record| enforceable_record?(record, installed_version) }
+      installed_build_hash = provider_build_hashes.fetch(provider, "")
+      enforceable = records.select { |record| enforceable_record?(record, installed_version, installed_build_hash) }
       EARLY_BASELINE_EVENTS.any? { |event| record_exists?(enforceable, event, "event-order") } ||
         errors << "missing #{provider} event-order fixture for early baseline before tool execution"
       GENERATED_HOOK_EVENTS.each do |event|
@@ -129,10 +150,10 @@ module StrictModeFixtureReadiness
     errors
   end
 
-  def enforcing_report(root, providers, provider_versions = {})
+  def enforcing_report(root, providers, provider_versions = {}, provider_build_hashes = {})
     root = Pathname.new(root)
     provider_reports = providers.map do |provider|
-      provider_report(root, provider, provider_versions.fetch(provider, "unknown"))
+      provider_report(root, provider, provider_versions.fetch(provider, "unknown"), provider_build_hashes.fetch(provider, ""))
     end
     errors = provider_reports.flat_map { |report| report.fetch("errors") }
     {
@@ -144,13 +165,14 @@ module StrictModeFixtureReadiness
     }
   end
 
-  def provider_report(root, provider, installed_version)
+  def provider_report(root, provider, installed_version, installed_build_hash = "")
     manifest_errors = StrictModeFixtures.validate_provider_manifest(root, provider)
     unless manifest_errors.empty?
       errors = manifest_errors.map { |message| "fixture manifest invalid for #{provider}: #{message}" }
       return {
         "provider" => provider,
         "installed_version" => installed_version,
+        "installed_build_hash" => installed_build_hash,
         "manifest_valid" => false,
         "manifest_errors" => manifest_errors,
         "enforceable_record_count" => 0,
@@ -163,14 +185,15 @@ module StrictModeFixtureReadiness
     end
 
     records = StrictModeFixtures.load_json(StrictModeFixtures.manifest_path(root, provider)).fetch("records")
-    enforceable = records.select { |record| enforceable_record?(record, installed_version) }
+    enforceable = records.select { |record| enforceable_record?(record, installed_version, installed_build_hash) }
     required_checks = required_checks_for(root, provider, enforceable)
     optional_checks = optional_checks_for(root, provider, enforceable)
     errors = required_checks.reject { |check| check.fetch("ready") }.map { |check| check.fetch("message") }
-    selected = selected_output_contracts(root, [provider], provider => installed_version)
+    selected = selected_output_contracts(root, [provider], { provider => installed_version }, provider => installed_build_hash)
     {
       "provider" => provider,
       "installed_version" => installed_version,
+      "installed_build_hash" => installed_build_hash,
       "manifest_valid" => true,
       "manifest_errors" => [],
       "enforceable_record_count" => enforceable.length,
@@ -275,7 +298,7 @@ module StrictModeFixtureReadiness
     }
   end
 
-  def enforceable_record?(record, installed_version)
+  def enforceable_record?(record, installed_version, installed_build_hash = "")
     return false unless record.is_a?(Hash) && record["provider_version"].is_a?(String)
 
     mode = record.dig("compatibility_range", "mode")
@@ -283,12 +306,27 @@ module StrictModeFixtureReadiness
     when "unknown-only"
       installed_version == "unknown" && record["provider_version"] == "unknown"
     when "exact"
-      installed_version != "unknown" && record["provider_version"] == installed_version
+      installed_version != "unknown" &&
+        record["provider_version"] == installed_version &&
+        build_hash_compatible?(record, installed_build_hash)
     when "range"
       false
     else
       false
     end
+  end
+
+  def build_hash_compatible?(record, installed_build_hash)
+    allowed_hashes = record.dig("compatibility_range", "provider_build_hashes")
+    allowed_hashes = [] unless allowed_hashes.is_a?(Array)
+    if allowed_hashes.empty? && record["provider_build_hash"].is_a?(String) && !record["provider_build_hash"].empty?
+      allowed_hashes = [record["provider_build_hash"]]
+    end
+    return true if allowed_hashes.empty?
+
+    installed_build_hash.is_a?(String) &&
+      installed_build_hash.match?(StrictModeFixtures::SHA256_PATTERN) &&
+      allowed_hashes.include?(installed_build_hash)
   end
 
   def record_exists?(records, event, contract_kind)

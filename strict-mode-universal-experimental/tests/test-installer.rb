@@ -270,7 +270,7 @@ def fixture_hash_entry(root, path)
   }
 end
 
-def compatibility_range_for(provider_version)
+def compatibility_range_for(provider_version, provider_build_hash = "")
   if provider_version == "unknown"
     {
       "mode" => "unknown-only",
@@ -285,19 +285,19 @@ def compatibility_range_for(provider_version)
       "min_version" => provider_version,
       "max_version" => provider_version,
       "version_comparator" => "",
-      "provider_build_hashes" => []
+      "provider_build_hashes" => provider_build_hash.empty? ? [] : [provider_build_hash]
     }
   end
 end
 
-def fixture_record(root, provider:, contract_id:, contract_kind:, event:, provider_version: "unknown")
+def fixture_record(root, provider:, contract_id:, contract_kind:, event:, provider_version: "unknown", provider_build_hash: "")
   fixture = fixture_file(root, provider, "#{contract_kind}/#{event}/#{contract_id}.txt", "#{contract_id}\n")
   record = {
     "schema_version" => 1,
     "contract_id" => contract_id,
     "provider" => provider,
     "provider_version" => provider_version,
-    "provider_build_hash" => "",
+    "provider_build_hash" => provider_build_hash,
     "platform" => RUBY_PLATFORM,
     "event" => event,
     "contract_kind" => contract_kind,
@@ -306,7 +306,7 @@ def fixture_record(root, provider:, contract_id:, contract_kind:, event:, provid
     "command_execution_contract_hash" => StrictModeFixtures::ZERO_HASH,
     "fixture_file_hashes" => [fixture_hash_entry(root, fixture)],
     "captured_at" => "2026-05-06T00:00:00Z",
-    "compatibility_range" => compatibility_range_for(provider_version),
+    "compatibility_range" => compatibility_range_for(provider_version, provider_build_hash),
     "fixture_record_hash" => ""
   }
   if contract_kind == "command-execution"
@@ -316,7 +316,7 @@ def fixture_record(root, provider:, contract_id:, contract_kind:, event:, provid
   record
 end
 
-def decision_output_fixture_record(root, provider:, contract_id:, event:, provider_action: "block", provider_version: "unknown")
+def decision_output_fixture_record(root, provider:, contract_id:, event:, provider_action: "block", provider_version: "unknown", provider_build_hash: "")
   action = provider_action == "deny" ? "deny" : "block"
   metadata = {
     "schema_version" => 1,
@@ -339,7 +339,7 @@ def decision_output_fixture_record(root, provider:, contract_id:, event:, provid
   stdout_path = fixture_file(root, provider, "decision-output/#{event}/#{contract_id}.stdout", JSON.generate({ "decision" => action, "reason" => "blocked" }) + "\n")
   stderr_path = fixture_file(root, provider, "decision-output/#{event}/#{contract_id}.stderr", "")
   exit_code_path = fixture_file(root, provider, "decision-output/#{event}/#{contract_id}.exit-code", "0\n")
-  record = fixture_record(root, provider: provider, contract_id: contract_id, contract_kind: "decision-output", event: event, provider_version: provider_version)
+  record = fixture_record(root, provider: provider, contract_id: contract_id, contract_kind: "decision-output", event: event, provider_version: provider_version, provider_build_hash: provider_build_hash)
   record["decision_contract_hash"] = metadata.fetch("decision_contract_hash")
   record["fixture_file_hashes"] = [metadata_path, stdout_path, stderr_path, exit_code_path].map { |path| fixture_hash_entry(root, path) }.sort_by { |entry| entry.fetch("path") }
   record["fixture_record_hash"] = StrictModeFixtures.hash_record(record, "fixture_record_hash")
@@ -357,7 +357,7 @@ def write_fixture_manifest(root, provider, records)
   raise errors.join("\n") unless errors.empty?
 end
 
-def import_payload_fixture(root, provider, event, provider_version: "unknown")
+def import_payload_fixture(root, provider, event, provider_version: "unknown", provider_build_hash: "")
   source = root.join("capture/#{provider}-#{event}.json")
   source.dirname.mkpath
   source.write(JSON.generate({
@@ -369,7 +369,7 @@ def import_payload_fixture(root, provider, event, provider_version: "unknown")
   project = root.join("fixture-project")
   cwd = project.join("src")
   cwd.mkpath
-  run_ruby(
+  args = [
     root.join("tools/import-discovery-fixture.rb"),
     "--root", root,
     "--provider", provider,
@@ -379,27 +379,29 @@ def import_payload_fixture(root, provider, event, provider_version: "unknown")
     "--project-dir", project,
     "--provider-version", provider_version,
     "--captured-at", "2026-05-06T00:00:00Z"
-  )
+  ]
+  args.concat(["--provider-build-hash", provider_build_hash]) unless provider_build_hash.empty?
+  run_ruby(*args)
 end
 
-def copied_project_with_codex_enforcing_fixtures(root, provider_version: "unknown")
+def copied_project_with_codex_enforcing_fixtures(root, provider_version: "unknown", provider_build_hash: "")
   project_root = copy_project_root(root.join("project-root"))
   payload_records = []
   %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
-    status, output = import_payload_fixture(project_root, "codex", event, provider_version: provider_version)
+    status, output = import_payload_fixture(project_root, "codex", event, provider_version: provider_version, provider_build_hash: provider_build_hash)
     raise output unless status.zero?
 
     payload_records = StrictModeFixtures.load_json(StrictModeFixtures.manifest_path(project_root, "codex")).fetch("records")
   end
   records = payload_records + [
-    fixture_record(project_root, provider: "codex", contract_id: "codex.order", contract_kind: "event-order", event: "session-start", provider_version: provider_version),
-    fixture_record(project_root, provider: "codex", contract_id: "codex.pre.matcher", contract_kind: "matcher", event: "pre-tool-use", provider_version: provider_version)
+    fixture_record(project_root, provider: "codex", contract_id: "codex.order", contract_kind: "event-order", event: "session-start", provider_version: provider_version, provider_build_hash: provider_build_hash),
+    fixture_record(project_root, provider: "codex", contract_id: "codex.pre.matcher", contract_kind: "matcher", event: "pre-tool-use", provider_version: provider_version, provider_build_hash: provider_build_hash)
   ]
   %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
-    records << fixture_record(project_root, provider: "codex", contract_id: "codex.#{event}.command", contract_kind: "command-execution", event: event, provider_version: provider_version)
+    records << fixture_record(project_root, provider: "codex", contract_id: "codex.#{event}.command", contract_kind: "command-execution", event: event, provider_version: provider_version, provider_build_hash: provider_build_hash)
   end
-  records << decision_output_fixture_record(project_root, provider: "codex", contract_id: "codex.pre-tool-use.block", event: "pre-tool-use", provider_version: provider_version)
-  records << decision_output_fixture_record(project_root, provider: "codex", contract_id: "codex.stop.block", event: "stop", provider_version: provider_version)
+  records << decision_output_fixture_record(project_root, provider: "codex", contract_id: "codex.pre-tool-use.block", event: "pre-tool-use", provider_version: provider_version, provider_build_hash: provider_build_hash)
+  records << decision_output_fixture_record(project_root, provider: "codex", contract_id: "codex.stop.block", event: "stop", provider_version: provider_version, provider_build_hash: provider_build_hash)
   write_fixture_manifest(project_root, "codex", records)
   project_root
 end
@@ -1442,6 +1444,36 @@ with_fixture do |root, home, install_root|
   assert(name, plan.fetch("managed_hook_entries").select { |entry| entry.fetch("enforcing") }.map { |entry| entry.fetch("logical_event") } == %w[pre-tool-use stop], "exact-version plan did not enforce expected hooks", output)
   assert(name, home.join(".codex/hooks.json").read == before_hooks, "exact plan-only mutated Codex hooks")
   assert(name, !install_root.exist?, "exact plan-only created install root")
+end
+
+with_fixture do |root, home, install_root|
+  name = "enforcing plan-only honors exact provider build-hash fixtures"
+  build_hash = "c" * 64
+  wrong_build_hash = "d" * 64
+  project_root = copied_project_with_codex_enforcing_fixtures(root, provider_version: "1.0.0", provider_build_hash: build_hash)
+  before_hooks = home.join(".codex/hooks.json").read
+
+  exitstatus, output = run_cmd({ "HOME" => home.to_s }, project_root.join("install.sh"), "--provider", "codex", "--install-root", install_root, "--enforce", "--plan-only", "--provider-version", "codex=1.0.0")
+  assert_no_stacktrace("#{name} missing build", output)
+  assert(name, exitstatus == 1, "expected missing build-hash failure, got #{exitstatus}", output)
+  assert(name, output.include?("enforcing activation fixture readiness failed"), "missing fixture readiness diagnostic", output)
+  assert(name, output.include?("missing codex stop decision-output fixture"), "missing build-hash readiness diagnostic", output)
+
+  exitstatus, output = run_cmd({ "HOME" => home.to_s }, project_root.join("install.sh"), "--provider", "codex", "--install-root", install_root, "--enforce", "--plan-only", "--provider-version", "codex=1.0.0", "--provider-build-hash", "codex=#{wrong_build_hash}")
+  assert_no_stacktrace("#{name} wrong build", output)
+  assert(name, exitstatus == 1, "expected wrong build-hash failure, got #{exitstatus}", output)
+  assert(name, output.include?("missing codex stop decision-output fixture"), "missing wrong-build readiness diagnostic", output)
+
+  exitstatus, output = run_cmd({ "HOME" => home.to_s }, project_root.join("install.sh"), "--provider", "codex", "--install-root", install_root, "--enforce", "--plan-only", "--provider-version", "codex=1.0.0", "--provider-build-hash", "codex=#{build_hash}")
+  assert_no_stacktrace("#{name} matching build", output)
+  assert(name, exitstatus.zero?, "expected matching build-hash plan-only success, got #{exitstatus}", output)
+  plan = JSON.parse(output)
+  selected = plan.fetch("selected_output_contracts")
+  assert(name, plan.fetch("provider_build_hashes") == { "codex" => build_hash }, "provider build hash plan mismatch", output)
+  assert(name, selected.size == 2 && selected.all? { |record| record.fetch("provider_build_hash") == build_hash }, "selected contracts did not use exact provider build hash", output)
+  assert(name, plan.fetch("managed_hook_entries").select { |entry| entry.fetch("enforcing") }.map { |entry| entry.fetch("logical_event") } == %w[pre-tool-use stop], "build-hash plan did not enforce expected hooks", output)
+  assert(name, home.join(".codex/hooks.json").read == before_hooks, "build-hash plan-only mutated Codex hooks")
+  assert(name, !install_root.exist?, "build-hash plan-only created install root")
 end
 
 with_fixture do |root, home, install_root|

@@ -35,7 +35,7 @@ Or run the combined local gate:
 tests/run-tests.sh
 ```
 
-`install.sh --enforce --plan-only` runs fixture readiness and emits a JSON hook plan with selected output contracts, but does not acquire install locks, copy releases, create transaction markers, or mutate provider configs. `install.sh --enforce` performs a real install only after the same readiness gate passes; with the current checked-in empty fixture manifests it fails closed. Pass exact installed versions as `--provider-version codex=1.0.0` when validating exact-version fixture proofs. `--dry-run` is an alias for non-enforcing plan-only mode.
+`install.sh --enforce --plan-only` runs fixture readiness and emits a JSON hook plan with selected output contracts, but does not acquire install locks, copy releases, create transaction markers, or mutate provider configs. `install.sh --enforce` performs a real install only after the same readiness gate passes; with the current checked-in empty fixture manifests it fails closed. Pass exact installed versions as `--provider-version codex=1.0.0` and exact build hashes as `--provider-build-hash codex=<sha256>` when validating exact-version/build fixture proofs. `--dry-run` is an alias for non-enforcing plan-only mode.
 
 To inspect the current enforcing blockers as a structured report, run:
 
@@ -44,7 +44,7 @@ ruby tools/report-enforcement-readiness.rb --provider all --format json
 ruby tools/plan-fixture-capture.rb --provider all --format json
 ```
 
-Use `tools/check-fixture-readiness.rb` for the compact pass/fail gate, `tools/report-enforcement-readiness.rb` for structured diagnostics, and `tools/plan-fixture-capture.rb` for a required/optional capture checklist with importer commands. The checker and reporter exit non-zero until the required provider fixture proofs exist; the planner exits zero when it can generate the checklist. All three support repeated `--provider-version PROVIDER=VERSION` selectors.
+Use `tools/check-fixture-readiness.rb` for the compact pass/fail gate, `tools/report-enforcement-readiness.rb` for structured diagnostics, and `tools/plan-fixture-capture.rb` for a required/optional capture checklist with importer commands. The checker and reporter exit non-zero until the required provider fixture proofs exist; the planner exits zero when it can generate the checklist. All three support repeated `--provider-version PROVIDER=VERSION` and `--provider-build-hash PROVIDER=SHA256` selectors.
 
 Use `tools/import-discovery-fixture.rb` to import captured provider payloads as `payload-schema` fixtures, or `tools/import-raw-captures.rb` to batch-promote raw payloads captured under `<state-root>/discovery/raw`. Use `tools/import-contract-fixture.rb` to import the remaining readiness proof files, including `event-order`, `matcher`, `command-execution`, and `decision-output` contracts. `decision-output` imports must provide provider-output metadata plus captured stdout, stderr, and exit-code files.
 

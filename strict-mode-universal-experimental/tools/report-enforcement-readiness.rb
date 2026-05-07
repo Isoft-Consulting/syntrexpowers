@@ -15,7 +15,8 @@ options = {
   root: StrictModeFixtures.project_root,
   provider: "all",
   format: "text",
-  provider_versions: {}
+  provider_versions: {},
+  provider_build_hashes: {}
 }
 
 begin
@@ -27,6 +28,10 @@ begin
       provider, version = StrictModeFixtureReadiness.parse_provider_version_assignment(value)
       options[:provider_versions][provider] = version
     end
+    opts.on("--provider-build-hash PROVIDER=SHA256") do |value|
+      provider, build_hash = StrictModeFixtureReadiness.parse_provider_build_hash_assignment(value)
+      options[:provider_build_hashes][provider] = build_hash
+    end
   end.parse!(ARGV)
 rescue OptionParser::ParseError, ArgumentError => e
   usage_error(e.message)
@@ -37,12 +42,13 @@ usage_error("--format must be text or json") unless %w[text json].include?(optio
 begin
   providers = StrictModeFixtures.provider_list(options[:provider])
   StrictModeFixtureReadiness.validate_provider_versions!(options[:provider_versions], providers)
+  StrictModeFixtureReadiness.validate_provider_build_hashes!(options[:provider_build_hashes], providers)
 rescue ArgumentError => e
   usage_error(e.message)
 end
 
 begin
-  report = StrictModeFixtureReadiness.enforcing_report(options[:root], providers, options[:provider_versions])
+  report = StrictModeFixtureReadiness.enforcing_report(options[:root], providers, options[:provider_versions], options[:provider_build_hashes])
 rescue RuntimeError, ArgumentError => e
   warn "enforcement readiness report failed: #{e.message}"
   exit 1
