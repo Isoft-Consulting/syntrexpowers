@@ -22,7 +22,7 @@ SOURCE_STATE_VERSION = "rag.source-state.v1"
 SEARCH_CACHE_VERSION = "rag.search-cache.v1"
 CHUNKER_VERSION = "lexical-chunker.v1"
 TOKENIZER_VERSION = "unicode-tokenizer.v1"
-SEARCH_VERSION = "hash-vector-bm25.v5"
+SEARCH_VERSION = "hash-vector-bm25.v6"
 
 _SEARCH_CACHE_CONNECTIONS: dict[tuple[str, float, int], sqlite3.Connection] = {}
 
@@ -195,6 +195,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
             {"pattern": "**/.snapshots/**", "multiplier": 0.12},
             {"pattern": "**/seeds/demo.yaml", "multiplier": 0.25},
         ],
+        "status_boosts": {
+            "canonical": 1.18,
+            "implementation_ready": 1.14,
+            "active_plan": 1.10,
+            "normal": 1.0,
+            "historical": 0.70,
+            "superseded": 0.18,
+        },
         "fdr_role_boosts": {
             "plan": 1.06,
             "spec": 1.06,
@@ -207,6 +215,36 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "docs": 1.0,
             "other": 1.0,
         },
+        "mode_role_boosts": {
+            "architecture": {
+                "spec": 1.18,
+                "plan": 1.12,
+                "docs": 1.10,
+                "implementation": 0.96,
+                "test": 0.90,
+                "config": 1.02,
+            },
+            "implementation": {
+                "implementation": 1.18,
+                "test": 1.12,
+                "config": 1.08,
+                "spec": 1.02,
+                "plan": 1.02,
+            },
+            "frontend": {
+                "implementation": 1.14,
+                "test": 1.10,
+                "config": 1.06,
+                "spec": 1.02,
+            },
+            "migration": {
+                "implementation": 1.12,
+                "test": 1.12,
+                "spec": 1.08,
+                "plan": 1.06,
+                "config": 1.06,
+            },
+        },
         "fdr_query_expansions": {
             "autoload": ["bootstrap", "require", "include", "runtime dependency"],
             "bash": ["shell script", "macos", "posix", "set -u", "declare"],
@@ -215,6 +253,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "dry-run": ["dry_run", "--dry-run", "dry run", "exit code"],
             "migration": ["migrate", "migrations", "run_migrations", "entrypoint"],
             "rollout": ["deploy", "update", "dispatcher", "controller", "job"],
+        },
+        "mode_query_expansions": {
+            "architecture": ["canonical", "master spec", "owner", "boundary", "forbidden", "runtime owner"],
+            "implementation": ["controller", "service", "route", "store", "test", "contract"],
+            "frontend": ["view", "component", "store", "api client", "i18n", "route", "test"],
+            "migration": ["migration", "schema", "repository", "rollback", "backfill", "contract test"],
         },
         "preview_chars": 500,
         "expand_english_synonyms": False,
@@ -491,6 +535,47 @@ def artifact_type(source: str, heading: str = "") -> str:
     return f"{suffix.lstrip('.') or 'text'}_file"
 
 
+def document_status(source: str, heading: str, text: str) -> str:
+    lower_source = source.lower()
+    lower_heading = heading.lower()
+    sample = text[:5000].lower()
+    if "superseded" in sample or "do not implement" in sample or "do not use" in sample:
+        return "superseded"
+    if "historical snapshot" in sample or "historical record" in sample or "frozen" in sample:
+        return "historical"
+    if "status:" in sample:
+        if re.search(r"status:\s*(canonical|master)", sample):
+            return "canonical"
+        if re.search(r"status:\s*(implementation-ready|implementation ready|ready)", sample):
+            return "implementation_ready"
+        if re.search(r"status:\s*(active|current)", sample):
+            return "active_plan"
+    if "canonical / master" in sample or "canonical / implementation-ready" in sample:
+        return "canonical"
+    if "active plan" in sample or "active epic" in sample:
+        return "active_plan"
+    if "canonical" in lower_heading or "master-spec" in lower_source or "master_spec" in lower_source:
+        return "canonical"
+    return "normal"
+
+
+def status_boost(status: str, config: dict[str, Any]) -> float:
+    boosts = config.get("search", {}).get("status_boosts", {})
+    if not isinstance(boosts, dict):
+        return 1.0
+    try:
+        return float(boosts.get(status, boosts.get("normal", 1.0)))
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def read_hint(source: str, start_line: int, heading: str) -> str:
+    clean_heading = re.sub(r"\s+", " ", heading).strip()
+    if clean_heading and clean_heading != Path(source).name:
+        return f"{source}:{start_line} ({clean_heading})"
+    return f"{source}:{start_line}"
+
+
 def line_for_offset(text: str, offset: int) -> int:
     return text[:offset].count("\n") + 1
 
@@ -531,12 +616,14 @@ def split_large_text(text: str, source: str, heading: str, start_line: int, conf
 def make_chunk(source: str, heading: str, text: str, start_line: int, ordinal: int) -> dict[str, Any]:
     normalized = text.strip()
     digest = sha256_text(f"{source}\n{heading}\n{ordinal}\n{normalized}")[:16]
+    status = document_status(source, heading, normalized)
     return {
         "schema_version": CHUNK_VERSION,
         "id": f"{source}:{ordinal}:{digest}",
         "source": source,
         "heading": heading,
         "artifact_type": artifact_type(source, heading),
+        "document_status": status,
         "start_line": start_line,
         "text": normalized,
         "text_sha256": sha256_text(normalized),
@@ -548,6 +635,7 @@ def chunk_markdown(text: str, source: str, config: dict[str, Any]) -> list[dict[
     heading = Path(source).name
     start_line = 1
     buffer: list[str] = []
+    file_status = document_status(source, Path(source).name, text)
     for line_no, line in enumerate(text.splitlines(), start=1):
         match = HEADING_RE.match(line)
         if match and buffer:
@@ -566,6 +654,9 @@ def chunk_markdown(text: str, source: str, config: dict[str, Any]) -> list[dict[
     chunks: list[dict[str, Any]] = []
     for section_heading, section_line, section_lines in sections:
         chunks.extend(split_large_text("\n".join(section_lines), source, section_heading, section_line, config))
+    if file_status != "normal":
+        for chunk in chunks:
+            chunk["document_status"] = file_status
     return chunks
 
 
@@ -643,6 +734,19 @@ def extract_deps(text: str, source: str) -> list[dict[str, Any]]:
             )
 
     patterns: list[tuple[str, str]] = []
+    if suffix in (".md", ".txt"):
+        seen_refs: set[str] = set()
+        for match in PATH_QUERY_RE.finditer(text):
+            target = match.group(0).strip("`'\"()[]{}:,;")
+            while len(target) > 1 and target[-1] in ".,;:":
+                target = target[:-1]
+            target = target[2:] if target.startswith("./") else target
+            name = target.rsplit("/", 1)[-1]
+            if target == source or ("." not in name and name not in {"Dockerfile", ".dockerignore"}):
+                continue
+            if target not in seen_refs:
+                add(target, "path_reference", match.start())
+                seen_refs.add(target)
     if suffix == ".py":
         patterns.extend(
             [
@@ -744,6 +848,7 @@ def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: 
               source TEXT NOT NULL,
               heading TEXT NOT NULL,
               artifact_type TEXT NOT NULL,
+              document_status TEXT NOT NULL,
               start_line INTEGER NOT NULL,
               preview TEXT NOT NULL,
               source_terms TEXT NOT NULL,
@@ -760,14 +865,14 @@ def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: 
             """
         )
 
-        doc_rows: list[tuple[int, str, str, str, int, str, str, str, str, int]] = []
+        doc_rows: list[tuple[int, str, str, str, str, int, str, str, str, str, int]] = []
         posting_rows: list[tuple[str, int, int]] = []
         total_doc_len = 0
 
         def flush() -> None:
             if doc_rows:
                 connection.executemany(
-                    "INSERT INTO docs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO docs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     doc_rows,
                 )
                 doc_rows.clear()
@@ -782,6 +887,7 @@ def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: 
             source = str(chunk.get("source", ""))
             heading = str(chunk.get("heading", ""))
             chunk_type = str(chunk.get("artifact_type", ""))
+            doc_status = str(chunk.get("document_status", "normal"))
             text = str(chunk.get("text", ""))
             preview = re.sub(r"\s+", " ", text).strip()[:preview_chars]
 
@@ -795,6 +901,7 @@ def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: 
                     source,
                     heading,
                     chunk_type,
+                    doc_status,
                     int(chunk.get("start_line", 1)),
                     preview,
                     " ".join(sorted(set(tokenize(source)))),
@@ -1195,6 +1302,14 @@ def normalize_search_mode(mode: str | None) -> str:
     normalized = str(mode or "default").strip().lower()
     if normalized in ("fdr", "review"):
         return "fdr"
+    if normalized in ("architecture", "arch", "design"):
+        return "architecture"
+    if normalized in ("implementation", "implement", "code"):
+        return "implementation"
+    if normalized in ("frontend", "ui", "spa"):
+        return "frontend"
+    if normalized in ("migration", "migrations", "schema"):
+        return "migration"
     return "default"
 
 
@@ -1224,10 +1339,13 @@ def fdr_role(source: str, artifact: str) -> str:
 
 
 def fdr_role_boost(source: str, artifact: str, config: dict[str, Any], mode: str) -> float:
-    if normalize_search_mode(mode) != "fdr":
-        return 1.0
     role = fdr_role(source, artifact)
-    boosts = config.get("search", {}).get("fdr_role_boosts", {})
+    search_mode = normalize_search_mode(mode)
+    if search_mode == "fdr":
+        boosts = config.get("search", {}).get("fdr_role_boosts", {})
+    else:
+        mode_boosts = config.get("search", {}).get("mode_role_boosts", {})
+        boosts = mode_boosts.get(search_mode, {}) if isinstance(mode_boosts, dict) else {}
     if not isinstance(boosts, dict):
         return 1.0
     try:
@@ -1238,7 +1356,22 @@ def fdr_role_boost(source: str, artifact: str, config: dict[str, Any], mode: str
 
 def expand_for_search_mode(query: str, config: dict[str, Any], mode: str) -> str:
     expanded = expand_query(query, config)
-    if normalize_search_mode(mode) != "fdr":
+    search_mode = normalize_search_mode(mode)
+    mode_expansions = config.get("search", {}).get("mode_query_expansions", {})
+    if isinstance(mode_expansions, dict):
+        values = mode_expansions.get(search_mode, [])
+        additions: list[str] = []
+        seen = {term.lower() for term in tokenize(expanded)}
+        for value in values if isinstance(values, list) else [values]:
+            normalized = str(value).strip()
+            key = normalized.lower()
+            if normalized and key not in seen:
+                additions.append(normalized)
+                seen.add(key)
+        if additions:
+            expanded = f"{expanded} {' '.join(additions)}"
+
+    if search_mode != "fdr":
         return expanded
     expansions_cfg = config.get("search", {}).get("fdr_query_expansions", {})
     if not isinstance(expansions_cfg, dict):
@@ -1411,7 +1544,7 @@ def fetch_cached_docs(connection: sqlite3.Connection, doc_ids: set[int]) -> dict
         batch = ordered_ids[offset : offset + 800]
         placeholders = ",".join("?" for _ in batch)
         query = (
-            "SELECT id, source, heading, artifact_type, start_line, preview, source_terms, heading_terms, vector "
+            "SELECT id, source, heading, artifact_type, document_status, start_line, preview, source_terms, heading_terms, vector "
             f"FROM docs WHERE id IN ({placeholders})"
         )
         for row in connection.execute(query, batch):
@@ -1429,14 +1562,18 @@ def rows_to_results(
     for row in rows:
         source = str(row["source"] or "")
         chunk_type = str(row["artifact_type"] or "")
+        doc_status = str(row["document_status"] or "normal")
+        start_line = int(row["start_line"] or 1)
         path_match = path_matches.get(int(row["id"]), 0.0)
         penalty = source_penalty(source, config)
+        doc_status_boost = status_boost(doc_status, config)
         role = fdr_role(source, chunk_type)
         score = (
             float(config.get("search", {}).get("explicit_path_boost", 0.75)) * path_match
             * artifact_boost(source, chunk_type, config)
             * fdr_role_boost(source, chunk_type, config, mode)
             * penalty
+            * doc_status_boost
         )
         results.append(
             {
@@ -1447,11 +1584,15 @@ def rows_to_results(
                 "heading_match": 0.0,
                 "path_match": round(path_match, 6),
                 "source_penalty": round(penalty, 6),
+                "status_boost": round(doc_status_boost, 6),
                 "fdr_role": role,
                 "source": source,
                 "heading": row["heading"] or "",
+                "section": row["heading"] or "",
                 "artifact_type": chunk_type,
-                "start_line": row["start_line"] or 1,
+                "document_status": doc_status,
+                "start_line": start_line,
+                "read_hint": read_hint(source, start_line, str(row["heading"] or "")),
                 "preview": row["preview"] or "",
             }
         )
@@ -1536,6 +1677,7 @@ def search_precomputed_cache(
             continue
         source = str(doc["source"] or "")
         chunk_type = str(doc["artifact_type"] or "")
+        doc_status = str(doc["document_status"] or "normal")
         if filter_source and filter_source not in source:
             continue
         if filter_type and not chunk_type.startswith(filter_type):
@@ -1553,12 +1695,15 @@ def search_precomputed_cache(
             + explicit_path_boost * path_match
         )
         penalty = source_penalty(source, config)
+        doc_status_boost = status_boost(doc_status, config)
         role = fdr_role(source, chunk_type)
         score *= artifact_boost(source, chunk_type, config)
         score *= fdr_role_boost(source, chunk_type, config, search_mode)
         score *= penalty
+        score *= doc_status_boost
         if score < min_score:
             continue
+        start_line = int(doc["start_line"] or 1)
         results.append(
             {
                 "score": round(score, 6),
@@ -1568,11 +1713,15 @@ def search_precomputed_cache(
                 "heading_match": round(heading_match, 6),
                 "path_match": round(path_match, 6),
                 "source_penalty": round(penalty, 6),
+                "status_boost": round(doc_status_boost, 6),
                 "fdr_role": role,
                 "source": source,
                 "heading": doc["heading"] or "",
+                "section": doc["heading"] or "",
                 "artifact_type": chunk_type,
-                "start_line": doc["start_line"] or 1,
+                "document_status": doc_status,
+                "start_line": start_line,
+                "read_hint": read_hint(source, start_line, str(doc["heading"] or "")),
                 "preview": doc["preview"] or "",
             }
         )
@@ -1625,6 +1774,61 @@ def select_search_results(
     return selected
 
 
+def build_read_plan(results: list[dict[str, Any]], mode: str = "default", max_items: int = 6) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    blocked: list[dict[str, Any]] = []
+    seen_sources: set[str] = set()
+    for result in results:
+        status = str(result.get("document_status", "normal"))
+        entry = {
+            "source": result.get("source"),
+            "read_hint": result.get("read_hint"),
+            "role": result.get("fdr_role", "other"),
+            "section": result.get("section", ""),
+            "status": status,
+            "score": result.get("score"),
+        }
+        if status in ("superseded", "historical"):
+            blocked.append({**entry, "reason": "low-trust document status"})
+            continue
+        source = str(result.get("source", ""))
+        if source in seen_sources:
+            continue
+        items.append(entry)
+        seen_sources.add(source)
+        if len(items) >= max_items:
+            break
+    return {
+        "mode": normalize_search_mode(mode),
+        "budget_hint": "Read only the listed sections first; avoid full-file reads unless these sections are insufficient.",
+        "items": items,
+        "deprioritized": blocked[:3],
+    }
+
+
+def search_index_with_plan(
+    root_arg: str | os.PathLike[str] | None,
+    config_path: str | os.PathLike[str] | None,
+    query: str,
+    top_k: int = 5,
+    filter_source: str | None = None,
+    filter_type: str | None = None,
+    mode: str = "default",
+) -> dict[str, Any]:
+    results = search_index(root_arg, config_path, query, top_k, filter_source, filter_type, mode)
+    diagnostics: dict[str, Any] = {
+        "no_results": results == [],
+        "explicit_paths": extract_query_paths(query),
+    }
+    if results == []:
+        diagnostics["next_steps"] = [
+            "run rag_coverage for explicit paths mentioned in the query",
+            "try a task-specific mode such as architecture, implementation, frontend, migration, or fdr",
+            "reindex if rag_status reports stale source files",
+        ]
+    return {"results": results, "read_plan": build_read_plan(results, mode), "diagnostics": diagnostics}
+
+
 def search_index(
     root_arg: str | os.PathLike[str] | None,
     config_path: str | os.PathLike[str] | None,
@@ -1668,6 +1872,7 @@ def search_index(
     for index, chunk in enumerate(chunks):
         source = str(chunk.get("source", ""))
         chunk_type = str(chunk.get("artifact_type", ""))
+        doc_status = str(chunk.get("document_status", "normal"))
         if filter_source and filter_source not in source:
             continue
         if filter_type and not chunk_type.startswith(filter_type):
@@ -1683,12 +1888,15 @@ def search_index(
             + heading_weight * heading_match
         )
         penalty = source_penalty(source, config)
+        doc_status_boost = status_boost(doc_status, config)
         role = fdr_role(source, chunk_type)
         score *= artifact_boost(source, chunk_type, config)
         score *= fdr_role_boost(source, chunk_type, config, search_mode)
         score *= penalty
+        score *= doc_status_boost
         if score < min_score:
             continue
+        start_line = int(chunk.get("start_line", 1))
         preview = re.sub(r"\s+", " ", str(chunk.get("text", ""))).strip()[:preview_chars]
         results.append(
             {
@@ -1697,12 +1905,17 @@ def search_index(
                 "bm25": round(bm25, 6),
                 "source_match": round(source_match, 6),
                 "heading_match": round(heading_match, 6),
+                "path_match": 0.0,
                 "source_penalty": round(penalty, 6),
+                "status_boost": round(doc_status_boost, 6),
                 "fdr_role": role,
                 "source": source,
                 "heading": chunk.get("heading", ""),
+                "section": chunk.get("heading", ""),
                 "artifact_type": chunk_type,
-                "start_line": chunk.get("start_line", 1),
+                "document_status": doc_status,
+                "start_line": start_line,
+                "read_hint": read_hint(source, start_line, str(chunk.get("heading", ""))),
                 "preview": preview,
             }
         )

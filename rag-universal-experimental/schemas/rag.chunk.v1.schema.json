@@ -3,13 +3,17 @@
   "$id": "rag.chunk.v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "id", "source", "heading", "artifact_type", "start_line", "text", "text_sha256"],
+  "required": ["schema_version", "id", "source", "heading", "artifact_type", "document_status", "start_line", "text", "text_sha256"],
   "properties": {
     "schema_version": { "const": "rag.chunk.v1" },
     "id": { "type": "string" },
     "source": { "type": "string" },
     "heading": { "type": "string" },
     "artifact_type": { "type": "string" },
+    "document_status": {
+      "type": "string",
+      "enum": ["canonical", "implementation_ready", "active_plan", "normal", "historical", "superseded"]
+    },
     "start_line": { "type": "integer", "minimum": 1 },
     "text": { "type": "string" },
     "text_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }

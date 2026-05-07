@@ -24,6 +24,8 @@ Skipped case:
 
 ## Retrieval Training Changes
 
+Initial review-training pass:
+
 - Added Ukrainian query stopwords alongside English/Russian defaults.
 - Added `max_query_terms` trimming for long review bodies.
 - Added explicit path priority for cited review files.
@@ -36,6 +38,14 @@ Skipped case:
   - `uier-spa/src/tests/**/*.{js,ts,vue}`
   - `uier/public/js/*.js`
 - Removed broad `**/*token*` secret deny because it incorrectly excluded docs such as `alpha-aware-token-replacement.md`.
+
+v6 retrieval hardening:
+
+- Added canonical/superseded document status detection and ranking.
+- Added task modes: `fdr`, `architecture`, `implementation`, `frontend`, `migration`.
+- Added section-level `read_hint` / `read_plan` output to reduce full-file reads.
+- Added Markdown `path_reference` dependency edges from specs/plans/reviews to cited code/tests.
+- Added `eval-quality --skip-baseline --summary-only` for large path-focused gold sets.
 
 ## Metrics
 
@@ -64,6 +74,18 @@ Path-focused FDR mode on indexable review evidence:
 | MRR | 1.000 |
 | Median latency | 252.8 ms |
 | Mean latency | 277.3 ms |
+
+v6 RAG-only eval on the same indexable Core gold set:
+
+| Metric | Value |
+|---|---:|
+| Cases | 1405 |
+| Top-1 | 1405 |
+| Top-3 | 1405 |
+| Top-5 | 1405 |
+| Top-10 | 1405 |
+| MRR | 1.000 |
+| Wall time | 6:40.73 |
 
 ## Result
 

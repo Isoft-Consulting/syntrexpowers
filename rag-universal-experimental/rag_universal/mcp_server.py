@@ -4,14 +4,14 @@ import json
 import sys
 from typing import Any
 
-from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index
+from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan
 
 
 def tool_definitions() -> list[dict[str, Any]]:
     return [
         {
             "name": "rag_search",
-            "description": "Search the local project RAG index with lexical vector + BM25 ranking.",
+            "description": "Search the local project RAG index with lexical vector + BM25 ranking, task modes, and optional read plan.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -19,7 +19,12 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "top_k": {"type": "integer", "default": 5, "minimum": 1, "maximum": 50},
                     "filter_source": {"type": ["string", "null"], "default": None},
                     "filter_type": {"type": ["string", "null"], "default": None},
-                    "mode": {"type": "string", "enum": ["default", "fdr"], "default": "default"},
+                    "mode": {
+                        "type": "string",
+                        "enum": ["default", "fdr", "architecture", "implementation", "frontend", "migration"],
+                        "default": "default",
+                    },
+                    "with_plan": {"type": "boolean", "default": False},
                 },
                 "required": ["query"],
             },
@@ -92,8 +97,9 @@ def text_content(value: Any) -> dict[str, Any]:
 
 def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: str | None) -> Any:
     if name == "rag_search":
+        search_fn = search_index_with_plan if bool(arguments.get("with_plan", False)) else search_index
         return text_content(
-            search_index(
+            search_fn(
                 root,
                 config,
                 str(arguments.get("query", "")),

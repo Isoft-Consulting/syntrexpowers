@@ -28,6 +28,20 @@
     },
     "misses": []
   },
+  "fdr_metrics_indexable_v6_rag_only": {
+    "cases": 1405,
+    "quality": {
+      "total": 1405,
+      "top1": 1405,
+      "top3": 1405,
+      "top5": 1405,
+      "top10": 1405,
+      "mrr": 1.0
+    },
+    "wall_time": "6:40.73",
+    "baseline": null,
+    "misses": []
+  },
   "fdr_metrics_all": {
     "cases": 1406,
     "quality": {

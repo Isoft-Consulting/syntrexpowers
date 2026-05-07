@@ -5,7 +5,7 @@ import json
 import sys
 from typing import Any
 
-from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index
+from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan
 from .eval_quality import evaluate_quality
 from .mcp_server import run_stdio
 
@@ -30,7 +30,8 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--top-k", type=int, default=5)
     search.add_argument("--filter-source", default=None)
     search.add_argument("--filter-type", default=None)
-    search.add_argument("--mode", choices=["default", "fdr"], default="default")
+    search.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration"], default="default")
+    search.add_argument("--with-plan", action="store_true", help="Return results with a section-level read plan.")
 
     symbol = subparsers.add_parser("symbol", help="Look up exact symbols")
     symbol.add_argument("name")
@@ -45,7 +46,9 @@ def build_parser() -> argparse.ArgumentParser:
     eval_quality = subparsers.add_parser("eval-quality", help="Compare RAG retrieval against keyword baseline")
     eval_quality.add_argument("--cases", required=True, help="Gold query JSON file.")
     eval_quality.add_argument("--top-k", type=int, default=10)
-    eval_quality.add_argument("--mode", choices=["default", "fdr"], default="default")
+    eval_quality.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration"], default="default")
+    eval_quality.add_argument("--skip-baseline", action="store_true", help="Skip keyword baseline; useful for large path-focused gold sets.")
+    eval_quality.add_argument("--summary-only", action="store_true", help="Omit per-case details from output.")
 
     subparsers.add_parser("serve-mcp", help="Run MCP stdio server")
     return parser
@@ -83,7 +86,10 @@ def main(argv: list[str] | None = None) -> int:
         emit(index_coverage(args.root, args.config, args.paths))
         return 0
     if args.command == "search":
-        emit(search_index(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode))
+        if args.with_plan:
+            emit(search_index_with_plan(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode))
+        else:
+            emit(search_index(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode))
         return 0
     if args.command == "symbol":
         emit(lookup_symbol(args.root, args.config, args.name, args.kind, args.limit))
@@ -92,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         emit(lookup_deps(args.root, args.config, args.target, args.direction, args.limit))
         return 0
     if args.command == "eval-quality":
-        emit(evaluate_quality(args.root, args.config, args.cases, args.top_k, args.mode))
+        emit(evaluate_quality(args.root, args.config, args.cases, args.top_k, args.mode, not args.skip_baseline, not args.summary_only))
         return 0
     if args.command == "serve-mcp":
         return run_stdio(args.root, args.config)

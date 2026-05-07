@@ -25,7 +25,10 @@ Included in v0:
 - Config-driven scanner with include, exclude, and secret-deny path rules.
 - Deterministic chunking for Markdown, JSON/YAML-like configs, scripts, and source files.
 - Standard-library lexical vector search and BM25 scoring with configurable noise penalties.
-- Optional FDR/review search mode that expands review queries and returns role-diverse evidence bundles.
+- Optional task modes: `fdr`, `architecture`, `implementation`, `frontend`, and `migration`.
+- Canonical/superseded document status detection for Markdown specs, plans, and reports.
+- Section-level read plans that tell clients which exact file sections to inspect before opening whole files.
+- Markdown path-reference edges so plans/specs/reviews can be mapped to referenced code and tests.
 - Symbol extraction for common docs and languages.
 - Dependency edge extraction for Python, Ruby, JavaScript/TypeScript, shell, and PHP import forms.
 - CLI commands: `index`, `status`, `coverage`, `search`, `symbol`, `deps`, `eval-quality`, `serve-mcp`.
@@ -90,8 +93,11 @@ Projects can loosen the rules explicitly in their own `rag.config.json`, but the
 - `python3 tools/rag.py coverage --root <repo> --config <config> <path>...` reports whether exact paths are indexed or why they are excluded.
 - `python3 tools/rag.py search --root <repo> --config <config> "query"` returns ranked chunks.
 - `python3 tools/rag.py search --root <repo> --config <config> "query" --mode fdr` returns review-oriented evidence bundles across plan/spec, implementation, test, and build/config roles when available.
+- `python3 tools/rag.py search --root <repo> --config <config> "query" --mode architecture --with-plan` returns ranked chunks plus a section-level read plan and diagnostics.
+- Search results include `document_status`, `status_boost`, `section`, and `read_hint`.
+- Superseded or historical documents are downranked and marked as deprioritized in read plans.
 - `python3 tools/rag.py symbol --root <repo> --config <config> Name` returns exact symbol matches.
-- `python3 tools/rag.py deps --root <repo> --config <config> target` returns dependency edges.
+- `python3 tools/rag.py deps --root <repo> --config <config> target` returns dependency edges, including Markdown `path_reference` edges when docs cite repo paths.
 - `python3 tools/rag.py eval-quality --root <repo> --config <config> --cases <cases.json>` reports Top-1, Top-3, Top-5, Top-10, and MRR.
 - `python3 tools/rag.py serve-mcp --root <repo> --config <config>` speaks MCP stdio.
 - Tests prove secret path exclusion, index artifact generation, search ranking, symbol lookup, dependency lookup, provider-neutral initialize handling, and MCP tool dispatch.

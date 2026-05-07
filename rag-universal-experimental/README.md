@@ -13,6 +13,7 @@ cd rag-universal-experimental
 python3 tools/rag.py index --root ..
 python3 tools/rag.py status --root ..
 python3 tools/rag.py search --root .. "strict mode stop guard"
+python3 tools/rag.py search --root .. "Visual Studio owner boundaries" --mode architecture --with-plan
 python3 tools/rag.py symbol --root .. strict-hook
 python3 tools/rag.py deps --root .. json --direction reverse
 python3 tools/rag.py eval-quality --root .. --cases evals/syntrexpowers-gold.json
@@ -83,7 +84,7 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
 | `index` / `rag_reindex` | CLI, MCP | Build the local `.rag-index`. |
 | `status` / `rag_status` | CLI, MCP | Inspect index counts, manifest, stale config state, and source-change state. |
 | `coverage` / `rag_coverage` | CLI, MCP | Explain whether specific paths are indexed or excluded. |
-| `search` / `rag_search` | CLI, MCP | Ranked chunk retrieval with source/type filters and optional `mode=fdr` evidence bundling. |
+| `search` / `rag_search` | CLI, MCP | Ranked chunk retrieval with source/type filters, task modes, and optional read-plan output. |
 | `symbol` / `rag_symbol` | CLI, MCP | Exact symbol lookup. |
 | `deps` / `rag_deps` | CLI, MCP | Forward or reverse dependency edge lookup. |
 
@@ -103,7 +104,22 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
 
 `force_include_globs` can include narrow review-critical files from otherwise excluded directories, for example `tests/Unit/*ContractTest.php` while keeping the rest of `tests/` out of the index. `Dockerfile`, `Dockerfile.*`, and `.dockerignore` are included by default because build contracts are common FDR evidence.
 
-Search applies configurable `source_penalties` to downrank high-noise generated artifacts such as `.snapshots/` and demo seeds. `mode=fdr` adds review-oriented query expansion, role boosts, and role-diverse result selection so one search is more likely to return a plan/spec, implementation, test, and build/config evidence bundle together.
+Search applies configurable `source_penalties` to downrank high-noise generated artifacts such as `.snapshots/` and demo seeds. It also detects document trust status from Markdown content: `Canonical` / implementation-ready docs are boosted, while `SUPERSEDED` and `DO NOT IMPLEMENT` documents are strongly downranked and shown as deprioritized read-plan items.
+
+Task modes tune retrieval for common agent workflows:
+
+| Mode | Use |
+|---|---|
+| `default` | General project search. |
+| `fdr` | Review/FDR evidence bundles with plan/spec, implementation, test, and build/config roles. |
+| `architecture` | Canonical specs, owner boundaries, module concepts, forbidden drift. |
+| `implementation` | Controllers, services, routes, stores, tests, and local contracts. |
+| `frontend` | SPA views, components, stores, API clients, routes, i18n, and frontend tests. |
+| `migration` | Schema changes, migrations, repositories, rollback/backfill contracts. |
+
+`--with-plan` returns `{ results, read_plan, diagnostics }`. The read plan gives section-level `read_hint` values and a token-budget guard so clients can inspect specific sections first instead of opening whole files. Diagnostics also surface explicit paths from the query and suggested next steps when retrieval returns no results.
+
+Markdown documents that cite repository paths now create `path_reference` dependency edges. This gives agents a lightweight cross-artifact map from plans/specs/reviews to the code and tests they mention, available through `rag_deps`.
 
 ## Tests
 
@@ -121,11 +137,17 @@ python3 tools/rag.py index --root .. --config rag.config.example.json
 python3 tools/rag.py eval-quality --root .. --config rag.config.example.json --cases evals/syntrexpowers-gold.json --mode fdr
 ```
 
-Current `syntrexpowers` gold-set result after v5 lexical ranking:
+For large path-focused gold sets, skip the expensive keyword baseline and emit only aggregate metrics:
+
+```bash
+python3 tools/rag.py eval-quality --root /path/to/project --config /path/to/rag.config.json --cases evals/core-leonextra-path-gold.json --mode fdr --skip-baseline --summary-only
+```
+
+Current `syntrexpowers` gold-set result after v6 lexical ranking:
 
 | Mode | Top-1 | Top-3 | Top-5 | Top-10 | MRR |
 |---|---:|---:|---:|---:|---:|
-| RAG v5 | 8/10 | 10/10 | 10/10 | 10/10 | 0.900 |
+| RAG v6 | 8/10 | 10/10 | 10/10 | 10/10 | 0.900 |
 | Keyword baseline | 6/10 | 10/10 | 10/10 | 10/10 | 0.767 |
 
 ## Current Limits

@@ -54,11 +54,29 @@
             "additionalProperties": false
           }
         },
+        "status_boosts": {
+          "type": "object",
+          "additionalProperties": { "type": "number", "minimum": 0 }
+        },
         "fdr_role_boosts": {
           "type": "object",
           "additionalProperties": { "type": "number", "minimum": 0 }
         },
+        "mode_role_boosts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "type": "number", "minimum": 0 }
+          }
+        },
         "fdr_query_expansions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "mode_query_expansions": {
           "type": "object",
           "additionalProperties": {
             "type": "array",

@@ -157,6 +157,7 @@
       "ця",
       "це",
       "цих",
+      "що",
       "щоб",
       "як",
       "які",
@@ -166,6 +167,14 @@
       { "pattern": "**/.snapshots/**", "multiplier": 0.12 },
       { "pattern": "**/seeds/demo.yaml", "multiplier": 0.25 }
     ],
+    "status_boosts": {
+      "canonical": 1.18,
+      "implementation_ready": 1.14,
+      "active_plan": 1.10,
+      "normal": 1.0,
+      "historical": 0.70,
+      "superseded": 0.18
+    },
     "fdr_role_boosts": {
       "plan": 1.06,
       "spec": 1.06,
@@ -178,6 +187,36 @@
       "docs": 1.0,
       "other": 1.0
     },
+    "mode_role_boosts": {
+      "architecture": {
+        "spec": 1.18,
+        "plan": 1.12,
+        "docs": 1.10,
+        "implementation": 0.96,
+        "test": 0.90,
+        "config": 1.02
+      },
+      "implementation": {
+        "implementation": 1.18,
+        "test": 1.12,
+        "config": 1.08,
+        "spec": 1.02,
+        "plan": 1.02
+      },
+      "frontend": {
+        "implementation": 1.14,
+        "test": 1.10,
+        "config": 1.06,
+        "spec": 1.02
+      },
+      "migration": {
+        "implementation": 1.12,
+        "test": 1.12,
+        "spec": 1.08,
+        "plan": 1.06,
+        "config": 1.06
+      }
+    },
     "fdr_query_expansions": {
       "autoload": ["bootstrap", "require", "include", "runtime dependency"],
       "bash": ["shell script", "macos", "posix", "set -u", "declare"],
@@ -186,6 +225,12 @@
       "dry-run": ["dry_run", "--dry-run", "dry run", "exit code"],
       "migration": ["migrate", "migrations", "run_migrations", "entrypoint"],
       "rollout": ["deploy", "update", "dispatcher", "controller", "job"]
+    },
+    "mode_query_expansions": {
+      "architecture": ["canonical", "master spec", "owner", "boundary", "forbidden", "runtime owner"],
+      "implementation": ["controller", "service", "route", "store", "test", "contract"],
+      "frontend": ["view", "component", "store", "api client", "i18n", "route", "test"],
+      "migration": ["migration", "schema", "repository", "rollback", "backfill", "contract test"]
     },
     "expand_english_synonyms": false,
     "preview_chars": 500

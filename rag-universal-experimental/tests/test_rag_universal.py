@@ -19,6 +19,7 @@ from rag_universal.core import (
     lookup_deps,
     lookup_symbol,
     search_index,
+    search_index_with_plan,
     tokenize,
     token_counts,
     trim_query_counts,
@@ -362,6 +363,67 @@ class RagUniversalTest(unittest.TestCase):
         self.assertIn("test", roles)
         self.assertIn("build_file", roles)
 
+    def test_architecture_mode_prefers_canonical_sections_and_deprioritizes_superseded(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "Docs" / "visual").mkdir(parents=True)
+        (root / "Docs" / "visual" / "master-spec.md").write_text(
+            "# Visual Studio Master\n\nStatus: Canonical / master\n\n## Owner Boundary\n\nVisual Studio reuses automation-core owner boundaries.",
+            encoding="utf-8",
+        )
+        (root / "Docs" / "visual" / "old-report.md").write_text(
+            "# Old Report\n\nStatus: SUPERSEDED\n\nSTOP - DO NOT IMPLEMENT FROM THIS REPORT.\n\nVisual Studio automation-core owner boundaries.",
+            encoding="utf-8",
+        )
+        build_index(root)
+        results = search_index(root, None, "Visual Studio automation-core owner boundaries", top_k=2, mode="architecture")
+        self.assertEqual(results[0]["source"], "Docs/visual/master-spec.md")
+        self.assertEqual(results[0]["document_status"], "canonical")
+        by_source = {item["source"]: item for item in results}
+        self.assertEqual(by_source["Docs/visual/old-report.md"]["document_status"], "superseded")
+        self.assertLess(by_source["Docs/visual/old-report.md"]["status_boost"], 1.0)
+
+    def test_search_with_plan_returns_section_hints_and_budget_guard(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "Docs").mkdir()
+        (root / "Docs" / "spec.md").write_text(
+            "# Product Spec\n\nStatus: Canonical / master\n\n## Provider Runtime\n\nProvider runtime facade contract.",
+            encoding="utf-8",
+        )
+        build_index(root)
+        payload = search_index_with_plan(root, None, "provider runtime facade contract", top_k=3, mode="architecture")
+        self.assertIn("results", payload)
+        self.assertIn("read_plan", payload)
+        self.assertEqual(payload["read_plan"]["mode"], "architecture")
+        self.assertIn("Read only", payload["read_plan"]["budget_hint"])
+        self.assertEqual(payload["read_plan"]["items"][0]["source"], "Docs/spec.md")
+        self.assertIn("Provider Runtime", payload["read_plan"]["items"][0]["read_hint"])
+        empty = search_index_with_plan(root, None, "zzzzqqq src/Absent.php", top_k=3, mode="default")
+        self.assertTrue(empty["diagnostics"]["no_results"])
+        self.assertEqual(empty["diagnostics"]["explicit_paths"], ["src/Absent.php"])
+        self.assertTrue(empty["diagnostics"]["next_steps"])
+
+    def test_markdown_path_references_create_cross_artifact_edges(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "Docs").mkdir()
+        (root / "app").mkdir()
+        (root / "Docs" / "plan.md").write_text(
+            "# Plan\n\nVerify app/Controller.php and tests/Feature/ControllerTest.php.",
+            encoding="utf-8",
+        )
+        (root / "app" / "Controller.php").write_text("<?php\nfinal class Controller {}\n", encoding="utf-8")
+        (root / "tests" / "Feature").mkdir(parents=True)
+        (root / "tests" / "Feature" / "ControllerTest.php").write_text("<?php\n", encoding="utf-8")
+        build_index(root)
+        deps = lookup_deps(root, None, "app/Controller.php", direction="reverse")
+        self.assertEqual(deps[0]["source"], "Docs/plan.md")
+        self.assertEqual(deps[0]["kind"], "path_reference")
+
     def test_search_uses_path_tokens_and_source_diversity(self) -> None:
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -405,6 +467,10 @@ class RagUniversalTest(unittest.TestCase):
         report = evaluate_quality(root, None, cases)
         self.assertEqual(report["summary"]["rag"]["top1"], 1)
         self.assertIn("baseline", report["summary"])
+        rag_only = evaluate_quality(root, None, cases, include_baseline=False, include_cases=False)
+        self.assertEqual(rag_only["summary"]["rag"]["top1"], 1)
+        self.assertIsNone(rag_only["summary"]["baseline"])
+        self.assertEqual(rag_only["cases"], [])
 
     def test_cyrillic_query_expansion(self) -> None:
         temp = tempfile.TemporaryDirectory()
