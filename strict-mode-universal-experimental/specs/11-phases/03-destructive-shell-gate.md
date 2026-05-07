@@ -21,8 +21,8 @@ Current implementation status:
 
 - The repository currently contains a pure `tools/destructive_gate_lib.rb` classifier with tests for shell parsing, configured destructive patterns, protected roots, write-capable utility target extraction, shell wrapper handling, direct write targets, protected hardlink aliases, runtime executable blocking, and the exact `strict-fdr import -- <path>` exception.
 - `tools/protected_baseline_lib.rb` now verifies the installed manifest/baseline hashes, active runtime target, current protected file hashes and `dev+inode` tuples, then exports protected roots, protected inode entries, and parsed destructive patterns for the classifier.
-- `strict-hook pre-tool-use` now runs the normalizer, protected baseline loader, and destructive classifier in discovery/log-only preflight mode after provider proof matches. It writes hash-bound `hook.preflight.v1` discovery records, logs would-block decisions and untrusted-baseline diagnostics, but still exits provider-allow because provider block/deny output is not fixture-proven.
-- The classifier is not wired into enforcing `strict-hook` behavior yet. Provider block/deny output fixtures, approval records, transaction locks, and confirmation consumption must land before Phase 3 can be marked enforcing-ready.
+- `strict-hook pre-tool-use` now runs the normalizer, protected baseline loader, and destructive classifier after provider proof matches. Discovery installs write hash-bound `hook.preflight.v1` records and return provider-allow; enforcing installs with a selected pre-tool output contract emit the fixture-bound provider block output when the protected/destructive preflight blocks.
+- Approval records, transaction locks, confirmation consumption, and permission-request enforcement are still incomplete. Those pieces must land before Phase 3 can be marked fully enforcing-ready across both providers.
 
 Acceptance:
 

@@ -144,7 +144,7 @@ module StrictModeFixtureReadiness
         errors << "missing #{provider} pre-tool-use matcher fixture"
       REQUIRED_BLOCKING_EVENTS.each do |event|
         selected_blocking_decision_output(root, enforceable, provider, event) ||
-          errors << "missing #{provider} #{event} decision-output fixture with block/deny provider output"
+          errors << missing_decision_output_message(provider, event)
       end
     end
     errors
@@ -246,7 +246,7 @@ module StrictModeFixtureReadiness
         event: event,
         contract_kind: "decision-output",
         records: selected ? [selected] : [],
-        message: "missing #{provider} #{event} decision-output fixture with block/deny provider output"
+        message: missing_decision_output_message(provider, event)
       )
     end
     checks
@@ -350,13 +350,25 @@ module StrictModeFixtureReadiness
         next unless metadata["provider"] == provider &&
                     metadata["event"] == event &&
                     metadata["logical_event"] == event &&
-                    %w[block deny].include?(metadata["provider_action"]) &&
+                    provider_actions_for(event).include?(metadata["provider_action"]) &&
                     metadata["blocks_or_denies"] == 1 &&
                     StrictModeDecisionContract.validate_provider_output(metadata).empty?
 
         selected << selected_output_contract_record(record, metadata, manifest.fetch("manifest_hash"))
       end
     candidates.sort_by { |record| [record.fetch("provider_action") == "block" ? 0 : 1, record.fetch("contract_id")] }.first
+  end
+
+  def provider_actions_for(event)
+    event == "stop" ? %w[block] : %w[block deny]
+  end
+
+  def missing_decision_output_message(provider, event)
+    if event == "stop"
+      "missing #{provider} #{event} decision-output fixture with block/continuation provider output"
+    else
+      "missing #{provider} #{event} decision-output fixture with block/deny provider output"
+    end
   end
 
   def decision_output_metadata(root, record)

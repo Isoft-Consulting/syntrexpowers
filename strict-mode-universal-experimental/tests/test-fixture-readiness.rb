@@ -290,7 +290,7 @@ with_root do |root|
   pre_check = provider.fetch("required_checks").find { |check| check.fetch("event") == "pre-tool-use" && check.fetch("contract_kind") == "matcher" }
   record_failure(name, "missing pre-tool matcher check", report.inspect) unless pre_check
   record_failure(name, "pre-tool matcher should be missing", report.inspect) if pre_check&.fetch("ready")
-  record_failure(name, "missing top-level errors", report.inspect) unless report.fetch("errors").include?("missing codex stop decision-output fixture with block/deny provider output")
+  record_failure(name, "missing top-level errors", report.inspect) unless report.fetch("errors").include?("missing codex stop decision-output fixture with block/continuation provider output")
 
   status, output = run_cmd(REPORTER, "--root", root, "--provider", "codex", "--format", "json")
   assert_no_stacktrace(name, output)
@@ -633,7 +633,7 @@ with_root do |root|
 end
 
 with_root do |root|
-  name = "blocking events require block or deny decision-output fixtures"
+  name = "blocking events require event-specific decision-output fixtures"
   payload_records = []
   %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
     status, output = import_codex_payload(root, event)
@@ -659,6 +659,34 @@ with_root do |root|
   expected = "missing codex pre-tool-use decision-output fixture with block/deny provider output"
   record_failure(name, "missing block/deny readiness diagnostic", errors.join("\n")) unless errors.include?(expected)
   record_failure(name, "stop block fixture should satisfy readiness", errors.join("\n")) if errors.any? { |error| error.include?("missing codex stop decision-output") }
+end
+
+with_root do |root|
+  name = "stop readiness rejects deny-only decision-output fixtures"
+  payload_records = []
+  %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
+    status, output = import_codex_payload(root, event)
+    assert_no_stacktrace("#{name} import #{event}", output)
+    if status.zero?
+      payload_records = StrictModeFixtures.load_json(StrictModeFixtures.manifest_path(root, "codex")).fetch("records")
+    else
+      record_failure(name, "payload import failed for #{event}", output)
+    end
+  end
+  records = [
+    unknown_only(record_for(root, provider: "codex", contract_id: "codex.order", contract_kind: "event-order", event: "session-start")),
+    unknown_only(record_for(root, provider: "codex", contract_id: "codex.pre.matcher", contract_kind: "matcher", event: "pre-tool-use")),
+    unknown_only(record_for(root, provider: "codex", contract_id: "codex.pre.block", contract_kind: "decision-output", event: "pre-tool-use")),
+    unknown_only(record_for(root, provider: "codex", contract_id: "codex.stop.deny", contract_kind: "decision-output", event: "stop", provider_action: "deny"))
+  ]
+  %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
+    records << unknown_only(record_for(root, provider: "codex", contract_id: "codex.#{event}.command", contract_kind: "command-execution", event: event))
+  end
+  write_manifest(root, "codex", payload_records + records)
+
+  errors = StrictModeFixtureReadiness.enforcing_errors(root, ["codex"])
+  expected = "missing codex stop decision-output fixture with block/continuation provider output"
+  record_failure(name, "missing stop continuation readiness diagnostic", errors.join("\n")) unless errors.include?(expected)
 end
 
 with_root do |root|

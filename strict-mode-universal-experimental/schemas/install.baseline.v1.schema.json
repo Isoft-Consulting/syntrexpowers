@@ -157,7 +157,7 @@
         "fixture hashes"
       ],
       "rules": [
-        "selected block/deny output baseline"
+        "selected event-specific output baseline"
       ]
     },
     "protected_file_inode_index": {
@@ -314,5 +314,5 @@
   "fixture_requirements": [
     "protected install baseline parser and disk-fingerprint verifier"
   ],
-  "profile_hash": "ad7140198cc399d3a06f029844453dfbbb31f7176cfdb8d4ad785acd8108391a"
+  "profile_hash": "7b0119020d26bdf44ad45fc76b34dace331c6136a715928bdfad84f74953e52e"
 }

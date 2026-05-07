@@ -10,6 +10,6 @@
     "matrix.provider-feature-gate.v1",
     "matrix.runtime-config-domain.v1"
   ],
-  "generated_from_spec_hash": "aaa288952fb0d86162725b44d622b35596aec29e3e1a3f9f79cda8972d569c7b",
-  "registry_hash": "32eaae3fd64699302ad90434f2f021a56921f3960622ee45381882c56d3d98af"
+  "generated_from_spec_hash": "5e041dc272a547f589f9394b702fab3fbb55f21d58fcd2ba19ce9557904629ea",
+  "registry_hash": "d899a5f7945d898ea92570310a09772535a0c1b63044a78dc5952fe7327cbe9c"
 }

@@ -100,7 +100,7 @@ run_case do
   ]
   selected = [
     selected_output("codex", "pre-tool-use", "codex.pre.block"),
-    selected_output("codex", "stop", "codex.stop.deny", provider_action: "deny"),
+    selected_output("codex", "stop", "codex.stop.block", provider_action: "block"),
     selected_output("codex", "permission-request", "codex.permission.deny", provider_action: "deny")
   ]
   planned = StrictModeHookEntryPlan.apply(entries, selected_output_contracts: selected, enforce: true)
@@ -109,7 +109,7 @@ run_case do
   stop = planned.find { |entry| entry.fetch("logical_event") == "stop" }
   permission = planned.find { |entry| entry.fetch("logical_event") == "permission-request" }
   assert(name, pre.fetch("enforcing") == true && pre.fetch("output_contract_id") == "codex.pre.block", "pre-tool-use binding mismatch", planned.inspect)
-  assert(name, stop.fetch("enforcing") == true && stop.fetch("output_contract_id") == "codex.stop.deny", "stop binding mismatch", planned.inspect)
+  assert(name, stop.fetch("enforcing") == true && stop.fetch("output_contract_id") == "codex.stop.block", "stop binding mismatch", planned.inspect)
   assert(name, permission.fetch("enforcing") == true && permission.fetch("output_contract_id") == "codex.permission.deny", "permission-request binding mismatch", planned.inspect)
   assert(name, post.fetch("enforcing") == false && post.fetch("output_contract_id") == "", "post-tool-use must stay non-blocking", planned.inspect)
   errors = StrictModeHookEntryPlan.validate(planned, selected_output_contracts: selected, enforce: true)
@@ -143,7 +143,14 @@ run_case do
   bad = selected_output("codex", "stop", "codex.stop.warn")
   bad["provider_action"] = "warn"
   errors = StrictModeHookEntryPlan.selected_output_contract_errors([bad])
-  assert(name, errors.any? { |error| error.include?("provider_action must be block or deny") }, "missing provider_action diagnostic", errors.join("\n"))
+  assert(name, errors.any? { |error| error.include?("provider_action must be block for stop or block/deny") }, "missing provider_action diagnostic", errors.join("\n"))
+end
+
+run_case do
+  name = "selected output contracts reject stop deny actions"
+  bad = selected_output("codex", "stop", "codex.stop.deny", provider_action: "deny")
+  errors = StrictModeHookEntryPlan.selected_output_contract_errors([bad])
+  assert(name, errors.any? { |error| error.include?("provider_action must be block for stop or block/deny") }, "missing stop provider_action diagnostic", errors.join("\n"))
 end
 
 run_case do

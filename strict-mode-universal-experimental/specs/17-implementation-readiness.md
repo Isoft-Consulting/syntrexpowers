@@ -373,7 +373,7 @@ Every field profile named in 17.2.2 must have exactly one row here. `field_detai
 | `install.manifest.v1` | `provider_config_records` | `array` | provider; path; fingerprint | provider config manifest |
 | `install.manifest.v1` | `protected_config_records` | `array` | path; fingerprint; inode tuple | protected config manifest |
 | `install.manifest.v1` | `fixture_manifest_records` | `array` | contract id; fixture hash | fixture proof manifest |
-| `install.manifest.v1` | `selected_output_contracts` | `array` | provider; event; contract id; provider action; decision hash; fixture hashes | selected block/deny output proof |
+| `install.manifest.v1` | `selected_output_contracts` | `array` | provider; event; contract id; provider action; decision hash; fixture hashes | selected event-specific output proof |
 | `install.baseline.v1` | `managed_hook_entries` | `array` | provider; hook event; command; env | lexical active strict-hook command binding; active hook baseline |
 | `install.baseline.v1` | `generated_hook_commands` | `array` | provider; hook event; command argv | generated command proof; no outside install-root command |
 | `install.baseline.v1` | `generated_hook_env` | `object-map` | env key; env value | protected env proof |
@@ -382,7 +382,7 @@ Every field profile named in 17.2.2 must have exactly one row here. `field_detai
 | `install.baseline.v1` | `provider_config_records` | `array` | provider; path; fingerprint | provider config baseline |
 | `install.baseline.v1` | `protected_config_records` | `array` | path; fingerprint; inode tuple | protected config baseline |
 | `install.baseline.v1` | `fixture_manifest_records` | `array` | contract id; fixture hash | fixture proof baseline |
-| `install.baseline.v1` | `selected_output_contracts` | `array` | provider; event; contract id; provider action; decision hash; fixture hashes | selected block/deny output baseline |
+| `install.baseline.v1` | `selected_output_contracts` | `array` | provider; event; contract id; provider action; decision hash; fixture hashes | selected event-specific output baseline |
 | `install.baseline.v1` | `protected_file_inode_index` | `object-map` | dev+inode; protected path | protected file swap detection |
 | `install.backup-manifest.v1` | `previous_active_runtime_fingerprint` | `nested-object` | state.ledger-fingerprint.v1 | kind-specific active runtime proof |
 | `install.backup-manifest.v1` | `provider_config_records` | `array` | provider; path; backup fingerprint | provider config rollback source |
@@ -743,7 +743,7 @@ The provider-feature matrix also owns exact mappings for the `Required proof bef
 - `config-merge-baseline`: "Structured config merge tests plus protected install baseline"
 - `event-order-before-tools`: "Event-order proof before model tool execution"
 - `payload-matcher-command-decision-output`: "Payload schema, matcher, command execution, and decision-output fixtures"
-- `stop-payload-output`: "Stop payload and block/continue output contract fixtures"
+- `stop-payload-output`: "Stop payload and block/continuation output contract fixtures"
 - `event-payload-decision-output`: "Event name, payload, and decision-output fixtures"
 - `approval-capable-permission`: "Required if fixtures show Codex can approve risky tools outside `pre-tool-use`"
 - `block-deny-baseline`: "Exact provider block/deny contract and protected baseline verification"

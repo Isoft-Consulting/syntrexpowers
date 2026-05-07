@@ -159,7 +159,7 @@
         "fixture hashes"
       ],
       "rules": [
-        "selected block/deny output proof"
+        "selected event-specific output proof"
       ]
     }
   },
@@ -339,5 +339,5 @@
   "fixture_requirements": [
     "install manifest parser and nested managed-hook record validator"
   ],
-  "profile_hash": "3427f96f8e1ef8eb59518176bd5ce210b238e26a2a7366fd64fc8f7cf51d2764"
+  "profile_hash": "f0801b864e06d9df03e4bf91e63f47e108674598fc324e10fbeb7c14577fc290"
 }

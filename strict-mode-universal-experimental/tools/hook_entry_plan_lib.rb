@@ -224,7 +224,9 @@ module StrictModeHookEntryPlan
       errors << "selected output contract #{index}: event must match logical_event" unless event == logical_event
       errors << "selected output contract #{index}: logical_event must be blocking" unless BLOCKING_EVENTS.include?(logical_event)
       errors << "selected output contract #{index}: contract_kind must be decision-output" unless record.fetch("contract_kind") == "decision-output"
-      errors << "selected output contract #{index}: provider_action must be block or deny" unless PROVIDER_ACTIONS.include?(record.fetch("provider_action"))
+      unless provider_action_valid_for_event?(record.fetch("logical_event"), record.fetch("provider_action"))
+        errors << "selected output contract #{index}: provider_action must be block for stop or block/deny for pre-tool-use and permission-request"
+      end
       errors << "selected output contract #{index}: contract_id must be non-empty" unless contract_id.is_a?(String) && !contract_id.empty?
       %w[decision_contract_hash fixture_record_hash fixture_manifest_hash].each do |field|
         errors << "selected output contract #{index}: #{field} must be lowercase SHA-256" unless record.fetch(field).is_a?(String) && record.fetch(field).match?(SHA256_PATTERN)
@@ -484,5 +486,11 @@ module StrictModeHookEntryPlan
     records.each_with_object({}) do |record, map|
       map[[record.fetch("provider"), record.fetch("logical_event")]] = record
     end
+  end
+
+  def provider_action_valid_for_event?(logical_event, provider_action)
+    return provider_action == "block" if logical_event == "stop"
+
+    PROVIDER_ACTIONS.include?(provider_action)
   end
 end

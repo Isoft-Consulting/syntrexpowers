@@ -310,6 +310,48 @@
     },
     {
       "schema_version": 1,
+      "contract_id": "codex.stop.block",
+      "provider": "codex",
+      "provider_version": "0.128.0",
+      "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+      "platform": "x86_64-linux-gnu",
+      "event": "stop",
+      "contract_kind": "decision-output",
+      "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "decision_contract_hash": "cf00bcc81a0005b0e43e40cfed59643ebfbfaa2206fdab3d96973a878bc1882f",
+      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "fixture_file_hashes": [
+        {
+          "path": "providers/codex/fixtures/decision-output/stop/codex.stop.block.exit-code",
+          "content_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        {
+          "path": "providers/codex/fixtures/decision-output/stop/codex.stop.block.provider-output.json",
+          "content_sha256": "da065dc475c6676b70b9ec91eb6de5bf0f30483c56826caf66dbaeaacb8d8ba8"
+        },
+        {
+          "path": "providers/codex/fixtures/decision-output/stop/codex.stop.block.stderr",
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "providers/codex/fixtures/decision-output/stop/codex.stop.block.stdout",
+          "content_sha256": "0f703d808fa92171a351e757ac1b2ba00dc2748f3712cb78700385a92e19cf79"
+        }
+      ],
+      "captured_at": "2026-05-07T16:22:59Z",
+      "compatibility_range": {
+        "mode": "exact",
+        "min_version": "0.128.0",
+        "max_version": "0.128.0",
+        "version_comparator": "",
+        "provider_build_hashes": [
+          "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+        ]
+      },
+      "fixture_record_hash": "51cfe569ba959acac654354ba14a05cefa45a6492bad26e8671500b91f77f53a"
+    },
+    {
+      "schema_version": 1,
       "contract_id": "codex.stop.command",
       "provider": "codex",
       "provider_version": "0.128.0",
@@ -445,5 +487,5 @@
       "fixture_record_hash": "fb9b3907ec2a6ff862d2b9717e4c2fefea69180ab74b1d2179d63187185303f2"
     }
   ],
-  "manifest_hash": "8d00a7b5b27ccf8035b37dc4e7d7e5e2e714f6491b959e38ddb2400cb2b2b81c"
+  "manifest_hash": "26e16c16976d24b6f426183952cd72b7dc763f92a990f3095440bb2a037a051b"
 }

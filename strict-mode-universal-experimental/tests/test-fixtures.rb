@@ -167,10 +167,10 @@ def import_codex_payload_fixture(root, name)
   [exitstatus, output, source]
 end
 
-expect_pass("checked-in empty fixture manifests validate") do |_root|
+expect_pass("checked-in fixture manifests validate") do |_root|
   exitstatus, output = run_cmd(VALIDATOR, "--root", ROOT)
-  assert_no_stacktrace("checked-in empty fixture manifests validate", output)
-  record_failure("checked-in empty fixture manifests validate", "expected root validation success", output) unless exitstatus.zero?
+  assert_no_stacktrace("checked-in fixture manifests validate", output)
+  record_failure("checked-in fixture manifests validate", "expected root validation success", output) unless exitstatus.zero?
 end
 
 expect_pass("valid matcher fixture record validates") do |root|
