@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "rag.config.v1",
+  "type": "object",
+  "required": ["schema_version", "index_dir", "include_globs", "exclude_dirs", "secret_path_patterns"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": { "const": "rag.config.v1" },
+    "index_dir": { "type": "string" },
+    "include_globs": { "type": "array", "items": { "type": "string" } },
+    "exclude_dirs": { "type": "array", "items": { "type": "string" } },
+    "exclude_globs": { "type": "array", "items": { "type": "string" } },
+    "secret_path_patterns": { "type": "array", "items": { "type": "string" } },
+    "max_file_bytes": { "type": "integer", "minimum": 1 },
+    "follow_symlinks": { "type": "boolean" },
+    "chunk": {
+      "type": "object",
+      "properties": {
+        "max_chars": { "type": "integer", "minimum": 1 },
+        "min_chars": { "type": "integer", "minimum": 0 },
+        "overlap_chars": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "search": {
+      "type": "object",
+      "properties": {
+        "hash_dim": { "type": "integer", "minimum": 16 },
+        "min_score": { "type": "number", "minimum": 0 },
+        "docs_boost": { "type": "number", "minimum": 0 },
+        "preview_chars": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

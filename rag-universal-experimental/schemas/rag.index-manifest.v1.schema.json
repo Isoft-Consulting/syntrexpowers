@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "rag.index-manifest.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_root",
+    "indexed_at",
+    "config_hash",
+    "chunker_version",
+    "tokenizer_version",
+    "search_version",
+    "num_files",
+    "num_chunks",
+    "num_symbols",
+    "num_deps",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": { "const": "rag.index-manifest.v1" },
+    "project_root": { "type": "string" },
+    "indexed_at": { "type": "number" },
+    "config_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "chunker_version": { "type": "string" },
+    "tokenizer_version": { "type": "string" },
+    "search_version": { "type": "string" },
+    "num_files": { "type": "integer", "minimum": 0 },
+    "num_chunks": { "type": "integer", "minimum": 0 },
+    "num_symbols": { "type": "integer", "minimum": 0 },
+    "num_deps": { "type": "integer", "minimum": 0 },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

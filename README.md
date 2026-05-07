@@ -1,10 +1,11 @@
 # Syntrexpowers
 
-3 custom skills + 1 hook-based enforcement system that augment [Superpowers](https://github.com/obra/superpowers). Not a replacement — an addon. Superpowers stays installed and updates normally.
+3 custom skills + 1 hook-based enforcement system + 1 experimental universal RAG toolkit that augment [Superpowers](https://github.com/obra/superpowers). Not a replacement — an addon. Superpowers stays installed and updates normally.
 
 **Components:**
 - **3 Skills** (LLM-driven, opt-in via triggers) — see `Skills` section below.
 - **Strict Mode** (hook-driven, always-on enforcement) — see `Strict Mode` section.
+- **Universal RAG Experimental** (provider-neutral MCP/CLI search) — see `rag-universal-experimental/`.
 
 ## Skills
 
