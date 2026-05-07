@@ -14,6 +14,7 @@ ROOT = StrictModeMetadata.project_root
 CHECKER = ROOT.join("tools/check-fixture-readiness.rb")
 REPORTER = ROOT.join("tools/report-enforcement-readiness.rb")
 IMPORTER = ROOT.join("tools/import-discovery-fixture.rb")
+CONTRACT_IMPORTER = ROOT.join("tools/import-contract-fixture.rb")
 
 $cases = 0
 $failures = []
@@ -182,6 +183,65 @@ def import_codex_payload(root, event, provider_version: "unknown")
   run_cmd(IMPORTER, "--root", root, "--provider", "codex", "--event", event, "--source", source, "--cwd", cwd, "--project-dir", project, "--captured-at", "2026-05-06T00:00:00Z", "--provider-version", provider_version)
 end
 
+def import_codex_contract(root, event, contract_kind, contract_id)
+  source = root.join("capture/contracts/#{contract_kind}-#{event}.txt")
+  source.dirname.mkpath
+  source.write("#{contract_id} proof\n")
+  run_cmd(
+    CONTRACT_IMPORTER,
+    "--root", root,
+    "--provider", "codex",
+    "--event", event,
+    "--contract-kind", contract_kind,
+    "--contract-id", contract_id,
+    "--source", source,
+    "--captured-at", "2026-05-06T00:00:00Z"
+  )
+end
+
+def import_codex_decision_output(root, event, contract_id)
+  capture = root.join("capture/decision-output/#{event}")
+  capture.mkpath
+  metadata = {
+    "schema_version" => 1,
+    "contract_id" => contract_id,
+    "provider" => "codex",
+    "event" => event,
+    "logical_event" => event,
+    "provider_action" => "block",
+    "stdout_mode" => "json",
+    "stdout_required_fields" => %w[decision reason],
+    "stderr_mode" => "empty",
+    "stderr_required_fields" => [],
+    "exit_code" => 0,
+    "blocks_or_denies" => 1,
+    "injects_context" => 0,
+    "decision_contract_hash" => ""
+  }
+  metadata["decision_contract_hash"] = StrictModeDecisionContract.provider_output_hash(metadata)
+  metadata_path = capture.join("#{event}.provider-output.json")
+  stdout_path = capture.join("#{event}.stdout")
+  stderr_path = capture.join("#{event}.stderr")
+  exit_code_path = capture.join("#{event}.exit-code")
+  metadata_path.write(JSON.pretty_generate(metadata) + "\n")
+  stdout_path.write("{\"decision\":\"block\",\"reason\":\"blocked\"}\n")
+  stderr_path.write("")
+  exit_code_path.write("0\n")
+  run_cmd(
+    CONTRACT_IMPORTER,
+    "--root", root,
+    "--provider", "codex",
+    "--event", event,
+    "--contract-kind", "decision-output",
+    "--contract-id", contract_id,
+    "--metadata", metadata_path,
+    "--stdout", stdout_path,
+    "--stderr", stderr_path,
+    "--exit-code", exit_code_path,
+    "--captured-at", "2026-05-06T00:00:00Z"
+  )
+end
+
 def write_manifest(root, provider, records)
   StrictModeFixtures.write_manifest(StrictModeFixtures.manifest_path(root, provider), {
     "schema_version" => 1,
@@ -284,6 +344,48 @@ with_root do |root|
   assert_no_stacktrace("#{name} checker invalid selector", output)
   record_failure(name, "expected checker invalid selector exit 2, got #{status}", output) unless status == 2
   record_failure(name, "missing checker invalid selector diagnostic", output) unless output.include?("outside --provider selection")
+end
+
+with_root do |root|
+  name = "importer CLI workflow can satisfy Codex enforcing readiness"
+  %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
+    status, output = import_codex_payload(root, event)
+    assert_no_stacktrace("#{name} payload #{event}", output)
+    record_failure(name, "payload import failed for #{event}", output) unless status.zero?
+
+    status, output = import_codex_contract(root, event, "command-execution", "codex.#{event}.command")
+    assert_no_stacktrace("#{name} command #{event}", output)
+    record_failure(name, "command import failed for #{event}", output) unless status.zero?
+  end
+
+  [
+    ["session-start", "event-order", "codex.session-start.order"],
+    ["pre-tool-use", "matcher", "codex.pre-tool-use.matcher"]
+  ].each do |event, kind, contract_id|
+    status, output = import_codex_contract(root, event, kind, contract_id)
+    assert_no_stacktrace("#{name} #{kind}", output)
+    record_failure(name, "#{kind} import failed", output) unless status.zero?
+  end
+
+  %w[pre-tool-use stop].each do |event|
+    status, output = import_codex_decision_output(root, event, "codex.#{event}.block")
+    assert_no_stacktrace("#{name} decision #{event}", output)
+    record_failure(name, "decision-output import failed for #{event}", output) unless status.zero?
+  end
+
+  status, output = run_cmd(CHECKER, "--root", root, "--provider", "codex")
+  assert_no_stacktrace("#{name} checker", output)
+  record_failure(name, "expected checker exit 0, got #{status}", output) unless status.zero?
+  record_failure(name, "missing checker success diagnostic", output) unless output.include?("fixture readiness passed")
+
+  status, output = run_cmd(REPORTER, "--root", root, "--provider", "codex", "--format", "json")
+  assert_no_stacktrace("#{name} reporter", output)
+  record_failure(name, "expected reporter exit 0, got #{status}", output) unless status.zero?
+  parsed = JSON.parse(output)
+  provider = parsed.fetch("providers").first
+  selected = provider.fetch("selected_output_contracts")
+  record_failure(name, "report should be ready", output) unless parsed.fetch("ready") && provider.fetch("ready")
+  record_failure(name, "selected output contract mismatch", output) unless selected.map { |record| [record.fetch("logical_event"), record.fetch("contract_id")] } == [["pre-tool-use", "codex.pre-tool-use.block"], ["stop", "codex.stop.block"]]
 end
 
 with_root do |root|
