@@ -67,7 +67,7 @@ Review-critical files can be force-included with `force_include_globs` even when
 The default config excludes:
 
 - `.git`, `.mcp`, `.claude`, `.codex`, `.agents`, `node_modules`, `vendor`, caches, build outputs.
-- `.env`, `.env.*`, `.mcp.json`, private keys, certificates, token/credential/secret-named files.
+- `.env`, `.env.*`, `.mcp.json`, private keys, certificates, and credential/secret-named files.
 - Binary and large files.
 
 Projects can loosen the rules explicitly in their own `rag.config.json`, but the checked-in example keeps the safe default posture.

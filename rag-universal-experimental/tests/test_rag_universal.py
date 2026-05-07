@@ -11,7 +11,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from rag_universal.core import build_index, index_coverage, index_status, load_chunks, lookup_deps, lookup_symbol, search_index, tokenize
+from rag_universal.core import (
+    build_index,
+    index_coverage,
+    index_status,
+    load_chunks,
+    lookup_deps,
+    lookup_symbol,
+    search_index,
+    tokenize,
+    token_counts,
+    trim_query_counts,
+)
 from rag_universal.eval_quality import evaluate_quality
 from rag_universal.mcp_server import handle_message
 
@@ -214,6 +225,33 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(coverage["paths"][5]["reason"], "outside_root")
         self.assertFalse(coverage["paths"][5]["exists"])
 
+    def test_default_force_include_indexes_review_test_evidence(self) -> None:
+        root = self.make_project()
+        (root / "tests" / "Unit").mkdir(parents=True)
+        (root / "uier" / "tests" / "Feature").mkdir(parents=True)
+        (root / "uier" / "public" / "js").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "tests").mkdir(parents=True)
+        (root / "tests" / "Unit" / "YamlHelperTest.php").write_text("<?php\n", encoding="utf-8")
+        (root / "uier" / "tests" / "Feature" / "DashboardTest.php").write_text("<?php\n", encoding="utf-8")
+        (root / "uier" / "public" / "js" / "app.js").write_text("initFormSubmit()\n", encoding="utf-8")
+        (root / "uier-spa" / "src" / "tests" / "SettingsView.test.ts").write_text("test('x', () => {})\n", encoding="utf-8")
+        (root / "rag.config.json").write_text(
+            json.dumps({"schema_version": "rag.config.v1", "exclude_dirs": ["tests", "public"]}),
+            encoding="utf-8",
+        )
+        build_index(root)
+        coverage = index_coverage(
+            root,
+            None,
+            [
+                "tests/Unit/YamlHelperTest.php",
+                "uier/tests/Feature/DashboardTest.php",
+                "uier/public/js/app.js",
+                "uier-spa/src/tests/SettingsView.test.ts",
+            ],
+        )
+        self.assertEqual(coverage["summary"]["indexed"], 4)
+
     def test_path_query_suffix_escapes_like_wildcards(self) -> None:
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -227,6 +265,52 @@ class RagUniversalTest(unittest.TestCase):
         by_source = {item["source"]: item for item in results}
         self.assertEqual(by_source["docs/sub/foo_bar.md"]["path_match"], 0.85)
         self.assertEqual(by_source.get("docs/sub/fooXbar.md", {}).get("path_match", 0.0), 0.0)
+
+    def test_explicit_path_priority_prefers_cited_file(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "Docs").mkdir()
+        (root / "Docs" / "general.md").write_text(
+            "# General\n\nDockerfile strict stop guard strict stop guard strict stop guard.",
+            encoding="utf-8",
+        )
+        (root / "Dockerfile").write_text("FROM scratch\n# strict guard image\n", encoding="utf-8")
+        build_index(root)
+        results = search_index(root, None, "review evidence for Dockerfile strict stop guard", top_k=2)
+        self.assertEqual(results[0]["source"], "Dockerfile")
+        self.assertEqual(results[0]["path_match"], 1.0)
+
+    def test_explicit_path_fast_path_returns_multiple_cited_files(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "Docs").mkdir()
+        (root / "Docs" / "general.md").write_text(
+            "# General\n\nstrict stop guard " * 200,
+            encoding="utf-8",
+        )
+        (root / "src").mkdir()
+        (root / "src" / "one.py").write_text("def one(): pass\n", encoding="utf-8")
+        (root / "src" / "two.py").write_text("def two(): pass\n", encoding="utf-8")
+        build_index(root)
+        results = search_index(
+            root,
+            None,
+            "review evidence Cited files: src/one.py, src/two.py. " + ("strict stop guard " * 200),
+            top_k=2,
+        )
+        self.assertEqual([item["source"] for item in results], ["src/one.py", "src/two.py"])
+
+    def test_query_term_trimming_keeps_high_signal_terms(self) -> None:
+        counts = token_counts("the and " + " ".join(f"term{i}" for i in range(40)) + " Dockerfile Dockerfile")
+        trimmed = trim_query_counts(
+            counts,
+            {"search": {"max_query_terms": 16, "query_stopwords": ["the", "and"]}},
+        )
+        self.assertLessEqual(len(trimmed), 16)
+        self.assertNotIn("the", trimmed)
+        self.assertIn("Dockerfile".lower(), trimmed)
 
     def test_search_penalizes_snapshot_noise(self) -> None:
         temp = tempfile.TemporaryDirectory()

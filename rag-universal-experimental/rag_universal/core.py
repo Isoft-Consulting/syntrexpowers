@@ -46,6 +46,17 @@ DEFAULT_CONFIG: dict[str, Any] = {
         ".dockerignore",
     ],
     "force_include_globs": [
+        "tests/**/*.php",
+        "tests/*.php",
+        "uier/tests/**/*.php",
+        "uier/tests/*.php",
+        "uier/public/js/*.js",
+        "uier-spa/src/tests/*.js",
+        "uier-spa/src/tests/*.ts",
+        "uier-spa/src/tests/*.vue",
+        "uier-spa/src/tests/**/*.js",
+        "uier-spa/src/tests/**/*.ts",
+        "uier-spa/src/tests/**/*.vue",
         "tests/Unit/*ContractTest.php",
         "tests/Unit/*ScriptTest.php",
         "tests/Unit/*Dockerfile*Test.php",
@@ -95,7 +106,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "**/.mcp.json",
         "**/*secret*",
         "**/*credential*",
-        "**/*token*",
         "**/*.pem",
         "**/*.key",
         "**/*.p12",
@@ -124,7 +134,63 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "heading_weight": 0.08,
         "max_chunks_per_source": 1,
         "candidate_limit": 5000,
+        "max_query_terms": 96,
         "explicit_path_boost": 0.75,
+        "explicit_path_priority": True,
+        "query_stopwords": [
+            "and",
+            "are",
+            "but",
+            "for",
+            "from",
+            "into",
+            "not",
+            "that",
+            "the",
+            "this",
+            "with",
+            "або",
+            "але",
+            "без",
+            "був",
+            "була",
+            "було",
+            "були",
+            "для",
+            "если",
+            "він",
+            "вона",
+            "вони",
+            "його",
+            "йому",
+            "її",
+            "із",
+            "или",
+            "как",
+            "коли",
+            "має",
+            "мають",
+            "між",
+            "над",
+            "під",
+            "про",
+            "при",
+            "так",
+            "такий",
+            "тому",
+            "треба",
+            "цей",
+            "ця",
+            "це",
+            "цих",
+            "что",
+            "що",
+            "щоб",
+            "это",
+            "як",
+            "які",
+            "який",
+        ],
         "source_penalties": [
             {"pattern": "**/.snapshots/**", "multiplier": 0.12},
             {"pattern": "**/seeds/demo.yaml", "multiplier": 0.25},
@@ -1053,6 +1119,17 @@ def token_counts(text: str) -> Counter[str]:
     return Counter(tokenize(text))
 
 
+def trim_query_counts(counts: Counter[str], config: dict[str, Any]) -> Counter[str]:
+    search_cfg = config.get("search", {})
+    stopwords = {str(item).lower() for item in search_cfg.get("query_stopwords", [])}
+    filtered = Counter({token: count for token, count in counts.items() if token not in stopwords})
+    max_terms = max(16, int(search_cfg.get("max_query_terms", 96)))
+    if len(filtered) <= max_terms:
+        return filtered
+    ranked = sorted(filtered.items(), key=lambda item: (-item[1], -len(item[0]), item[0]))
+    return Counter(dict(ranked[:max_terms]))
+
+
 def expand_query(query: str, config: dict[str, Any]) -> str:
     search_cfg = config.get("search", {})
     synonyms = search_cfg.get("synonyms", {})
@@ -1272,7 +1349,11 @@ def overlap_terms(query_terms: set[str], terms: Any) -> float:
     return len(query_terms & term_set) / len(query_terms)
 
 
-PATH_QUERY_RE = re.compile(r"(?<![A-Za-z0-9_./-])(?:\.?[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+|(?<!\S)\.[A-Za-z0-9_.-]+")
+PATH_QUERY_RE = re.compile(
+    r"(?<![A-Za-z0-9_./-])(?:\.?[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+"
+    r"|(?<![A-Za-z0-9_./-])(?:Dockerfile(?:\\.[A-Za-z0-9_.-]+)?|docker-compose\\.(?:ya?ml)|\\.dockerignore)(?![A-Za-z0-9_./-])"
+    r"|(?<!\\S)\\.[A-Za-z0-9_.-]+"
+)
 
 
 def extract_query_paths(query: str) -> list[str]:
@@ -1280,9 +1361,15 @@ def extract_query_paths(query: str) -> list[str]:
     seen: set[str] = set()
     for match in PATH_QUERY_RE.finditer(query):
         candidate = match.group(0).strip("`'\"()[]{}:,;")
+        while len(candidate) > 1 and candidate[-1] in ".,;:":
+            candidate = candidate[:-1]
         if not candidate:
             continue
         normalized = candidate[2:] if candidate.startswith("./") else candidate
+        name = normalized.rsplit("/", 1)[-1]
+        special_names = {"Dockerfile", ".dockerignore", "docker-compose.yml", "docker-compose.yaml"}
+        if "." not in name and name not in special_names:
+            continue
         if normalized not in seen:
             paths.append(normalized)
             seen.add(normalized)
@@ -1295,18 +1382,26 @@ def escape_like(value: str) -> str:
 
 def fetch_path_candidates(connection: sqlite3.Connection, query_paths: list[str]) -> dict[int, float]:
     matches: dict[int, float] = {}
-    for path in query_paths:
+    for order, path in enumerate(query_paths):
         if not path:
             continue
-        exact_rows = connection.execute("SELECT id FROM docs WHERE source = ?", (path,)).fetchall()
+        exact_score = max(0.9, 1.0 - order * 0.01)
+        suffix_score = max(0.75, 0.85 - order * 0.01)
+        exact_rows = connection.execute("SELECT id FROM docs WHERE source = ? ORDER BY start_line LIMIT 1", (path,)).fetchall()
         for row in exact_rows:
-            matches[int(row["id"])] = max(matches.get(int(row["id"]), 0.0), 1.0)
+            matches[int(row["id"])] = max(matches.get(int(row["id"]), 0.0), exact_score)
         if exact_rows:
             continue
         suffix = "%/" + escape_like(path)
-        for row in connection.execute("SELECT id FROM docs WHERE source LIKE ? ESCAPE '\\'", (suffix,)):
-            matches[int(row["id"])] = max(matches.get(int(row["id"]), 0.0), 0.85)
+        for row in connection.execute("SELECT MIN(id) AS id FROM docs WHERE source LIKE ? ESCAPE '\\' GROUP BY source", (suffix,)):
+            matches[int(row["id"])] = max(matches.get(int(row["id"]), 0.0), suffix_score)
     return matches
+
+
+def search_sort_key(item: dict[str, Any], config: dict[str, Any]) -> tuple[float, float, str, int]:
+    path_priority = bool(config.get("search", {}).get("explicit_path_priority", True))
+    path_match = float(item.get("path_match", 0.0)) if path_priority else 0.0
+    return (-path_match, -float(item["score"]), str(item["source"]), int(item["start_line"]))
 
 
 def fetch_cached_docs(connection: sqlite3.Connection, doc_ids: set[int]) -> dict[int, sqlite3.Row]:
@@ -1322,6 +1417,46 @@ def fetch_cached_docs(connection: sqlite3.Connection, doc_ids: set[int]) -> dict
         for row in connection.execute(query, batch):
             docs[int(row["id"])] = row
     return docs
+
+
+def rows_to_results(
+    rows: list[sqlite3.Row],
+    config: dict[str, Any],
+    path_matches: dict[int, float],
+    mode: str,
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for row in rows:
+        source = str(row["source"] or "")
+        chunk_type = str(row["artifact_type"] or "")
+        path_match = path_matches.get(int(row["id"]), 0.0)
+        penalty = source_penalty(source, config)
+        role = fdr_role(source, chunk_type)
+        score = (
+            float(config.get("search", {}).get("explicit_path_boost", 0.75)) * path_match
+            * artifact_boost(source, chunk_type, config)
+            * fdr_role_boost(source, chunk_type, config, mode)
+            * penalty
+        )
+        results.append(
+            {
+                "score": round(score, 6),
+                "vector": 0.0,
+                "bm25": 0.0,
+                "source_match": 0.0,
+                "heading_match": 0.0,
+                "path_match": round(path_match, 6),
+                "source_penalty": round(penalty, 6),
+                "fdr_role": role,
+                "source": source,
+                "heading": row["heading"] or "",
+                "artifact_type": chunk_type,
+                "start_line": row["start_line"] or 1,
+                "preview": row["preview"] or "",
+            }
+        )
+    results.sort(key=lambda item: search_sort_key(item, config))
+    return results
 
 
 def search_precomputed_cache(
@@ -1347,10 +1482,15 @@ def search_precomputed_cache(
 
     search_mode = normalize_search_mode(mode)
     expanded_query = expand_for_search_mode(query, config, search_mode)
-    query_counts = token_counts(expanded_query)
+    query_counts = trim_query_counts(token_counts(expanded_query), config)
     query_terms = set(query_counts)
     query_vector = hashed_vector(query_counts, dim)
     path_matches = fetch_path_candidates(connection, extract_query_paths(query))
+    if path_matches and bool(search_cfg.get("explicit_path_priority", True)):
+        path_docs = fetch_cached_docs(connection, set(path_matches))
+        path_results = rows_to_results(list(path_docs.values()), config, path_matches, search_mode)
+        if path_results:
+            return select_search_results(path_results, top_k, max_chunks_per_source, "default")
 
     total_docs = int(metadata.get("total_docs", 0))
     avg_len = float(metadata.get("avg_len", 1.0))
@@ -1437,7 +1577,7 @@ def search_precomputed_cache(
             }
         )
 
-    results.sort(key=lambda item: (-item["score"], item["source"], item["start_line"]))
+    results.sort(key=lambda item: search_sort_key(item, config))
     return select_search_results(results, top_k, max_chunks_per_source, search_mode)
 
 
@@ -1517,7 +1657,7 @@ def search_index(
 
     search_mode = normalize_search_mode(mode)
     expanded_query = expand_for_search_mode(query, config, search_mode)
-    query_counts = token_counts(expanded_query)
+    query_counts = trim_query_counts(token_counts(expanded_query), config)
     query_terms = set(query_counts)
     query_vector = hashed_vector(query_counts, dim)
     doc_counts = [token_counts(weighted_document_text(chunk)) for chunk in chunks]
@@ -1567,7 +1707,7 @@ def search_index(
             }
         )
 
-    results.sort(key=lambda item: (-item["score"], item["source"], item["start_line"]))
+    results.sort(key=lambda item: search_sort_key(item, config))
     return select_search_results(results, top_k, max_chunks_per_source, search_mode)
 
 
