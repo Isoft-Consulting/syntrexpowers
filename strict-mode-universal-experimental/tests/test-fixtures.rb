@@ -17,6 +17,7 @@ VALIDATOR = ROOT.join("tools/validate-fixtures.rb")
 GENERATOR = ROOT.join("tools/generate-fixture-manifests.rb")
 IMPORTER = ROOT.join("tools/import-discovery-fixture.rb")
 CONTRACT_IMPORTER = ROOT.join("tools/import-contract-fixture.rb")
+RAW_CAPTURE_IMPORTER = ROOT.join("tools/import-raw-captures.rb")
 NORMALIZER = ROOT.join("tools/normalize-event.rb")
 PROVIDER_VERIFY = ROOT.join("tools/verify-provider-payload.rb")
 
@@ -341,6 +342,41 @@ expect_pass("contract importer creates decision-output fixture record") do |root
     "providers/codex/fixtures/decision-output/pre-tool-use/codex.pre-tool-use.block.stdout"
   ]
   record_failure("contract importer creates decision-output fixture record", "decision fixture role paths mismatch", output) unless record.fetch("fixture_file_hashes").map { |item| item.fetch("path") } == expected_paths
+end
+
+expect_pass("raw capture importer promotes captured payload fixtures") do |root|
+  payload = "{\"event\":\"pre-tool-use\",\"thread_id\":\"t1\",\"tool_name\":\"apply_patch\",\"tool_input\":{\"patch\":\"*** Begin Patch\\n*** Add File: lib/raw_capture.rb\\n+puts 1\\n*** End Patch\\n\"}}\n"
+  capture_root = root.join("state/discovery/raw")
+  raw_dir = capture_root.join("codex/pre-tool-use")
+  raw_dir.mkpath
+  raw_path = raw_dir.join("20260507T000000-1-raw.payload")
+  raw_path.write(payload)
+  project = root.join("project")
+  cwd = project.join("src")
+  cwd.mkpath
+
+  status, output = run_cmd(
+    RAW_CAPTURE_IMPORTER,
+    "--root", root,
+    "--provider", "codex",
+    "--event", "pre-tool-use",
+    "--capture-root", capture_root,
+    "--cwd", cwd,
+    "--project-dir", project,
+    "--captured-at", "2026-05-07T00:00:00Z"
+  )
+  assert_no_stacktrace("raw capture importer promotes captured payload fixtures", output)
+  unless status.zero?
+    record_failure("raw capture importer promotes captured payload fixtures", "raw capture import failed", output)
+    next
+  end
+
+  payload_hash = Digest::SHA256.hexdigest(payload)
+  record = read_json(StrictModeFixtures.manifest_path(root, "codex")).fetch("records").fetch(0)
+  record_failure("raw capture importer promotes captured payload fixtures", "wrong contract id", output) unless record.fetch("contract_id") == "codex.pre-tool-use.payload.#{payload_hash[0, 12]}"
+  record_failure("raw capture importer promotes captured payload fixtures", "wrong contract kind", output) unless record.fetch("contract_kind") == "payload-schema"
+  raw_fixture = record.fetch("fixture_file_hashes").find { |item| item.fetch("path").include?("/payloads/") }
+  record_failure("raw capture importer promotes captured payload fixtures", "raw fixture missing", output) unless raw_fixture && root.join(raw_fixture.fetch("path")).binread == payload
 end
 
 expect_fail("payload-schema without normalized provider proof is rejected", "payload-schema must include exactly one normalized event fixture") do |root|
