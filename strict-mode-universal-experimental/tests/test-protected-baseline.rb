@@ -268,12 +268,23 @@ with_install do |_root, home, install_root, _state_root, project|
   assert(name, loaded.fetch("errors").any? { |message| message.include?("content_sha256 mismatch") }, "missing content hash diagnostic", loaded.fetch("errors").join("\n"))
 end
 
-with_install do |_root, home, install_root, _state_root, project|
+with_install do |_root, home, install_root, state_root, project|
   name = "protected file inode drift makes baseline untrusted"
   provider_config = home.join(".codex/hooks.json")
-  bytes = provider_config.read
-  FileUtils.rm_f(provider_config)
-  provider_config.write(bytes)
+  manifest_path = install_root.join("install-manifest.json")
+  baseline_path = state_root.join("protected-install-baseline.json")
+  manifest = read_json(manifest_path)
+  baseline = read_json(baseline_path)
+  stale_inode = provider_config.stat.ino + 1
+
+  [manifest, baseline].each do |record|
+    provider_record = record.fetch("provider_config_records").find { |entry| entry.fetch("path") == provider_config.to_s }
+    provider_record["inode"] = stale_inode
+  end
+  write_hash_bound_json(manifest_path, manifest, "manifest_hash")
+  baseline["install_manifest_hash"] = manifest.fetch("manifest_hash")
+  write_hash_bound_json(baseline_path, baseline, "baseline_hash")
+
   loaded = StrictModeProtectedBaseline.load(install_root: install_root, project_dir: project, home: home)
   assert(name, !loaded.fetch("trusted"), "inode drift loaded as trusted")
   assert(name, loaded.fetch("errors").any? { |message| message.include?("dev/inode mismatch") }, "missing inode drift diagnostic", loaded.fetch("errors").join("\n"))
