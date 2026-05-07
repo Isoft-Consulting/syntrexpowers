@@ -214,6 +214,100 @@ module StrictModeDecisionContract
     errors
   end
 
+  def emit_provider_output(metadata, internal_decision)
+    errors = validate_provider_output(metadata) + validate_internal(internal_decision)
+    raise errors.join("\n") unless errors.empty?
+
+    compatibility_error = provider_action_compatibility_error(metadata.fetch("provider_action"), internal_decision.fetch("action"))
+    raise compatibility_error if compatibility_error
+
+    emitted = {
+      "stdout" => render_output_stream(metadata, internal_decision, "stdout"),
+      "stderr" => render_output_stream(metadata, internal_decision, "stderr"),
+      "exit_code" => metadata.fetch("exit_code")
+    }
+    capture_errors = validate_captured_output(
+      metadata,
+      stdout_bytes: emitted.fetch("stdout"),
+      stderr_bytes: emitted.fetch("stderr"),
+      exit_code: emitted.fetch("exit_code")
+    )
+    raise capture_errors.join("\n") unless capture_errors.empty?
+
+    emitted
+  end
+
+  def provider_action_compatibility_error(provider_action, internal_action)
+    allowed = case internal_action
+              when "allow"
+                %w[allow no-op]
+              when "block"
+                %w[block deny]
+              when "warn"
+                %w[warn]
+              when "inject"
+                %w[inject]
+              else
+                []
+              end
+    return nil if allowed.include?(provider_action)
+
+    "provider_action #{provider_action.inspect} is not compatible with internal action #{internal_action.inspect}"
+  end
+
+  def render_output_stream(metadata, internal_decision, stream)
+    mode = metadata.fetch("#{stream}_mode")
+    fields = metadata.fetch("#{stream}_required_fields")
+    case mode
+    when "empty"
+      ""
+    when "plain-text"
+      plain_text_output(metadata, internal_decision)
+    when "json", "provider-native-json"
+      payload = fields.each_with_object({}) do |field, record|
+        record[field] = provider_output_field_value(field, metadata, internal_decision)
+      end
+      JSON.generate(payload) + "\n"
+    else
+      raise "unsupported #{stream}_mode #{mode.inspect}"
+    end
+  end
+
+  def plain_text_output(metadata, internal_decision)
+    case metadata.fetch("provider_action")
+    when "inject"
+      internal_decision.fetch("additional_context")
+    when "allow", "no-op"
+      ""
+    else
+      internal_decision.fetch("reason")
+    end
+  end
+
+  def provider_output_field_value(field, metadata, internal_decision)
+    field_key = field.split(".").last
+    case field_key
+    when "schema_version"
+      1
+    when "contract_id"
+      metadata.fetch("contract_id")
+    when "decision", "action", "provider_action"
+      metadata.fetch("provider_action")
+    when "reason", "message"
+      provider_output_message(metadata, internal_decision)
+    when "severity"
+      internal_decision.fetch("severity")
+    when "additional_context", "context"
+      internal_decision.fetch("additional_context")
+    else
+      raise "unsupported provider output field #{field.inspect}"
+    end
+  end
+
+  def provider_output_message(metadata, internal_decision)
+    metadata.fetch("provider_action") == "inject" ? internal_decision.fetch("additional_context") : internal_decision.fetch("reason")
+  end
+
   def validate_effectful_capture(errors, metadata, stdout_bytes, stderr_bytes, exit_code)
     output_bytes_present = !stdout_bytes.empty? || !stderr_bytes.empty?
     case metadata.fetch("provider_action")
