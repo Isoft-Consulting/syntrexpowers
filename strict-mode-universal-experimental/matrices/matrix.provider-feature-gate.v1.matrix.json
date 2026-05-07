@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "matrix_id": "matrix.provider-feature-gate.v1",
+  "owner": "[Hook Event Matrix](03-hook-event-matrix.md), [README](../README.md)",
+  "dimensions": [
+    "Provider, logical event/capability, exact README status/proof cell text, normalized README status/proof enums, selected fixture contract ids, installer manifest hook entry, protected install baseline entry, output contract id, provider version/build/platform, and enforcement status",
+    "The closed status enum is `planned`, `planned-after-proof`, `fixture-required`, `provider-specific-fixture-required`, `disabled-until-proof`, `disabled-unless-equivalent`, `conditional`, `not-required-v0`, `provider-bound-route`, and `tool-family-planned`",
+    "the closed proof enum is `config-merge-baseline`, `event-order-before-tools`, `payload-matcher-command-decision-output`, `stop-payload-output`, `event-payload-decision-output`, `approval-capable-permission`, `block-deny-baseline`, `path-evidence-dirty-snapshot`, `trusted-fdr-import-artifact-schema`, `judge-invocation`, `worker-invocation`, and `bounded-current-turn-extraction`",
+    "Every exact README status/proof phrase must map to one of these values in matrix metadata",
+    "Unknown README status or proof text is invalid unless the provider-feature matrix and installer/readiness checks are updated in the same edit."
+  ],
+  "allowed_rows": [
+    "README capability/status/proof row maps to closed enums and exact capability list",
+    "planned or discovery-only provider capability does not install enforcing hook entries",
+    "enforcing provider capability has selected fixture contract ids, manifest entry, baseline entry, and output contract id",
+    "provider-bound judge route matches Claude Haiku or Codex Spark",
+    "provider-bound worker route matches Claude Haiku-class or Codex Spark-class worker models",
+    "disabled-until-proof capability remains disabled until required fixture proof exists."
+  ],
+  "forbidden_row_classes": [
+    "README claims enforcement without fixture proof",
+    "README status/proof text not represented in the closed enum",
+    "installer writes enforcing hook without output contract id",
+    "provider version/build drift still using old fixture",
+    "Codex FDR challenge enabled before current-turn extraction proof",
+    "worker delegation enabled before worker-invocation proof",
+    "PermissionRequest registered enforcing without deny contract",
+    "hook timeout/env proof missing while feature is marked enforcing-ready."
+  ],
+  "fixture_requirements": [
+    "Keep README/provider matrix, installer hooks, and fixture proofs aligned"
+  ],
+  "profile_hash": "c520cd39f30c4cb28f094a611f18eaf5fa459fc24fe045473d373beb751d35a9"
+}

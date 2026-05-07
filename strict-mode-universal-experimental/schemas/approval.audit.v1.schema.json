@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "schema_id": "approval.audit.v1",
+  "owner": "[State Layout](07-state-layout.md)",
+  "input_family": "`destructive-log.jsonl`, `bypass-log.jsonl`, `optout-log.jsonl`",
+  "hash_fields": [
+    "record_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "log",
+    "action",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "approval_hash",
+    "pending_record_hash",
+    "next_user_prompt_marker",
+    "prompt_seq",
+    "source",
+    "ts",
+    "previous_record_hash",
+    "record_hash"
+  ],
+  "referenced_terms": [
+    "matrix.approval-log-action-source.v1"
+  ],
+  "referenced_details": {
+    "matrix.approval-log-action-source.v1": {
+      "kind": "matrix-id",
+      "source": "closed matrix registry",
+      "rules": [
+        "approval audit matrix validator"
+      ]
+    }
+  },
+  "field_profiles": [
+    "consumed marker fingerprints",
+    "resolved quality scope fields",
+    "opt-out fingerprint fields"
+  ],
+  "field_details": {
+    "consumed marker fingerprints": {
+      "shape": "object",
+      "members": [
+        "marker_hash",
+        "tombstone_hash",
+        "ledger_hash"
+      ],
+      "rules": [
+        "consumed evidence immutable"
+      ]
+    },
+    "resolved quality scope fields": {
+      "shape": "object",
+      "members": [
+        "scope digest",
+        "artifact hash",
+        "finding count"
+      ],
+      "rules": [
+        "resolved FDR challenge binding"
+      ]
+    },
+    "opt-out fingerprint fields": {
+      "shape": "object",
+      "members": [
+        "optout_kind",
+        "path",
+        "fingerprint"
+      ],
+      "rules": [
+        "opt-out approval identity"
+      ]
+    }
+  },
+  "enum_families": [
+    "log",
+    "action",
+    "source",
+    "command_hash_source",
+    "optout_kind"
+  ],
+  "enum_values": {
+    "log": [
+      "destructive",
+      "bypass",
+      "optout"
+    ],
+    "action": [
+      "blocked",
+      "confirmed",
+      "consumed",
+      "expired",
+      "approved",
+      "resolved",
+      "pending"
+    ],
+    "source": [
+      "pre-tool-hook",
+      "stop-hook",
+      "user-prompt-hook",
+      "cleanup"
+    ],
+    "command_hash_source": [
+      "shell-string"
+    ],
+    "optout_kind": [
+      "disabled",
+      "no-static-prepass",
+      "no-destructive-gate",
+      "legacy-claude"
+    ]
+  },
+  "variant_requirements": [
+    "destructive action fields",
+    "bypass action fields",
+    "opt-out action fields",
+    "consumed extra fields",
+    "resolved extra fields"
+  ],
+  "variant_rules": {
+    "destructive action fields": {
+      "selectors": [
+        "log=destructive"
+      ],
+      "requires": [
+        "destructive action field set",
+        "pending_record_hash"
+      ],
+      "forbids": [
+        "optout_kind"
+      ]
+    },
+    "bypass action fields": {
+      "selectors": [
+        "log=bypass"
+      ],
+      "requires": [
+        "gate_context",
+        "pending_record_hash"
+      ],
+      "forbids": [
+        "optout_fingerprint"
+      ]
+    },
+    "opt-out action fields": {
+      "selectors": [
+        "log=optout"
+      ],
+      "requires": [
+        "optout_fingerprint",
+        "optout_kind"
+      ],
+      "forbids": [
+        "normalized_command_hash"
+      ]
+    },
+    "consumed extra fields": {
+      "selectors": [
+        "action=consumed"
+      ],
+      "requires": [
+        "consumed marker fingerprints"
+      ],
+      "forbids": [
+        "resolved quality scope fields"
+      ]
+    },
+    "resolved extra fields": {
+      "selectors": [
+        "action=resolved"
+      ],
+      "requires": [
+        "resolved quality scope fields"
+      ],
+      "forbids": [
+        "consumed marker fingerprints"
+      ]
+    }
+  },
+  "variants": [
+    "Common audit fields",
+    "log-specific extra fields",
+    "consumed and resolved extra field sets",
+    "`previous_record_hash` chain",
+    "`prompt_seq` rules by source",
+    "closed matrix validator `matrix.approval-log-action-source.v1`."
+  ],
+  "variant_details": {
+    "Common audit fields": {
+      "index": 1,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Common audit fields"
+      ]
+    },
+    "log-specific extra fields": {
+      "index": 2,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "log-specific extra fields"
+      ]
+    },
+    "consumed and resolved extra field sets": {
+      "index": 3,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "consumed and resolved extra field sets"
+      ]
+    },
+    "`previous_record_hash` chain": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "previous_record_hash chain"
+      ]
+    },
+    "`prompt_seq` rules by source": {
+      "index": 5,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "prompt_seq rules by source"
+      ]
+    },
+    "closed matrix validator `matrix.approval-log-action-source.v1`.": {
+      "index": 6,
+      "kind": "matrix-binding",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "closed matrix validator matrix.approval-log-action-source.v1."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "audit parser plus closed log/action/source matrix"
+  ],
+  "profile_hash": "6a3811e90810a55610c77e19b433b6028ee346aa2164bbf53dcc7012d1e8ceb2"
+}

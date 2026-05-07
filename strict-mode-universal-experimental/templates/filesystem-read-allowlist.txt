@@ -1,0 +1,2 @@
+# read /absolute/file
+# read-tree /absolute/directory/**

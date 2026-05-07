@@ -1,0 +1,294 @@
+{
+  "schema_version": 1,
+  "schema_id": "metadata.schema-profile.v1",
+  "owner": "[Implementation Readiness](17-implementation-readiness.md)",
+  "input_family": "`schemas/*.schema.json`",
+  "hash_fields": [
+    "profile_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "schema_id",
+    "owner",
+    "input_family",
+    "hash_fields",
+    "required_fields",
+    "referenced_terms",
+    "referenced_details",
+    "field_profiles",
+    "field_details",
+    "enum_families",
+    "enum_values",
+    "variant_requirements",
+    "variant_rules",
+    "variants",
+    "variant_details",
+    "nested_profiles",
+    "fixture_requirements",
+    "profile_hash"
+  ],
+  "referenced_terms": [
+    "<schema-id>.schema.json"
+  ],
+  "referenced_details": {
+    "<schema-id>.schema.json": {
+      "kind": "filename-template",
+      "source": "metadata-bootstrap",
+      "rules": [
+        "filename stem binds schema_id"
+      ]
+    }
+  },
+  "field_profiles": [
+    "hash_fields",
+    "required_fields",
+    "referenced_terms",
+    "referenced_details",
+    "field_profiles",
+    "field_details",
+    "enum_families",
+    "enum_values",
+    "variant_requirements",
+    "variant_rules",
+    "variants",
+    "variant_details",
+    "nested_profiles",
+    "fixture_requirements"
+  ],
+  "field_details": {
+    "hash_fields": {
+      "shape": "array",
+      "members": [
+        "hash field names"
+      ],
+      "rules": [
+        "top-level owner fields only"
+      ]
+    },
+    "required_fields": {
+      "shape": "array",
+      "members": [
+        "required top-level fields"
+      ],
+      "rules": [
+        "comes from 17.2.1"
+      ]
+    },
+    "referenced_terms": {
+      "shape": "array",
+      "members": [
+        "non-field code terms"
+      ],
+      "rules": [
+        "excludes required_fields"
+      ]
+    },
+    "referenced_details": {
+      "shape": "object-map",
+      "members": [
+        "kind",
+        "source",
+        "rules"
+      ],
+      "rules": [
+        "keys match referenced_terms"
+      ]
+    },
+    "field_profiles": {
+      "shape": "array",
+      "members": [
+        "field profile names"
+      ],
+      "rules": [
+        "keys match field_details"
+      ]
+    },
+    "field_details": {
+      "shape": "object-map",
+      "members": [
+        "shape",
+        "members",
+        "rules"
+      ],
+      "rules": [
+        "keys match field_profiles"
+      ]
+    },
+    "enum_families": {
+      "shape": "array",
+      "members": [
+        "enum family names"
+      ],
+      "rules": [
+        "keys match enum_values"
+      ]
+    },
+    "enum_values": {
+      "shape": "object-map",
+      "members": [
+        "enum family",
+        "allowed values"
+      ],
+      "rules": [
+        "keys match enum_families"
+      ]
+    },
+    "variant_requirements": {
+      "shape": "array",
+      "members": [
+        "variant rule names"
+      ],
+      "rules": [
+        "keys match variant_rules"
+      ]
+    },
+    "variant_rules": {
+      "shape": "object-map",
+      "members": [
+        "selectors",
+        "requires",
+        "forbids"
+      ],
+      "rules": [
+        "keys match variant_requirements"
+      ]
+    },
+    "variants": {
+      "shape": "array",
+      "members": [
+        "implementation profile clauses"
+      ],
+      "rules": [
+        "non-empty prose fragments"
+      ]
+    },
+    "variant_details": {
+      "shape": "object-map",
+      "members": [
+        "index",
+        "kind",
+        "source",
+        "rules"
+      ],
+      "rules": [
+        "keys match variants"
+      ]
+    },
+    "nested_profiles": {
+      "shape": "array",
+      "members": [
+        "schema profile ids"
+      ],
+      "rules": [
+        "matrix ids forbidden"
+      ]
+    },
+    "fixture_requirements": {
+      "shape": "array",
+      "members": [
+        "required artifact names"
+      ],
+      "rules": [
+        "binds registry artifact"
+      ]
+    }
+  },
+  "enum_families": [
+
+  ],
+  "enum_values": {
+  },
+  "variant_requirements": [
+    "filename schema_id binding",
+    "nested_profiles excludes matrix ids"
+  ],
+  "variant_rules": {
+    "filename schema_id binding": {
+      "selectors": [
+        "filename=<schema-id>.schema.json"
+      ],
+      "requires": [
+        "schema_id equals filename stem"
+      ],
+      "forbids": [
+        "schema_id!=filename stem"
+      ]
+    },
+    "nested_profiles excludes matrix ids": {
+      "selectors": [
+        "nested_profiles present"
+      ],
+      "requires": [
+        "nested_profiles schema ids only"
+      ],
+      "forbids": [
+        "matrix id entries"
+      ]
+    }
+  },
+  "variants": [
+    "Exact profile fields `schema_version`, `schema_id`, `owner`, `input_family`, `hash_fields`, `required_fields`, `referenced_terms`, `referenced_details`, `field_profiles`, `field_details`, `enum_families`, `enum_values`, `variant_requirements`, `variant_rules`, `variants`, `variant_details`, `nested_profiles`, `fixture_requirements`, and `profile_hash`",
+    "filename `<schema-id>.schema.json` must match `schema_id`",
+    "`required_fields` contains only owner-record top-level fields from 17.2.1, while `referenced_terms` contains non-field code terms referenced by this implementation profile",
+    "`referenced_details` comes from 17.2.1.1, `field_profiles`, `enum_families`, and `variant_requirements` come from 17.2.2, `field_details` comes from 17.2.2.1, `enum_values` comes from 17.2.3, `variant_rules` comes from 17.2.4, and `variant_details` comes from 17.2.5",
+    "profile must include every owner-defined variant/directive/action/nested family named by this sub-spec",
+    "`nested_profiles` contains nested schema profile ids only and never matrix ids."
+  ],
+  "variant_details": {
+    "Exact profile fields `schema_version`, `schema_id`, `owner`, `input_family`, `hash_fields`, `required_fields`, `referenced_terms`, `referenced_details`, `field_profiles`, `field_details`, `enum_families`, `enum_values`, `variant_requirements`, `variant_rules`, `variants`, `variant_details`, `nested_profiles`, `fixture_requirements`, and `profile_hash`": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact profile fields schema_version, schema_id, owner, input_family, hash_fields, required_fields, referenced_terms, referenced_details, field_profiles, field_details, enum_families, enum_values, variant_requirements, variant_rules, variants, variant_details, nested_profiles, fixture_requirements, and profile_hash"
+      ]
+    },
+    "filename `<schema-id>.schema.json` must match `schema_id`": {
+      "index": 2,
+      "kind": "filename-binding",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "filename <schema-id>.schema.json must match schema_id"
+      ]
+    },
+    "`required_fields` contains only owner-record top-level fields from 17.2.1, while `referenced_terms` contains non-field code terms referenced by this implementation profile": {
+      "index": 3,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "required_fields contains only owner-record top-level fields from 17.2.1, while referenced_terms contains non-field code terms referenced by this implementation profile"
+      ]
+    },
+    "`referenced_details` comes from 17.2.1.1, `field_profiles`, `enum_families`, and `variant_requirements` come from 17.2.2, `field_details` comes from 17.2.2.1, `enum_values` comes from 17.2.3, `variant_rules` comes from 17.2.4, and `variant_details` comes from 17.2.5": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "referenced_details comes from 17.2.1.1, field_profiles, enum_families, and variant_requirements come from 17.2.2, field_details comes from 17.2.2.1, enum_values comes from 17.2.3, variant_rules comes from 17.2.4, and variant_details comes from 17.2.5"
+      ]
+    },
+    "profile must include every owner-defined variant/directive/action/nested family named by this sub-spec": {
+      "index": 5,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "profile must include every owner-defined variant/directive/action/nested family named by this sub-spec"
+      ]
+    },
+    "`nested_profiles` contains nested schema profile ids only and never matrix ids.": {
+      "index": 6,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "nested_profiles contains nested schema profile ids only and never matrix ids."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "schema-profile metadata parser and filename/id binder"
+  ],
+  "profile_hash": "90d5bf33bcef94f9a4178c7443eb7ec6f9663f714f65ceab4f6a70711bfed07d"
+}

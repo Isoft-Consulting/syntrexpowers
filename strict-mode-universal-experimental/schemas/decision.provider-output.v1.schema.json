@@ -1,0 +1,252 @@
+{
+  "schema_version": 1,
+  "schema_id": "decision.provider-output.v1",
+  "owner": "[Decision Contract](06-decision-contract.md), [Hook Event Matrix](03-hook-event-matrix.md)",
+  "input_family": "provider-specific emitted allow/block/deny/inject output contracts",
+  "hash_fields": [
+    "decision_contract_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "contract_id",
+    "provider",
+    "event",
+    "logical_event",
+    "provider_action",
+    "stdout_mode",
+    "stdout_required_fields",
+    "stderr_mode",
+    "stderr_required_fields",
+    "exit_code",
+    "blocks_or_denies",
+    "injects_context",
+    "decision_contract_hash"
+  ],
+  "referenced_terms": [
+
+  ],
+  "referenced_details": {
+  },
+  "field_profiles": [
+    "stdout_required_fields",
+    "stderr_required_fields"
+  ],
+  "field_details": {
+    "stdout_required_fields": {
+      "shape": "array",
+      "members": [
+        "stdout JSON field names"
+      ],
+      "rules": [
+        "sorted unique fields"
+      ]
+    },
+    "stderr_required_fields": {
+      "shape": "array",
+      "members": [
+        "stderr JSON field names"
+      ],
+      "rules": [
+        "sorted unique fields"
+      ]
+    }
+  },
+  "enum_families": [
+    "provider",
+    "provider_action",
+    "stdout_mode",
+    "stderr_mode"
+  ],
+  "enum_values": {
+    "provider": [
+      "claude",
+      "codex"
+    ],
+    "provider_action": [
+      "allow",
+      "block",
+      "deny",
+      "warn",
+      "inject",
+      "no-op"
+    ],
+    "stdout_mode": [
+      "empty",
+      "plain-text",
+      "json",
+      "provider-native-json"
+    ],
+    "stderr_mode": [
+      "empty",
+      "plain-text",
+      "json",
+      "provider-native-json"
+    ]
+  },
+  "variant_requirements": [
+    "JSON modes require sorted required-field arrays",
+    "block or deny sets blocks_or_denies",
+    "inject sets injects_context",
+    "block/deny/inject observable signal"
+  ],
+  "variant_rules": {
+    "JSON modes require sorted required-field arrays": {
+      "selectors": [
+        "stdout_mode=json or stderr_mode=json"
+      ],
+      "requires": [
+        "sorted stdout_required_fields",
+        "sorted stderr_required_fields"
+      ],
+      "forbids": [
+        "duplicate required fields"
+      ]
+    },
+    "block or deny sets blocks_or_denies": {
+      "selectors": [
+        "provider_action=block or deny"
+      ],
+      "requires": [
+        "blocks_or_denies=1"
+      ],
+      "forbids": [
+        "blocks_or_denies=0"
+      ]
+    },
+    "inject sets injects_context": {
+      "selectors": [
+        "provider_action=inject"
+      ],
+      "requires": [
+        "injects_context=1"
+      ],
+      "forbids": [
+        "injects_context=0"
+      ]
+    },
+    "block/deny/inject observable signal": {
+      "selectors": [
+        "provider_action=block, deny, or inject"
+      ],
+      "requires": [
+        "non-empty output mode or non-zero exit code for block/deny",
+        "non-empty output mode for inject",
+        "captured bytes present unless block/deny exit code is non-zero"
+      ],
+      "forbids": [
+        "empty stdout/stderr modes with exit_code=0 for block/deny",
+        "empty inject output"
+      ]
+    }
+  },
+  "variants": [
+    "Exact provider output metadata fields",
+    "provider/event/logical-event/action dimensions",
+    "stdout/stderr mode and required-field arrays",
+    "exact exit-code shape",
+    "event and logical-event fixture binding",
+    "block/deny/inject observable output signal requirement",
+    "block/deny/inject fixture requirement",
+    "`decision_contract_hash` recomputation",
+    "output contract id binding to fixture manifest and install baseline",
+    "self-timeout block output variants",
+    "refusal to emit enforcing block/deny/inject output without matching fixture proof."
+  ],
+  "variant_details": {
+    "Exact provider output metadata fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact provider output metadata fields"
+      ]
+    },
+    "provider/event/logical-event/action dimensions": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "provider/event/logical-event/action dimensions"
+      ]
+    },
+    "stdout/stderr mode and required-field arrays": {
+      "index": 3,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "stdout/stderr mode and required-field arrays"
+      ]
+    },
+    "exact exit-code shape": {
+      "index": 4,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "exact exit-code shape"
+      ]
+    },
+    "event and logical-event fixture binding": {
+      "index": 5,
+      "kind": "fixture-proof",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "event and logical-event fixture binding"
+      ]
+    },
+    "block/deny/inject observable output signal requirement": {
+      "index": 6,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "block/deny/inject observable output signal requirement"
+      ]
+    },
+    "block/deny/inject fixture requirement": {
+      "index": 7,
+      "kind": "fixture-proof",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "block/deny/inject fixture requirement"
+      ]
+    },
+    "`decision_contract_hash` recomputation": {
+      "index": 8,
+      "kind": "hash-recompute",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "decision_contract_hash recomputation"
+      ]
+    },
+    "output contract id binding to fixture manifest and install baseline": {
+      "index": 9,
+      "kind": "fixture-proof",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "output contract id binding to fixture manifest and install baseline"
+      ]
+    },
+    "self-timeout block output variants": {
+      "index": 10,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "self-timeout block output variants"
+      ]
+    },
+    "refusal to emit enforcing block/deny/inject output without matching fixture proof.": {
+      "index": 11,
+      "kind": "fixture-proof",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "refusal to emit enforcing block/deny/inject output without matching fixture proof."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "provider output contract metadata, fixture binder, emission validator"
+  ],
+  "profile_hash": "22116e5f01be31e7db720ebf01ce50a82183f56a1c44eebb83b2aff72b603ec7"
+}

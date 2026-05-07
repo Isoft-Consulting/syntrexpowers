@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "schema_id": "tool.intent.v1",
+  "owner": "[Record Edit](08-shared-core/03-record-edit.md)",
+  "input_family": "`tool-intents-*`",
+  "hash_fields": [
+    "intent_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "seq",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "turn_marker",
+    "logical_event",
+    "tool_kind",
+    "tool_name",
+    "normalized_command_hash",
+    "command_hash_source",
+    "normalized_path_list",
+    "payload_hash",
+    "write_intent",
+    "ts",
+    "intent_hash"
+  ],
+  "referenced_terms": [
+
+  ],
+  "referenced_details": {
+  },
+  "field_profiles": [
+    "normalized_path_list"
+  ],
+  "field_details": {
+    "normalized_path_list": {
+      "shape": "array",
+      "members": [
+        "normalized paths"
+      ],
+      "rules": [
+        "canonical absolute or unknown sentinel"
+      ]
+    }
+  },
+  "enum_families": [
+    "logical_event",
+    "tool_kind",
+    "command_hash_source",
+    "write_intent"
+  ],
+  "enum_values": {
+    "logical_event": [
+      "session-start",
+      "user-prompt-submit",
+      "pre-tool-use",
+      "post-tool-use",
+      "stop",
+      "subagent-stop",
+      "permission-request"
+    ],
+    "tool_kind": [
+      "shell",
+      "write",
+      "edit",
+      "multi-edit",
+      "patch",
+      "read",
+      "other",
+      "unknown"
+    ],
+    "command_hash_source": [
+      "none",
+      "shell-string",
+      "argv",
+      "trusted-import-argv"
+    ],
+    "write_intent": [
+      "none",
+      "read",
+      "write",
+      "unknown"
+    ]
+  },
+  "variant_requirements": [
+    "command absent zero hash",
+    "write intent classification",
+    "payload hash input"
+  ],
+  "variant_rules": {
+    "command absent zero hash": {
+      "selectors": [
+        "command_hash_source=none"
+      ],
+      "requires": [
+        "normalized_command_hash=64-zero"
+      ],
+      "forbids": [
+        "command payload hash"
+      ]
+    },
+    "write intent classification": {
+      "selectors": [
+        "tool_kind selected"
+      ],
+      "requires": [
+        "write_intent from static classifier"
+      ],
+      "forbids": [
+        "unknown treated as read"
+      ]
+    },
+    "payload hash input": {
+      "selectors": [
+        "payload present"
+      ],
+      "requires": [
+        "payload_hash canonical input"
+      ],
+      "forbids": [
+        "missing payload hash"
+      ]
+    }
+  },
+  "variants": [
+    "Exact tool-intent fields",
+    "`logical_event`, `tool_kind`, `command_hash_source`, and `write_intent` domains",
+    "canonical path list schema",
+    "payload hash input",
+    "`intent_hash` recomputation",
+    "unresolved-intent fail-closed rules."
+  ],
+  "variant_details": {
+    "Exact tool-intent fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact tool-intent fields"
+      ]
+    },
+    "`logical_event`, `tool_kind`, `command_hash_source`, and `write_intent` domains": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "logical_event, tool_kind, command_hash_source, and write_intent domains"
+      ]
+    },
+    "canonical path list schema": {
+      "index": 3,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "canonical path list schema"
+      ]
+    },
+    "payload hash input": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "payload hash input"
+      ]
+    },
+    "`intent_hash` recomputation": {
+      "index": 5,
+      "kind": "hash-recompute",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "intent_hash recomputation"
+      ]
+    },
+    "unresolved-intent fail-closed rules.": {
+      "index": 6,
+      "kind": "negative-rule",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "unresolved-intent fail-closed rules."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "tool-intent parser and pre/post linkage validator"
+  ],
+  "profile_hash": "79b8738abb3783d7c44a4462eded975df791d15ae339c6e0cb703a9065081741"
+}

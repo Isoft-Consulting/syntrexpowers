@@ -1,0 +1,407 @@
+{
+  "schema_version": 1,
+  "schema_id": "event.normalized.v1",
+  "owner": "[Normalized Event Contract](04-normalized-event-contract.md)",
+  "input_family": "normalized event JSON passed from provider adapters to shared core",
+  "hash_fields": [
+
+  ],
+  "required_fields": [
+    "schema_version",
+    "provider",
+    "logical_event",
+    "raw_event",
+    "session_id",
+    "parent_session_id",
+    "turn_id",
+    "cwd",
+    "project_dir",
+    "transcript_path",
+    "turn",
+    "tool",
+    "permission",
+    "prompt",
+    "assistant",
+    "raw"
+  ],
+  "referenced_terms": [
+
+  ],
+  "referenced_details": {
+  },
+  "field_profiles": [
+    "turn",
+    "tool",
+    "tool.file_changes",
+    "permission",
+    "permission.filesystem",
+    "permission.network",
+    "prompt",
+    "assistant",
+    "raw"
+  ],
+  "field_details": {
+    "turn": {
+      "shape": "object",
+      "members": [
+        "turn_id",
+        "parent turn marker",
+        "cwd/project tuple"
+      ],
+      "rules": [
+        "current turn identity preserved"
+      ]
+    },
+    "tool": {
+      "shape": "object",
+      "members": [
+        "kind",
+        "name",
+        "write_intent",
+        "file_changes"
+      ],
+      "rules": [
+        "absent tool uses unknown sentinels"
+      ]
+    },
+    "tool.file_changes": {
+      "shape": "array",
+      "members": [
+        "action",
+        "source",
+        "path",
+        "old_path",
+        "new_path"
+      ],
+      "rules": [
+        "action-specific path shape"
+      ]
+    },
+    "permission": {
+      "shape": "object",
+      "members": [
+        "operation",
+        "access_mode",
+        "requested_tool_kind",
+        "can_approve"
+      ],
+      "rules": [
+        "permission-request mirror fields"
+      ]
+    },
+    "permission.filesystem": {
+      "shape": "object",
+      "members": [
+        "access_mode",
+        "path",
+        "recursive",
+        "scope"
+      ],
+      "rules": [
+        "normalized absolute path domain"
+      ]
+    },
+    "permission.network": {
+      "shape": "object",
+      "members": [
+        "scheme",
+        "host",
+        "port",
+        "operation"
+      ],
+      "rules": [
+        "canonical host and port domain"
+      ]
+    },
+    "prompt": {
+      "shape": "object",
+      "members": [
+        "prompt text hash",
+        "prompt byte counts"
+      ],
+      "rules": [
+        "raw prompt privacy bounds"
+      ]
+    },
+    "assistant": {
+      "shape": "object",
+      "members": [
+        "current turn text",
+        "byte count",
+        "truncated flag"
+      ],
+      "rules": [
+        "truncation flag coupled to byte cap"
+      ]
+    },
+    "raw": {
+      "shape": "object",
+      "members": [
+        "raw event type",
+        "raw payload hash"
+      ],
+      "rules": [
+        "raw capture bounded by config"
+      ]
+    }
+  },
+  "enum_families": [
+    "provider",
+    "logical_event",
+    "tool.kind",
+    "tool.write_intent",
+    "tool.file_changes.action",
+    "tool.file_changes.source",
+    "permission.operation",
+    "permission.access_mode",
+    "permission.requested_tool_kind",
+    "permission.filesystem.access_mode",
+    "permission.filesystem.recursive",
+    "permission.filesystem.scope",
+    "permission.network.scheme",
+    "permission.network.operation",
+    "permission.can_approve",
+    "turn.assistant_text_truncated"
+  ],
+  "enum_values": {
+    "provider": [
+      "claude",
+      "codex",
+      "unknown"
+    ],
+    "logical_event": [
+      "session-start",
+      "user-prompt-submit",
+      "pre-tool-use",
+      "post-tool-use",
+      "stop",
+      "subagent-stop",
+      "permission-request"
+    ],
+    "tool.kind": [
+      "shell",
+      "write",
+      "edit",
+      "multi-edit",
+      "patch",
+      "read",
+      "other",
+      "unknown"
+    ],
+    "tool.write_intent": [
+      "none",
+      "read",
+      "write",
+      "unknown"
+    ],
+    "tool.file_changes.action": [
+      "create",
+      "modify",
+      "delete",
+      "rename",
+      "unknown"
+    ],
+    "tool.file_changes.source": [
+      "payload",
+      "patch",
+      "dirty-snapshot"
+    ],
+    "permission.operation": [
+      "tool",
+      "shell",
+      "write",
+      "network",
+      "filesystem",
+      "combined",
+      "unknown"
+    ],
+    "permission.access_mode": [
+      "read",
+      "write",
+      "execute",
+      "delete",
+      "chmod",
+      "network-connect",
+      "network-listen",
+      "unknown"
+    ],
+    "permission.requested_tool_kind": [
+      "shell",
+      "write",
+      "edit",
+      "multi-edit",
+      "patch",
+      "read",
+      "other",
+      "unknown"
+    ],
+    "permission.filesystem.access_mode": [
+      "read",
+      "write",
+      "execute",
+      "delete",
+      "chmod",
+      "unknown"
+    ],
+    "permission.filesystem.recursive": [
+      "true",
+      "false",
+      "unknown"
+    ],
+    "permission.filesystem.scope": [
+      "file",
+      "directory",
+      "project",
+      "home",
+      "root",
+      "unknown"
+    ],
+    "permission.network.scheme": [
+      "http",
+      "https",
+      "unknown"
+    ],
+    "permission.network.operation": [
+      "connect",
+      "listen",
+      "proxy",
+      "tunnel",
+      "unknown"
+    ],
+    "permission.can_approve": [
+      "true",
+      "false",
+      "unknown"
+    ],
+    "turn.assistant_text_truncated": [
+      "0",
+      "1"
+    ]
+  },
+  "variant_requirements": [
+    "permission-request mirror fields",
+    "current-turn assistant text byte and truncation coupling",
+    "unknown sentinel fail-closed fields"
+  ],
+  "variant_rules": {
+    "permission-request mirror fields": {
+      "selectors": [
+        "logical_event=permission-request"
+      ],
+      "requires": [
+        "permission object populated",
+        "requested_tool_kind mirrored"
+      ],
+      "forbids": [
+        "missing permission tuple"
+      ]
+    },
+    "current-turn assistant text byte and truncation coupling": {
+      "selectors": [
+        "logical_event=stop or subagent-stop"
+      ],
+      "requires": [
+        "assistant text bytes",
+        "assistant_text_truncated flag"
+      ],
+      "forbids": [
+        "truncated flag without byte cap"
+      ]
+    },
+    "unknown sentinel fail-closed fields": {
+      "selectors": [
+        "provider=unknown or logical_event=unknown"
+      ],
+      "requires": [
+        "raw_event captured",
+        "fail-closed sentinel fields"
+      ],
+      "forbids": [
+        "allow decision derived from unknown"
+      ]
+    }
+  },
+  "variants": [
+    "Exact normalized top-level fields and nested `turn`, `tool`, `permission`, `prompt`, `assistant`, and `raw` objects",
+    "provider/logical-event domains",
+    "security-critical unknown/fail-closed sentinels",
+    "cwd/project path identity rules",
+    "path array normalization",
+    "permission network/filesystem domains",
+    "current-turn assistant text byte/truncation coupling",
+    "current-turn extraction privacy rules."
+  ],
+  "variant_details": {
+    "Exact normalized top-level fields and nested `turn`, `tool`, `permission`, `prompt`, `assistant`, and `raw` objects": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact normalized top-level fields and nested turn, tool, permission, prompt, assistant, and raw objects"
+      ]
+    },
+    "provider/logical-event domains": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "provider/logical-event domains"
+      ]
+    },
+    "security-critical unknown/fail-closed sentinels": {
+      "index": 3,
+      "kind": "negative-rule",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "security-critical unknown/fail-closed sentinels"
+      ]
+    },
+    "cwd/project path identity rules": {
+      "index": 4,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "cwd/project path identity rules"
+      ]
+    },
+    "path array normalization": {
+      "index": 5,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "path array normalization"
+      ]
+    },
+    "permission network/filesystem domains": {
+      "index": 6,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "permission network/filesystem domains"
+      ]
+    },
+    "current-turn assistant text byte/truncation coupling": {
+      "index": 7,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "current-turn assistant text byte/truncation coupling"
+      ]
+    },
+    "current-turn extraction privacy rules.": {
+      "index": 8,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "current-turn extraction privacy rules."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "normalized event parser, security-critical sentinel validator, path/domain validator"
+  ],
+  "profile_hash": "48075440a80b0806f15a9bc9a58b4e09877be2bd14e7ece2fae4b0feb696cd6b"
+}

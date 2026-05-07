@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "registry_kind": "matrix",
+  "ids": [
+    "matrix.approval-log-action-source.v1",
+    "matrix.fdr-cycle-decision-reason.v1",
+    "matrix.ledger-scope-writer-target-operation.v1",
+    "matrix.permission-decision-domain.v1",
+    "matrix.project-optout-effect.v1",
+    "matrix.provider-feature-gate.v1",
+    "matrix.runtime-config-domain.v1"
+  ],
+  "generated_from_spec_hash": "7c4fea14d03671c18785505b0c9bb967a0692a172a46aaae2dd3b9fab1dd1999",
+  "registry_hash": "80efe76452ba8e77190ecdcd105aba3b2acfb5ecb27f78699767ecb8e6ed5483"
+}

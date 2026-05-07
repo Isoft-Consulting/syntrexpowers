@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "schema_id": "metadata.matrix-profile.v1",
+  "owner": "[Implementation Readiness](17-implementation-readiness.md)",
+  "input_family": "`matrices/*.matrix.json`",
+  "hash_fields": [
+    "profile_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "matrix_id",
+    "owner",
+    "dimensions",
+    "allowed_rows",
+    "forbidden_row_classes",
+    "fixture_requirements",
+    "profile_hash"
+  ],
+  "referenced_terms": [
+    "<matrix-id>.matrix.json"
+  ],
+  "referenced_details": {
+    "<matrix-id>.matrix.json": {
+      "kind": "filename-template",
+      "source": "metadata-bootstrap",
+      "rules": [
+        "filename stem binds matrix_id"
+      ]
+    }
+  },
+  "field_profiles": [
+    "dimensions",
+    "allowed_rows",
+    "forbidden_row_classes",
+    "fixture_requirements"
+  ],
+  "field_details": {
+    "dimensions": {
+      "shape": "array",
+      "members": [
+        "matrix dimensions"
+      ],
+      "rules": [
+        "comes from 17.4.1"
+      ]
+    },
+    "allowed_rows": {
+      "shape": "array",
+      "members": [
+        "allowed row classes"
+      ],
+      "rules": [
+        "comes from 17.4.1"
+      ]
+    },
+    "forbidden_row_classes": {
+      "shape": "array",
+      "members": [
+        "invalid row classes"
+      ],
+      "rules": [
+        "comes from 17.4.1"
+      ]
+    },
+    "fixture_requirements": {
+      "shape": "array",
+      "members": [
+        "matrix proof names"
+      ],
+      "rules": [
+        "binds matrix registry purpose"
+      ]
+    }
+  },
+  "enum_families": [
+
+  ],
+  "enum_values": {
+  },
+  "variant_requirements": [
+    "filename matrix_id binding"
+  ],
+  "variant_rules": {
+    "filename matrix_id binding": {
+      "selectors": [
+        "filename=<matrix-id>.matrix.json"
+      ],
+      "requires": [
+        "matrix_id equals filename stem"
+      ],
+      "forbids": [
+        "matrix_id!=filename stem"
+      ]
+    }
+  },
+  "variants": [
+    "Exact profile fields `schema_version`, `matrix_id`, `owner`, `dimensions`, `allowed_rows`, `forbidden_row_classes`, `fixture_requirements`, and `profile_hash`",
+    "filename `<matrix-id>.matrix.json` must match `matrix_id`",
+    "profile must encode every matrix dimension, allowed row class, and invalid-combination class named by this sub-spec."
+  ],
+  "variant_details": {
+    "Exact profile fields `schema_version`, `matrix_id`, `owner`, `dimensions`, `allowed_rows`, `forbidden_row_classes`, `fixture_requirements`, and `profile_hash`": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact profile fields schema_version, matrix_id, owner, dimensions, allowed_rows, forbidden_row_classes, fixture_requirements, and profile_hash"
+      ]
+    },
+    "filename `<matrix-id>.matrix.json` must match `matrix_id`": {
+      "index": 2,
+      "kind": "filename-binding",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "filename <matrix-id>.matrix.json must match matrix_id"
+      ]
+    },
+    "profile must encode every matrix dimension, allowed row class, and invalid-combination class named by this sub-spec.": {
+      "index": 3,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "profile must encode every matrix dimension, allowed row class, and invalid-combination class named by this sub-spec."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "matrix-profile metadata parser and filename/id binder"
+  ],
+  "profile_hash": "ebcaf0c680417c08ad44d1d6091a4f3c2fdd65044ddfdde2a2f13651c8d1f175"
+}

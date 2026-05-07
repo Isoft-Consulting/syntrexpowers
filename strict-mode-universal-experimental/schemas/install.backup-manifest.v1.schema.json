@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "schema_id": "install.backup-manifest.v1",
+  "owner": "[Install And Uninstall](10-install-and-uninstall.md)",
+  "input_family": "install rollback and uninstall recovery backup manifest",
+  "hash_fields": [
+    "manifest_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "transaction_id",
+    "created_at",
+    "install_root",
+    "state_root",
+    "previous_active_runtime_path",
+    "previous_active_runtime_kind",
+    "previous_active_runtime_fingerprint",
+    "previous_install_manifest_hash",
+    "previous_install_baseline_hash",
+    "provider_config_records",
+    "protected_config_records",
+    "runtime_config_records",
+    "backup_file_records",
+    "manifest_hash"
+  ],
+  "referenced_terms": [
+    "existed",
+    "backup_relative_path"
+  ],
+  "referenced_details": {
+    "existed": {
+      "kind": "field-reference",
+      "source": "backup manifest parser",
+      "rules": [
+        "backup record existence discriminator"
+      ]
+    },
+    "backup_relative_path": {
+      "kind": "field-reference",
+      "source": "backup manifest parser",
+      "rules": [
+        "backup record path field"
+      ]
+    }
+  },
+  "field_profiles": [
+    "previous_active_runtime_fingerprint",
+    "provider_config_records",
+    "protected_config_records",
+    "runtime_config_records",
+    "backup_file_records"
+  ],
+  "field_details": {
+    "previous_active_runtime_fingerprint": {
+      "shape": "nested-object",
+      "members": [
+        "state.ledger-fingerprint.v1"
+      ],
+      "rules": [
+        "kind-specific active runtime proof"
+      ]
+    },
+    "provider_config_records": {
+      "shape": "array",
+      "members": [
+        "provider",
+        "path",
+        "backup fingerprint"
+      ],
+      "rules": [
+        "provider config rollback source"
+      ]
+    },
+    "protected_config_records": {
+      "shape": "array",
+      "members": [
+        "path",
+        "backup fingerprint",
+        "inode tuple"
+      ],
+      "rules": [
+        "protected config rollback source"
+      ]
+    },
+    "runtime_config_records": {
+      "shape": "array",
+      "members": [
+        "path",
+        "backup fingerprint"
+      ],
+      "rules": [
+        "runtime config rollback source"
+      ]
+    },
+    "backup_file_records": {
+      "shape": "array",
+      "members": [
+        "kind",
+        "existed",
+        "backup_relative_path",
+        "fingerprint"
+      ],
+      "rules": [
+        "missing record sentinel fields"
+      ]
+    }
+  },
+  "enum_families": [
+    "previous_active_runtime_kind",
+    "backup file kind",
+    "existed"
+  ],
+  "enum_values": {
+    "previous_active_runtime_kind": [
+      "directory",
+      "symlink",
+      "missing"
+    ],
+    "backup file kind": [
+      "provider-config",
+      "protected-config",
+      "runtime-config",
+      "install-manifest",
+      "install-baseline",
+      "active-runtime"
+    ],
+    "existed": [
+      "0",
+      "1"
+    ]
+  },
+  "variant_requirements": [
+    "missing active runtime fingerprint",
+    "symlink active runtime fingerprint",
+    "directory active runtime fingerprint",
+    "missing backup record fields"
+  ],
+  "variant_rules": {
+    "missing active runtime fingerprint": {
+      "selectors": [
+        "previous_active_runtime_kind=missing"
+      ],
+      "requires": [
+        "previous_active_runtime_fingerprint missing"
+      ],
+      "forbids": [
+        "backup active-runtime file"
+      ]
+    },
+    "symlink active runtime fingerprint": {
+      "selectors": [
+        "previous_active_runtime_kind=symlink"
+      ],
+      "requires": [
+        "link_target fingerprint"
+      ],
+      "forbids": [
+        "directory tree hash"
+      ]
+    },
+    "directory active runtime fingerprint": {
+      "selectors": [
+        "previous_active_runtime_kind=directory"
+      ],
+      "requires": [
+        "tree hash fingerprint"
+      ],
+      "forbids": [
+        "link_target"
+      ]
+    },
+    "missing backup record fields": {
+      "selectors": [
+        "existed=0"
+      ],
+      "requires": [
+        "backup_relative_path empty",
+        "fingerprint missing"
+      ],
+      "forbids": [
+        "content hash populated"
+      ]
+    }
+  },
+  "variants": [
+    "Exact backup manifest fields",
+    "previous active runtime fingerprint variants",
+    "provider/protected/runtime config record schemas",
+    "backup file record schema",
+    "`existed` and `backup_relative_path` coupling",
+    "install rollback and uninstall recovery hash binding."
+  ],
+  "variant_details": {
+    "Exact backup manifest fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact backup manifest fields"
+      ]
+    },
+    "previous active runtime fingerprint variants": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "previous active runtime fingerprint variants"
+      ]
+    },
+    "provider/protected/runtime config record schemas": {
+      "index": 3,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "provider/protected/runtime config record schemas"
+      ]
+    },
+    "backup file record schema": {
+      "index": 4,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "backup file record schema"
+      ]
+    },
+    "`existed` and `backup_relative_path` coupling": {
+      "index": 5,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "existed and backup_relative_path coupling"
+      ]
+    },
+    "install rollback and uninstall recovery hash binding.": {
+      "index": 6,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "install rollback and uninstall recovery hash binding."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "backup manifest parser and restore/recovery-plan validator"
+  ],
+  "profile_hash": "79c6a1cf1ff6f614a72e31bcc1dff2458426afbb5f10a745a3802fa5f202101f"
+}

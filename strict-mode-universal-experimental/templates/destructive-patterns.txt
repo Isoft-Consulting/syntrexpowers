@@ -1,0 +1,2 @@
+# shell-ere rm[[:space:]]+-rf
+# argv-token rm

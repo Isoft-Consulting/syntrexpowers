@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "schema_id": "config.network-allowlist.v1",
+  "owner": "[Hook Event Matrix](03-hook-event-matrix.md)",
+  "input_family": "`network-allowlist.txt`",
+  "hash_fields": [
+
+  ],
+  "required_fields": [
+
+  ],
+  "referenced_terms": [
+    "connect http|https host port",
+    "1..65535"
+  ],
+  "referenced_details": {
+    "connect http|https host port": {
+      "kind": "line-grammar",
+      "source": "network allowlist parser",
+      "rules": [
+        "connect tuple grammar"
+      ]
+    },
+    "1..65535": {
+      "kind": "numeric-bound",
+      "source": "network allowlist parser",
+      "rules": [
+        "allowed TCP port range"
+      ]
+    }
+  },
+  "field_profiles": [
+    "network allowlist lines"
+  ],
+  "field_details": {
+    "network allowlist lines": {
+      "shape": "line-list",
+      "members": [
+        "protocol",
+        "host",
+        "port",
+        "operation"
+      ],
+      "rules": [
+        "no wildcard or tunnel entries"
+      ]
+    }
+  },
+  "enum_families": [
+    "protocol",
+    "operation"
+  ],
+  "enum_values": {
+    "protocol": [
+      "http",
+      "https"
+    ],
+    "operation": [
+      "connect"
+    ]
+  },
+  "variant_requirements": [
+    "connect host and port tuple"
+  ],
+  "variant_rules": {
+    "connect host and port tuple": {
+      "selectors": [
+        "operation=connect"
+      ],
+      "requires": [
+        "scheme",
+        "host",
+        "port 1..65535"
+      ],
+      "forbids": [
+        "wildcard or CIDR host"
+      ]
+    }
+  },
+  "variants": [
+    "UTF-8 line grammar",
+    "`connect http|https host port` tuple",
+    "canonical lower-case IDNA A-label or literal IP host",
+    "port `1..65535`",
+    "wildcard, CIDR, userinfo, path/query/fragment, proxy, tunnel, listener, and environment-derived host rejection."
+  ],
+  "variant_details": {
+    "UTF-8 line grammar": {
+      "index": 1,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "UTF-8 line grammar"
+      ]
+    },
+    "`connect http|https host port` tuple": {
+      "index": 2,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "connect http|https host port tuple"
+      ]
+    },
+    "canonical lower-case IDNA A-label or literal IP host": {
+      "index": 3,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "canonical lower-case IDNA A-label or literal IP host"
+      ]
+    },
+    "port `1..65535`": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "port 1..65535"
+      ]
+    },
+    "wildcard, CIDR, userinfo, path/query/fragment, proxy, tunnel, listener, and environment-derived host rejection.": {
+      "index": 5,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "wildcard, CIDR, userinfo, path/query/fragment, proxy, tunnel, listener, and environment-derived host rejection."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "protected text parser and network allowlist validator"
+  ],
+  "profile_hash": "b0d0f796ece339c9b62197b9fcc4772fd9f5a5015c6c4b319737b0de3a238108"
+}

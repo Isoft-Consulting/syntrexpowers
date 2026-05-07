@@ -1,0 +1,151 @@
+# 12.1 Pure Core Tests
+
+Part of [Test Strategy](../12-test-strategy.md).
+
+
+Run without Claude or Codex:
+
+- schema registry coverage for every schema id in [Implementation Readiness](../17-implementation-readiness.md), including exact markdown-to-`schemas/schema-registry.json` id parity, executable profile metadata, valid fixtures for every owner-defined variant/directive/action shape, format-specific malformed input rejection, hash-mismatch rejection when applicable, tuple-mismatch rejection when applicable, and invalid sentinel fixtures
+- closed matrix coverage for every matrix id in [Implementation Readiness](../17-implementation-readiness.md), including exact markdown-to-`matrices/matrix-registry.json` id parity, executable matrix metadata, positive fixtures for every allowed row, and valid enum values arranged into invalid combinations
+- `tools/generate-metadata.rb` deterministically generates `schemas/*.json` and `matrices/*.json` from [Implementation Readiness](../17-implementation-readiness.md) and fails without raw stacktraces or partial managed-metadata writes for CLI usage errors, missing/malformed spec roots, non-exact controlled section headings, malformed table rows with missing, extra, or empty cells, unwrapped table id cells, invalid schema/matrix id patterns, malformed hash-field cells, registry/profile/implementation-clause/expansion parity failures, and unwritable or non-file output paths; its table parser must not omit rows solely because the opening pipe is not followed by a space. `tools/check-metadata-generated.rb` regenerates into an isolated temporary root, byte-compares the committed managed metadata file set and contents, and fails without raw stacktraces for CLI usage errors, missing/malformed spec roots, and non-file or unreadable managed metadata paths; `tools/test-metadata-generator.rb` must reject manual generated metadata edits, extra managed metadata files, non-file managed metadata paths, and unwritable generator output roots
+- `tools/validate-metadata.rb` validates metadata registries and profiles against [Implementation Readiness](../17-implementation-readiness.md), rejects duplicate JSON keys, rejects duplicate schema implementation profile clauses, checks exact metadata fields, verifies filename/id bindings, recomputes registry/profile hashes, validates README provider-matrix header, exact ordered capability rows, unique capability rows, and status/proof cells against the closed 17.4.2 mappings, and returns exact exit codes `0` for success, `1` for validation failure, and `2` for CLI usage errors; `tools/test-metadata-validator.rb` must run isolated temporary-root negative fixtures for CLI option errors, missing/non-file/malformed spec roots including non-exact controlled section headings, malformed table rows with missing, extra, or empty cells, unwrapped table id cells, invalid schema/matrix id patterns, and malformed hash-field cells, missing README, README header/status/proof/duplicate-capability/missing-capability drift, unreadable metadata paths, duplicate keys, non-object registries/profiles including scalar JSON values, unsupported JSON primitive types during hash recomputation, wrong registry id types, missing registry ids, missing/extra profile files, missing/extra/duplicate schema registry rows, missing/extra/duplicate schema implementation profile rows, duplicate schema implementation profile clauses, missing/extra/duplicate matrix registry rows, missing/extra/duplicate matrix expansion rows, schema profile field drift from the markdown implementation profile, matrix allowed-row/forbidden-row drift from the markdown expansion requirements, nested profile matrix-id contamination, extra metadata fields, filename/id drift, stale spec hashes, profile-hash drift, and matrix expansion drift, and must reject raw Ruby stacktraces in validator output
+- fixed shared-core metadata bootstrap parsers validate `metadata.schema-registry.v1`, `metadata.schema-profile.v1`, `metadata.matrix-registry.v1`, and `metadata.matrix-profile.v1` before any other schema or matrix metadata is trusted; these tests reject implementations that generate the bootstrap parser from the metadata being validated
+- normalized event, internal decision, provider output, and protected text config parsers are covered by schema ids before any owning phase can enforce; current normalized event tests cover direct `file_paths` array extraction, patch rename source/destination projection, and permission network/filesystem detail extraction
+- normalized current-turn parser validates `turn.assistant_text`, `turn.assistant_text_bytes`, and `turn.assistant_text_truncated` coupling, including empty text, exact bounded byte length, fixed truncation marker presence, and rejection of hidden raw transcript/history fields
+- current decision contract tests validate all allowed internal actions, reject missing/extra/invalid action and severity shape through exact parser coverage, reject unsafe metadata, reject `allow` with text, `block` without reason, `inject` without additional context, and `warn` without warning reason/severity
+- current provider output contract tests reject missing fields, extra fields, invalid stdout/stderr modes, unsorted or duplicate required-field arrays, provider action/hash mismatches, effectless block/deny/inject metadata, invalid CLI captured exit-code input, and captured output fixtures whose stdout/stderr/exit-code do not match `decision.provider-output.v1`
+- current fixture readiness tests reject enforcing activation when a required blocking event has only non-blocking `decision-output` metadata, even if the fixture manifest record is otherwise valid, treat `range` compatibility records as non-enforceable until a protected comparator implementation exists, build deterministic selected-output-contract records for block/deny required blocking event outputs, and select optional `permission-request` deny outputs only after payload-schema and command-execution proof without making permission-request a required v0 fixture
+- current hook entry plan tests keep discovery entries `enforcing=false` with empty `output_contract_id`, bind enforcing `pre-tool-use`, `stop`, and conditional `permission-request` entries to the selected block/deny output contract for the same provider/logical event, keep non-blocking entries discovery-only, reject duplicate selected output tuples, reject non-blocking provider actions, reject commands outside lexical `<install-root>/active/bin/strict-hook`, reject provider/event argv drift and shell-wrapper/extra argv command shapes, reject duplicate or hash-drifted removal selectors, and reject unsorted managed hook entries
+- current install hook plan tests keep discovery hook generation independent from selected-output contracts, add conditional `PermissionRequest` only from valid selected output proof, reject malformed selected-output records before conditional hook insertion, and verify provider timeout/matcher projection
+- current protected config tests validate checked-in templates, runtime.env whitelist/bool/int/model bounds, worker enable refusal before protected `worker-invocation` proof, duplicate-key and cross-field rejection, line length and inline-comment rejection, strict protected/destructive/stub fail-closed malformed-line behavior, filesystem/network allowlist config-error behavior that preserves unrelated valid entries, canonical network hosts and ports, and symlink path-component rejection
+- exact stub pattern set, including Russian later markers and language-specific not-implemented patterns
+- current-turn `allow-stub:` self-bypass rejection
+- current destructive gate classifier tests cover read-only shell allow, configured `shell-ere` and `argv-token` destructive blocking, protected-root redirects and `tee` targets, write-capable utility target extraction, final-symlink write-target blocking, shell wrapper handling, recursive command/process substitution classification, cwd-relative project `.strict-mode` traversal, strict-mode runtime executable blocking including shell/process substitutions, exact `strict-fdr import -- <path>` exception handling, direct write target protection, protected `dev+inode` hardlink aliases, shell parse errors, dynamic shell target rejection, inline interpreter/script-wrapper unknown write targets, and safe project write allows before any provider enforcement is enabled
+- current protected baseline loader tests cover trusted install manifest/baseline hash verification, exact top-level manifest/baseline field and value rejection after hash recompute, manifest/baseline nested record parity after hash recompute, exact nested file-record field rejection after hash recompute, file-record canonical path, size, and provider/kind coupling mismatch rejection after hash recompute, duplicate and unsorted nested file-record rejection after hash recompute, fixture manifest record schema and duplicate-tuple rejection after hash recompute, derived provider path, install-root-bound hook command, and generated hook env mismatch rejection, active runtime symlink target verification, managed hook/output-contract plan validation, exported protected roots and `dev+inode` entries including the install manifest, configured protected path/destructive pattern loading into the destructive classifier, protected file content tamper rejection, same-content inode drift rejection, and inode-index value drift plus duplicate-entry rejection after hash recompute
+- current preflight record tests cover `hook.preflight.v1` exact field validation, `preflight_hash` recomputation, CLI duplicate-key rejection, invalid coupling fixtures for not-attempted, untrusted, trusted allow/block, and raw diagnostic/command/path redaction shape
+- current hook preflight tests cover discovery/log-only `pre-tool-use` normalization, protected baseline loading, destructive classifier would-block logging including runtime command substitution and patch move into protected roots, safe shell allow logging, hash-bound preflight JSONL records, raw command redaction from discovery JSONL, and untrusted protected-baseline diagnostics without provider enforcement
+- FDR artifact validator
+- normalized `json strict-fdr-v1` artifact schema parser rejects missing fields, extra top-level fields, duplicate keys, wrong primitive types, and non-canonical path arrays
+- FDR artifact exact tool-intent/tool/edit sequence list and log digest validation
+- FDR artifact field-domain validation covers reviewer bounds, tuple matching, turn marker behavior, non-negative coverage cutoffs, and exact edited/deleted/renamed path entry schemas
+- FDR import dirty-snapshot merge/freeze and coverage cutoff validation
+- Stop import-freeze compare-only dirty refresh rejects unreviewed path/status/fingerprint changes without appending covered records
+- trusted import provenance exclusion rejects mismatched argv, command hash, command hash source, source fingerprint, artifact hash, provider, session key, raw session hash, cwd, or project dir
+- trusted import provenance parser rejects missing fields, extra fields, non-canonical source paths, non-canonical argv, and non-lowercase or truncated SHA-256 hashes
+- FDR artifact freshness treats `review_generated_at` as advisory and requires `imported_at` after dirty-snapshot merge/freeze
+- FDR artifact scope and staleness validation
+- FDR artifact findings schema rejects unknown severities, paths outside reviewed scope, positive lines without a concrete existing path, invalid line sentinels, empty required text, and oversized finding fields
+- FDR challenge cycle JSONL parser rejects missing fields, extra fields, non-monotonic cycles, invalid `cycle_index`/`max_cycles` combinations, hash-chain breaks, cross-provider records, scope digest mismatches, invalid artifact states, invalid decision enum values, invalid decision-specific `challenge_reason` values, judge-unknown `reason_code` mismatches, invalid original-challenge hash sentinels, invalid bypass hash sentinels, invalid prompt/response hash sentinels for skipped, invoked, timeout, and invalid-output cases, and wrong missing/invalid artifact hash sentinels
+- judge response parser rejects unknown finding severities, unknown finding sources, paths outside reviewed scope, empty harm/fix text, oversized finding fields, non-canonical confidence decimals, malformed response hashes, and any `reason` value not coupled to its `verdict`
+- over-limit current-turn assistant text uses the deterministic bounded FDR judge excerpt and `assistant_text_truncated=1` instead of skipping the challenge
+- FDR challenge max-cycle behavior reuses the last blocking challenge or approved bypass without rerunning judge for unchanged scope, and repeated Stop attempts keep the original blocking cycle record hash as the bypass subject and in any diagnostic cycle record's `original_challenge_record_hash`
+- FDR challenge reuses trusted `judge-clean` records for the same scope/artifact without rerunning the judge, but retries transient `judge-unknown` records on later Stop attempts
+- `judge-unknown` is audited as a semantic judge result only and never disables artifact validation, stub/static checks, unresolved blocked scopes, or other Stop gates
+- `turn.has_fdr_context` or meta-discussion text does not bypass quality gates when edited scope or unresolved blocked Stop scope exists
+- worker context-pack/invocation/result parsers reject raw transcripts, provider history, protected files, strict-mode state/config, provider config, out-of-scope paths, stale source fingerprints, unproven worker routes, model/backend mismatches, malformed output, and any worker result that claims allow, bypass, approval, FDR clean, or Stop authority
+- trusted FDR artifact import rejects direct provider-written state files
+- trusted FDR artifact import allows only verified `strict-fdr import -- <path>` state writes
+- trivial diff detector
+- state filename sanitizer
+- patch added-line extraction
+- dirty baseline fingerprint diff
+- dirty baseline includes ignored-file and submodule summaries and fails closed when enumeration is unavailable or over limit after shell/unknown write-like tools
+- missing baseline behavior for shell-created git edits
+- missing turn-boundary behavior for direct path-bearing edits without fixture-proven `turn_marker`
+- blocked Stop followed by `user-prompt-submit` does not reset the blocked edited scope to empty; unresolved blocked Stop scopes carry over until exact bypass consumption or successful Stop allow
+- successful Stop after fixing a previously blocked quality scope writes a matching `bypass-log.jsonl` `resolved` record before advancing the safe boundary
+- expired or missing pending-bypass approval records for unresolved blocked Stop scopes cause fresh pending-bypass creation, not allow
+- non-git shell or unknown write-like edit scope fail-closed behavior
+- unresolved pre-tool intent fail-closed behavior for direct write/edit/multi-edit/patch/path-bearing tools
+- direct path-bearing write-intent post-tool failures cannot resolve to an empty edit scope
+- exact edits JSONL parser, including session key/raw session hash, record hash, delete, and rename actions
+- exact tool invocation JSONL parser, including command hash source, write-intent domain, payload hash canonicalization, pre-tool intent linkage, record hash, and current-turn filtering
+- exact session/turn/dirty/protected baseline schema validation rejects missing fields, extra fields, tuple mismatches, hash mismatches, and missing ledger coverage
+- exact `seq-*` and `prompt-seq-*` schema validation rejects missing fields, extra fields, tuple mismatches, counter regression, last-record mismatches, hash mismatches, and missing ledger coverage
+- trusted JSON canonicalization rejects duplicate object keys, wrong primitive types, non-finite numbers, and parser-dependent first-key/last-key behavior across all trusted JSON/JSONL records; hash-bearing trusted records additionally reject non-canonical hash strings and hash mismatches
+- monotonic tool-intent/permission-decision/tool/edit sequence allocation, permission-decision hash-chain validation, and tool-intent/tool/edit current-turn boundary filtering
+- monotonic `prompt_seq` allocation, prompt-events hash-chain validation, exact `next_user_prompt_marker` matching, and first-next-prompt expiry for pending approvals
+- concurrent state transactions use an exclusive session lock for prompt sequence/event logs, tool-intent/permission-decision/tool/edit logs, protected baselines, pending/confirm files, nested tokens, and FDR artifacts, plus a global lock for unscoped audit/install state
+- global and session locks use atomic `mkdir`/`O_EXCL` semantics, exact hashed owner records, fixed stale-lock refusal in hooks, and repair-only stale lock cleanup outside provider tool execution
+- hook self-timeout during an active trusted-state transaction leaves no trusted partial evidence: enforcing `pre-tool-use`, `permission-request`, and `stop` fail closed or deny, non-enforcing events cannot publish partial records, and subsequent hooks fail closed on the stale lock until repair verifies safe cleanup
+- mixed global/session transactions acquire locks only in global-then-session order
+- concurrent prompt and tool-intent/permission-decision/tool/edit sequence allocation uses the session state transaction lock and rejects duplicate/interleaved records
+- tool-intent allocation and unresolved-intent Stop blocking
+- trusted JSON/marker writes are temp-file plus atomic rename, and JSONL audit logs reject partial or interleaved records
+- destructive pending-confirmation state machine
+- confirmation/bypass consumption tombstone and consumed-audit behavior before provider allow, including marker hash, active marker path, tombstone path, pre/post rename fingerprints, absent active marker proof, and ledger `related_record_hash` validation
+- exact approval phrase parser
+- canonical approval hash generation and collision refusal
+- confirmation/bypass max TTL plus pending opt-out approval-window TTL and next-user-turn enforcement
+- approved opt-out audit records remain active only while the current file fingerprint/path/owner/permissions tuple matches the approved subject
+- confirmation/bypass min-age applies only to pre-existing baseline files, not exact user-prompt-hook approvals
+- state cleanup and expired pending/marker removal requires matching `expired` audit plus trusted-state ledger records, including a cleanup-owned global `approval-audit-log` append record and session-scoped delete records for expired pending/marker state; expired nested-token cleanup is TTL-bound and requires a session-scoped ledger delete record but no approval audit record; unaudited deletes are protected-state forgery
+- diagnostic-only logs and fired-hash records cannot be used as approval, freshness, protected-root, or allow evidence
+- protected runtime config parser rejects unknown keys, duplicate keys, shell syntax, invalid values, invalid min/max coupling, and provider-env overrides
+- protected pattern/allowlist config files are included in install/session protected baselines and tampering is detected before allow
+- destructive/protected/stub config parsers accept only exact directives, enforce `STRICT_CONFIG_LINE_MAX_BYTES`, reject malformed lines fail-closed for enforcing gates, and never shell-source or shell-expand config content
+- `STRICT_CAPTURE_FULL_TEXT` and raw payload capture cannot be enabled by provider tool environment
+- protected full-text capture still refuses to persist provider transcripts, raw session/history files, transcript slices, or normalized FDR `turn.assistant_text` in trusted state or diagnostic logs
+- project opt-out baseline validation
+- immutable session baseline prevents delayed opt-out self-bypass across turns
+- active opt-out validation re-reads current file fingerprint and deactivates deleted, replaced, ownership-changed, chmod-unsafe, symlinked, or modified opt-out files until a new approval is recorded
+- out-of-band opt-out deletes only deactivate that opt-out, while provider-tool opt-out create/modify/delete/chmod/symlink attempts remain protected-root violations and cannot create approval evidence
+- project opt-out effect matrix enforcement
+- project quality-gate opt-out suppresses prompt reminder only when active under baseline/approval rules and never suppresses health, baseline, prompt sequence, approval parsing, protected-root, or install-integrity work
+- project opt-out pending approval state machine
+- project opt-out pending records are created with matching exact-schema `optout-log.jsonl` `pending` audit records, including `optout_realpath`, in the same mixed transaction
+- destructive/bypass/opt-out audit parsers reject invalid action/source pairs, including approvals from non-user-prompt sources and consumes from the wrong enforcing hook
+- legacy Claude opt-out compatibility cannot bypass approval rules
+- quality bypass baseline validation
+- quality bypass pending records are created with matching exact-schema `bypass-log.jsonl` `blocked` audit records, including seq lists and log digests, in the same mixed transaction
+- turn-baseline approval evidence snapshots cover confirmation/bypass marker fingerprints, prompt sequence fields, and matching audit-log offsets/digests
+- turn-baseline written after a blocked Stop preserves unresolved blocked Stop scope references and does not promote blocked seq lists to the safe cutoff
+- bypass audit parser validates `resolved` records and refuses to resolve blocked scopes when block tuple, pending record hash, original seq lists, original log digests, gate context, resolved superseding seq lists/digests/fingerprint, allow-side audit batch hash, or safe-boundary baseline ledger relation differ
+- safe allowed Stop boundary advances only on final allow and in the same locked transaction as required `resolved` or consumed-bypass audit/ledger records, with multi-record allows bound by `last_allow_side_audit_batch_hash`
+- quality bypass hashes bind to exact current-turn tool-intent/tool/edit seq lists, log digests, content-scope fingerprint digest using the full trusted ledger fingerprint schema, and exact gate context
+- quality bypass gate context requires gate-specific subject fields for artifact state/hash/errors and stub/static/trivial finding digests
+- approved quality bypass consumption removes only the exact matching quality block and never bypasses protected-root, install-integrity, permission, unknown-payload, missing-baseline, unresolved-intent, or state-corruption blocks
+- approved quality bypass markers are not consumed when Stop still has any non-quality block or unmatched quality block; consumption happens only in the final allow-side transaction
+- FDR challenge bypass hashes bind to scope digest, artifact hash, and the original blocking FDR cycle record hash, not diagnostic `blocked-reused` records
+- FDR challenge `bypassed` cycle records are appended only after successful generic bypass tombstone, consumed-audit, and ledger commits, and they hash-bind the original blocking challenge record, consumed marker, consumed audit record, and ledger record; failed consumption leaves the original quality block active
+- judge-disabled responses are returned by `strict-judge`, while the Stop/FDR challenge caller owns the `judge-unknown` cycle record append and ledger coverage
+- strict-mode runtime/state/config protected path enforcement
+- protected path enforcement for `multi-edit` and path-bearing `other` or unknown write-like tools
+- shell protected-path matching covers quoted and unquoted lexical install/state/config/provider paths plus resolved active-runtime aliases
+- shell protected-path matching resolves cwd-relative redirection, mutator, and script path operands before comparing protected roots
+- protected path enforcement rejects hardlink aliases whose `dev+inode` matches protected files
+- unknown/incomplete enforcing payloads fail closed outside Phase 0/log-only discovery
+- protected runtime executable blocking for `strict-hook`, `strict-judge`, install/uninstall/rollback, and core/lib/provider scripts
+- network PermissionRequest deny-by-default and exact allowlist matching
+- filesystem PermissionRequest access-mode and path-scope enforcement
+- combined PermissionRequest payloads preserve all capability-specific fields and use the strictest capability decision
+- permission decision JSONL parser validates exact schema, hash continuity, tuple binding, permission operation/tool/reason-code domains, path/network tuple domains including port `1..65535` for allow records, and allow-record presence for approval-capable PermissionRequest events
+- missing `permission.can_approve` proof is treated as unknown for possibly approval-capable PermissionRequest events, not as false
+- missing or ambiguous `permission.requested_tool_kind` is treated as `unknown` and fails closed for approval-capable PermissionRequest events
+- missing filesystem recursive mode, requested path list, network scheme, network host, or network port is treated as `unknown` and fails closed for approval-capable PermissionRequest events
+- missing security-critical normalized fields use explicit unknown/fail-closed sentinels rather than generic false/empty defaults
+- network/filesystem allowlist parser accepts only `read <absolute-file-path>` and `read-tree <absolute-directory-path>/**` for filesystem reads
+- network/filesystem allowlist parser treats `/**` as a grammar suffix, not a normalized-path glob; invalid allowlist lines, wildcards, shell syntax, invalid ports, invalid IDNA, symlink paths, protected-file hardlink aliases, and malformed lines cannot create allows and do not change the meaning of unrelated valid entries
+- protected-root integrity baseline and tamper detection
+- write/edit/patch tools with missing, partial, or non-normalizable target path sets block before execution instead of relying on Stop fallback
+- mutable trusted-state integrity uses exact-schema append-only ledger hash chains with the full trusted writer enum, including `uninstall`, and avoids protected-baseline self-hashing
+- ledger parser enforces closed scope/writer/target/operation combinations so malformed valid-enum records cannot attribute protected-state changes
+- trusted ledger fingerprint schema validates `kind`, `link_target`, `tree_hash`, missing-side sentinels, symlink `readlink` hashing, and `active-runtime-link` records restricted to lexical `<install-root>/active`
+- trusted state writer allowlist accepts installer/admin commands only outside provider tool execution and rejects provider-tool attempts to invoke them directly
+- missing protected-baseline fail-closed behavior
+- protected install baseline bootstrap verification
+- protected file `dev+inode` index and hardlink rejection
+- trusted import command argv parser rejects wrappers, redirects, env prefixes, substitutions, globs, and extra args
+- trusted import source identity rejects paths outside the project, protected roots, symlink components, `/dev` or `/proc` paths, FIFOs, sockets, devices, directories, protected-root hardlinks, unsafe link-count cases without protected inode proof, and files over `STRICT_FDR_SOURCE_MAX_BYTES`
+- provider hook config protected-root enforcement
+- PermissionRequest destructive/protected classification when fixture-enabled
+- approval-capable PermissionRequest without verified deny contract fails provider activation
+- Stop nested-token validation buffers stdin before recursion skip and bare nested env never bypasses normal provider verification
+- bare `STRICT_MODE_NESTED=1` env bypass rejection, exact-schema nested judge token hash/ledger validation, and valid nested judge token acceptance
+- nested hook stdin buffering reads provider payload exactly once; any temp file uses protected `0600` no-follow creation, ignores provider-supplied `STRICT_HOOK_STDIN_PATH`, cleans up on exit, and preserves the buffered payload after invalid nested-token rejection
+- active `seq-*`, `prompt-seq-*`, `prompt-events-*`, `tool-intents-*`, `permission-decisions-*`, `tools-*`, `edits-*`, and unresolved blocked Stop scope evidence rotation protection while approval or Stop evidence is needed
+- exact `state.checkpoint.v1` parser rejects missing fields, extra fields, invalid covered ranges, hash mismatches, session/global tuple mismatch including populated tuples on global checkpoints, source-ledger mismatch, source ledger records not already present in the trusted ledger chain, non-repair source ledger writer, non-checkpoint source ledger operation, nonzero checkpoint ledger `related_record_hash`, source ledger old/new fingerprint mismatch for the compacted path, non-checkpointable source ledger target class, baseline/approval-audit-log/consumed-tombstone/FDR-artifact checkpoint kinds, and checkpoint attempts covering evidence still referenced by pending approval/import/challenge or unresolved blocked Stop scope
+- state layout parity tests require `checkpoints-<provider>-<sid>.jsonl` and `checkpoints-global.jsonl` to exist in the trusted state path allowlist before checkpoint compaction can run
+- checkpoint append tests require the same session/global lock, `0600` permission, duplicate-key rejection, newline-complete JSONL append, and hash-chain validation rules as other trusted JSONL state
+- rotation tests prove approval audit logs, consumed tombstones, baseline files, and trusted FDR artifact files are not checkpointed, truncated, or deleted in v0
+- collision-safe session filename key generation from raw provider session ids using full SHA-256, with legacy/truncated key mismatch refusal

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "matrix_id": "matrix.permission-decision-domain.v1",
+  "owner": "[Record Edit](08-shared-core/03-record-edit.md), [Hook Event Matrix](03-hook-event-matrix.md)",
+  "dimensions": [
+    "Permission operation, requested tool kind, decision, reason code, path tuple domain, network tuple domain, allowlist source, approval-capable event proof",
+    "Allow records require concrete normalized paths, concrete network tuple fields, and port `1..65535`",
+    "deny records may use `unknown` sentinels."
+  ],
+  "allowed_rows": [
+    "Deny record with unknown path/network sentinels and safe reason code",
+    "allow filesystem record with concrete normalized path, access mode, scope, and allowlist source",
+    "allow network record with concrete scheme/host/port/operation and allowlist source",
+    "fixture-proven informational PermissionRequest with `can_approve=false`",
+    "approval-capable PermissionRequest only when deny/block contract is fixture-proven."
+  ],
+  "forbidden_row_classes": [
+    "Allow with `unknown` path/network field",
+    "allow with port `0` or out of range",
+    "risky approval-capable event without verified deny contract",
+    "missing requested tool kind treated as read-only",
+    "invalid allowlist line creating allow",
+    "filesystem read allowlist exposing protected `dev+inode`."
+  ],
+  "fixture_requirements": [
+    "Bind allow/deny to path/network unknown sentinels and approval-capable PermissionRequest behavior"
+  ],
+  "profile_hash": "3b08f5fd6bfcbf3c7785439d5a48858b91ccfc277c5946d83139296ba2d4866a"
+}

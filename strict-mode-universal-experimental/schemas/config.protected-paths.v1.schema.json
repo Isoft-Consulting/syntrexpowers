@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "schema_id": "config.protected-paths.v1",
+  "owner": "[Hook Event Matrix](03-hook-event-matrix.md)",
+  "input_family": "`protected-paths.txt`",
+  "hash_fields": [
+
+  ],
+  "required_fields": [
+
+  ],
+  "referenced_terms": [
+    "protect-file",
+    "protect-tree",
+    "/**"
+  ],
+  "referenced_details": {
+    "protect-file": {
+      "kind": "directive-literal",
+      "source": "protected paths parser",
+      "rules": [
+        "file protection directive"
+      ]
+    },
+    "protect-tree": {
+      "kind": "directive-literal",
+      "source": "protected paths parser",
+      "rules": [
+        "tree protection directive"
+      ]
+    },
+    "/**": {
+      "kind": "grammar-token",
+      "source": "protected paths parser",
+      "rules": [
+        "tree suffix grammar"
+      ]
+    }
+  },
+  "field_profiles": [
+    "directive lines"
+  ],
+  "field_details": {
+    "directive lines": {
+      "shape": "line-list",
+      "members": [
+        "directive",
+        "target path"
+      ],
+      "rules": [
+        "absolute normalized paths only"
+      ]
+    }
+  },
+  "enum_families": [
+    "directive kind"
+  ],
+  "enum_values": {
+    "directive kind": [
+      "protect-file",
+      "protect-tree"
+    ]
+  },
+  "variant_requirements": [
+    "protect-file file target",
+    "protect-tree tree target"
+  ],
+  "variant_rules": {
+    "protect-file file target": {
+      "selectors": [
+        "directive=protect-file"
+      ],
+      "requires": [
+        "absolute file path"
+      ],
+      "forbids": [
+        "tree suffix"
+      ]
+    },
+    "protect-tree tree target": {
+      "selectors": [
+        "directive=protect-tree"
+      ],
+      "requires": [
+        "absolute tree path",
+        "/** suffix"
+      ],
+      "forbids": [
+        "file-only path"
+      ]
+    }
+  },
+  "variants": [
+    "UTF-8 line grammar",
+    "line length cap",
+    "directives `protect-file` and `protect-tree`",
+    "absolute normalized path rules",
+    "`/**` grammar suffix handling",
+    "symlink, glob, shell syntax, NUL, newline, and trailing slash rejection."
+  ],
+  "variant_details": {
+    "UTF-8 line grammar": {
+      "index": 1,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "UTF-8 line grammar"
+      ]
+    },
+    "line length cap": {
+      "index": 2,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "line length cap"
+      ]
+    },
+    "directives `protect-file` and `protect-tree`": {
+      "index": 3,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "directives protect-file and protect-tree"
+      ]
+    },
+    "absolute normalized path rules": {
+      "index": 4,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "absolute normalized path rules"
+      ]
+    },
+    "`/**` grammar suffix handling": {
+      "index": 5,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "/** grammar suffix handling"
+      ]
+    },
+    "symlink, glob, shell syntax, NUL, newline, and trailing slash rejection.": {
+      "index": 6,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "symlink, glob, shell syntax, NUL, newline, and trailing slash rejection."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "protected text parser and protected path directive validator"
+  ],
+  "profile_hash": "2475d3d66930e68ea10644d7ddab333c59d709f104d52a9613d569d43bc9594f"
+}

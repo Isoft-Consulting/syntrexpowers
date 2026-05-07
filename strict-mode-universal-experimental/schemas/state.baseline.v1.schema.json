@@ -1,0 +1,330 @@
+{
+  "schema_version": 1,
+  "schema_id": "state.baseline.v1",
+  "owner": "[State Layout](07-state-layout.md)",
+  "input_family": "session, turn, dirty, and protected baselines",
+  "hash_fields": [
+    "baseline_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "kind",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "created_at",
+    "updated_at",
+    "baseline_hash"
+  ],
+  "referenced_terms": [
+    "session",
+    "turn",
+    "dirty",
+    "protected",
+    "log_offsets",
+    "last_sequences",
+    "last_safe_stop_sequences",
+    "approval_evidence"
+  ],
+  "referenced_details": {
+    "session": {
+      "kind": "enum-literal",
+      "source": "baseline kind domain",
+      "rules": [
+        "session baseline variant"
+      ]
+    },
+    "turn": {
+      "kind": "enum-literal",
+      "source": "baseline kind domain",
+      "rules": [
+        "turn baseline variant"
+      ]
+    },
+    "dirty": {
+      "kind": "enum-literal",
+      "source": "baseline kind domain",
+      "rules": [
+        "dirty baseline variant"
+      ]
+    },
+    "protected": {
+      "kind": "enum-literal",
+      "source": "baseline kind domain",
+      "rules": [
+        "protected baseline variant"
+      ]
+    },
+    "log_offsets": {
+      "kind": "nested-field-reference",
+      "source": "baseline nested profiles",
+      "rules": [
+        "log offset nested family"
+      ]
+    },
+    "last_sequences": {
+      "kind": "nested-field-reference",
+      "source": "baseline nested profiles",
+      "rules": [
+        "sequence nested family"
+      ]
+    },
+    "last_safe_stop_sequences": {
+      "kind": "nested-field-reference",
+      "source": "baseline nested profiles",
+      "rules": [
+        "safe stop sequence nested family"
+      ]
+    },
+    "approval_evidence": {
+      "kind": "nested-field-reference",
+      "source": "baseline nested profiles",
+      "rules": [
+        "approval evidence nested family"
+      ]
+    }
+  },
+  "field_profiles": [
+    "log_offsets",
+    "last_sequences",
+    "last_safe_stop_sequences",
+    "approval_evidence",
+    "project_optouts_previous",
+    "project_optouts_current",
+    "dirty path records",
+    "submodule_records",
+    "dirty_limits",
+    "protected file records",
+    "protected inode index"
+  ],
+  "field_details": {
+    "log_offsets": {
+      "shape": "object-map",
+      "members": [
+        "log name",
+        "byte offset"
+      ],
+      "rules": [
+        "offsets never exceed file size"
+      ]
+    },
+    "last_sequences": {
+      "shape": "object-map",
+      "members": [
+        "record type",
+        "last seq"
+      ],
+      "rules": [
+        "matches state.sequence.v1"
+      ]
+    },
+    "last_safe_stop_sequences": {
+      "shape": "object-map",
+      "members": [
+        "record type",
+        "safe stop seq"
+      ],
+      "rules": [
+        "stop gate coverage marker"
+      ]
+    },
+    "approval_evidence": {
+      "shape": "array",
+      "members": [
+        "approval hash",
+        "audit hash",
+        "ledger hash"
+      ],
+      "rules": [
+        "exact approval binding"
+      ]
+    },
+    "project_optouts_previous": {
+      "shape": "object-map",
+      "members": [
+        "opt-out path",
+        "fingerprint"
+      ],
+      "rules": [
+        "previous baseline comparison"
+      ]
+    },
+    "project_optouts_current": {
+      "shape": "object-map",
+      "members": [
+        "opt-out path",
+        "fingerprint"
+      ],
+      "rules": [
+        "current fingerprint activation"
+      ]
+    },
+    "dirty path records": {
+      "shape": "array",
+      "members": [
+        "path",
+        "status",
+        "fingerprint"
+      ],
+      "rules": [
+        "dirty snapshot bounded"
+      ]
+    },
+    "submodule_records": {
+      "shape": "array",
+      "members": [
+        "path",
+        "commit",
+        "dirty flag"
+      ],
+      "rules": [
+        "submodule state explicit"
+      ]
+    },
+    "dirty_limits": {
+      "shape": "object",
+      "members": [
+        "ignored file count",
+        "max files"
+      ],
+      "rules": [
+        "overflow is fail-closed"
+      ]
+    },
+    "protected file records": {
+      "shape": "array",
+      "members": [
+        "path",
+        "fingerprint",
+        "inode tuple"
+      ],
+      "rules": [
+        "protected path baseline"
+      ]
+    },
+    "protected inode index": {
+      "shape": "object-map",
+      "members": [
+        "dev+inode",
+        "protected path"
+      ],
+      "rules": [
+        "symlink swap detection"
+      ]
+    }
+  },
+  "enum_families": [
+    "kind",
+    "dirty path status",
+    "project opt-out source"
+  ],
+  "enum_values": {
+    "kind": [
+      "session-baseline",
+      "turn-baseline",
+      "dirty-baseline",
+      "protected-baseline"
+    ],
+    "dirty path status": [
+      "tracked",
+      "staged",
+      "untracked",
+      "ignored",
+      "deleted",
+      "submodule"
+    ],
+    "project opt-out source": [
+      "session-baseline",
+      "turn-baseline",
+      "approval-log"
+    ]
+  },
+  "variant_requirements": [
+    "session baseline extras",
+    "turn baseline extras",
+    "dirty baseline extras",
+    "protected baseline extras"
+  ],
+  "variant_rules": {
+    "session baseline extras": {
+      "selectors": [
+        "kind=session-baseline"
+      ],
+      "requires": [
+        "log_offsets",
+        "last_sequences",
+        "approval_evidence"
+      ],
+      "forbids": [
+        "dirty path records"
+      ]
+    },
+    "turn baseline extras": {
+      "selectors": [
+        "kind=turn-baseline"
+      ],
+      "requires": [
+        "last_safe_stop_sequences",
+        "approval_evidence"
+      ],
+      "forbids": [
+        "protected file records"
+      ]
+    },
+    "dirty baseline extras": {
+      "selectors": [
+        "kind=dirty-baseline"
+      ],
+      "requires": [
+        "dirty path records",
+        "dirty_limits"
+      ],
+      "forbids": [
+        "approval_evidence"
+      ]
+    },
+    "protected baseline extras": {
+      "selectors": [
+        "kind=protected-baseline"
+      ],
+      "requires": [
+        "protected file records",
+        "protected inode index"
+      ],
+      "forbids": [
+        "project opt-out fingerprints"
+      ]
+    }
+  },
+  "variants": [
+    "Exact common baseline fields plus `session`, `turn`, `dirty`, and `protected` variants",
+    "nested `log_offsets`, `last_sequences`, `last_safe_stop_sequences`, `approval_evidence`, project opt-out fingerprints, dirty path records, protected file records, and allow-side audit batch hash input."
+  ],
+  "variant_details": {
+    "Exact common baseline fields plus `session`, `turn`, `dirty`, and `protected` variants": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact common baseline fields plus session, turn, dirty, and protected variants"
+      ]
+    },
+    "nested `log_offsets`, `last_sequences`, `last_safe_stop_sequences`, `approval_evidence`, project opt-out fingerprints, dirty path records, protected file records, and allow-side audit batch hash input.": {
+      "index": 2,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "nested log_offsets, last_sequences, last_safe_stop_sequences, approval_evidence, project opt-out fingerprints, dirty path records, protected file records, and allow-side audit batch hash input."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "baseline parser with kind-specific nested schemas"
+  ],
+  "profile_hash": "2218ff27528d8121badd4e5f13fe48098f81e0e435c8a43f5a6f26797db16164"
+}

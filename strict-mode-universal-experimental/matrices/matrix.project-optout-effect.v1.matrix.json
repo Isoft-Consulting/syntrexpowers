@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "matrix_id": "matrix.project-optout-effect.v1",
+  "owner": "[7-Level Design](01-7-level-design.md)",
+  "dimensions": [
+    "Opt-out kind/path and exact gates it may disable",
+    "`<project>/.strict-mode/disabled` may disable project quality gates: prompt reminder, static prepass, stop-time stub scan, missing FDR artifact gate, and FDR challenge",
+    "`no-static-prepass` may disable post-tool static prepass warnings only",
+    "`no-destructive-gate` may disable only project-destructive pattern checks outside protected-root/provider-hook/runtime-config-state/permission/broad filesystem-network gates",
+    "Legacy Claude opt-outs are disabled unless the protected runtime config enables compatibility and then map through the same rules."
+  ],
+  "allowed_rows": [
+    "Approved `disabled` opt-out disables only project quality gates",
+    "approved `no-static-prepass` disables only post-tool static prepass warnings",
+    "approved `no-destructive-gate` disables only project-destructive pattern checks outside protected-root/provider/runtime/permission/broad gates",
+    "enabled legacy Claude opt-out maps through the same approved effect table."
+  ],
+  "forbidden_row_classes": [
+    "Any opt-out disabling protected-root integrity, provider hook config protection, runtime/config/state integrity, approval anti-forgery, audit logging, dirty-snapshot safety, broad filesystem/network denial, or permission-request gates",
+    "current-turn-created opt-out activating without exact approval",
+    "changed fingerprint reusing old approval."
+  ],
+  "fixture_requirements": [
+    "Keep project opt-outs scoped to documented gates"
+  ],
+  "profile_hash": "b1ea4a849aa3ecdffb929cbccb8a8efc28834af553c9549008acba98a551c3d8"
+}

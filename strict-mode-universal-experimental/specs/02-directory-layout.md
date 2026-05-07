@@ -1,0 +1,152 @@
+# 2. Directory Layout
+
+Part of [Strict Mode Universal Experimental - Specification v0](../SPEC.md).
+
+
+This is the target implementation layout for the experimental package. The current repository contains the metadata stage plus a discovery/log-only runtime installer skeleton: `SPEC.md`, `README.md`, `specs/`, generated `schemas/` and `matrices/`, metadata tools, provider proof and normalized-event fixture tools, installer/uninstaller wrappers, shared `bin/` entrypoints, minimal `lib/`, `core/`, `templates/`, provider fixture directories, and installer tests are expected to exist. Enforcing runtime behavior, real provider fixtures, provider adapters, rollback recovery, and shared-core gates are added by the remaining phased implementation.
+
+```
+universal-experimental/
+  SPEC.md
+  specs/
+    00-summary.md
+    01-7-level-design.md
+    02-directory-layout.md
+    03-hook-event-matrix.md
+    04-normalized-event-contract.md
+    05-provider-verification-and-detection.md
+    06-decision-contract.md
+    07-state-layout.md
+    08-shared-core-components.md
+    08-shared-core/
+      01-stub-scan.md
+      02-pre-write-scan.md
+      03-record-edit.md
+      04-stop-guard.md
+      05-destructive-gate.md
+      06-fdr-challenge.md
+      07-static-prepass.md
+      08-prompt-injection-and-health-check.md
+      09-trivial-diff-detector.md
+      10-stop-orchestration.md
+      11-bounded-worker-delegation.md
+    09-judge-router.md
+    10-install-and-uninstall.md
+    11-phased-implementation.md
+    11-phases/
+      00-payload-discovery.md
+      01-universal-install-skeleton.md
+      02-health-and-prompt-injection.md
+      03-destructive-shell-gate.md
+      04-edits-tracking-and-stub-scan.md
+      05-fdr-artifact-validation.md
+      06-judge-router.md
+      07-fdr-challenge.md
+      08-bounded-worker-delegation.md
+    12-test-strategy.md
+    12-tests/
+      01-pure-core-tests.md
+      02-provider-fixture-tests.md
+      03-installer-tests.md
+      04-smoke-tests.md
+    13-risks-and-constraints.md
+    14-open-questions.md
+    15-acceptance-criteria-v0.md
+    16-non-goals-v0.md
+    17-implementation-readiness.md
+  README.md
+  install.sh
+  uninstall.sh
+  rollback.sh
+  bin/
+    strict-hook
+    strict-judge
+    strict-fdr
+  lib/
+    detect-provider.sh
+    normalize-event.sh
+    emit-decision.sh
+    state.sh
+    json.sh
+  schemas/
+    schema-registry.json
+    *.schema.json
+  matrices/
+    matrix-registry.json
+    *.matrix.json
+  tools/
+    metadata_lib.rb
+    generate-metadata.rb
+    validate-metadata.rb
+    check-metadata-generated.rb
+    test-metadata-validator.rb
+    test-metadata-generator.rb
+    provider_detection_lib.rb
+    verify-provider-payload.rb
+    normalized_event_lib.rb
+    normalize-event.rb
+    decision_contract_lib.rb
+    validate-decision-contract.rb
+    preflight_record_lib.rb
+    validate-preflight-record.rb
+    protected_config_lib.rb
+    validate-protected-config.rb
+    destructive_gate_lib.rb
+    protected_baseline_lib.rb
+    fixture_manifest_lib.rb
+    generate-fixture-manifests.rb
+    validate-fixtures.rb
+    import-discovery-fixture.rb
+    fixture_readiness_lib.rb
+    check-fixture-readiness.rb
+    hook_entry_plan_lib.rb
+  core/
+    stub-scan.sh
+    pre-write-scan.sh
+    record-edit.sh
+    stop-guard.sh
+    fdr-challenge.sh
+    fdr-validate.sh
+    is-trivial-diff.sh
+    destructive-gate.sh
+    static-prepass.sh
+    prompt-inject.sh
+    health-check.sh
+  providers/
+    claude/
+      install-config.py
+      fixtures/
+    codex/
+      install-config.py
+      fixtures/
+  templates/
+    strict-rules.md
+    runtime.env.example
+    protected-paths.txt
+    filesystem-read-allowlist.txt
+    network-allowlist.txt
+    destructive-patterns.txt
+    stub-allowlist.txt
+  tests/
+    run-tests.sh
+    test-provider-detection.rb
+    test-normalized-events.rb
+    test-decisions.rb
+    test-protected-config.rb
+    test-destructive-gate.rb
+    test-protected-baseline.rb
+    test-preflight-record.rb
+    test-hook-preflight.rb
+    test-fixtures.rb
+    test-fixture-readiness.rb
+    test-hook-entry-plan.rb
+    test-installer.rb
+    fixtures/
+      claude/
+      codex/
+      normalized/
+```
+
+No provider-specific copies of core hooks are allowed. Provider directories may contain installers, fixtures, and schema documentation only.
+
+---

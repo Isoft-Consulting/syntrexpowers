@@ -1,0 +1,241 @@
+{
+  "schema_version": 1,
+  "schema_id": "worker.result.v1",
+  "owner": "[Bounded Worker Delegation](08-shared-core/11-bounded-worker-delegation.md)",
+  "input_family": "`strict-worker` JSON result",
+  "hash_fields": [
+    "result_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "provider",
+    "task_kind",
+    "scope_digest",
+    "context_pack_hash",
+    "invocation_record_hash",
+    "output_kind",
+    "patch",
+    "findings",
+    "notes",
+    "confidence",
+    "model",
+    "backend",
+    "advisory_only",
+    "result_hash"
+  ],
+  "referenced_terms": [
+
+  ],
+  "referenced_details": {
+  },
+  "field_profiles": [
+    "patch",
+    "findings"
+  ],
+  "field_details": {
+    "patch": {
+      "shape": "object-or-empty",
+      "members": [
+        "touched paths",
+        "unified diff or replacement text"
+      ],
+      "rules": [
+        "scoped advisory patch only"
+      ]
+    },
+    "findings": {
+      "shape": "array",
+      "members": [
+        "severity",
+        "path",
+        "line",
+        "harm",
+        "fix"
+      ],
+      "rules": [
+        "file-local advisory findings"
+      ]
+    }
+  },
+  "enum_families": [
+    "provider",
+    "task_kind",
+    "output_kind",
+    "findings.severity",
+    "backend"
+  ],
+  "enum_values": {
+    "provider": [
+      "claude",
+      "codex"
+    ],
+    "task_kind": [
+      "intra-file-rewrite",
+      "file-review",
+      "stub-scan",
+      "fdr-sweep",
+      "research-summary",
+      "test-fix-suggestion"
+    ],
+    "output_kind": [
+      "patch",
+      "findings",
+      "rewrite-suggestion",
+      "review-note",
+      "unknown"
+    ],
+    "findings.severity": [
+      "critical",
+      "high",
+      "medium",
+      "low",
+      "info"
+    ],
+    "backend": [
+      "claude",
+      "codex",
+      "local-mock",
+      "unknown"
+    ]
+  },
+  "variant_requirements": [
+    "patch output scoped",
+    "findings output scoped",
+    "clean result non-authoritative",
+    "confidence decimal bounds"
+  ],
+  "variant_rules": {
+    "patch output scoped": {
+      "selectors": [
+        "output_kind=patch or rewrite-suggestion"
+      ],
+      "requires": [
+        "touched paths subset of context allowed_paths"
+      ],
+      "forbids": [
+        "protected-root path",
+        "out-of-scope path"
+      ]
+    },
+    "findings output scoped": {
+      "selectors": [
+        "output_kind=findings"
+      ],
+      "requires": [
+        "findings path in scope",
+        "valid severity",
+        "bounded harm and fix"
+      ],
+      "forbids": [
+        "empty path",
+        "empty harm",
+        "empty fix"
+      ]
+    },
+    "clean result non-authoritative": {
+      "selectors": [
+        "advisory_only=true"
+      ],
+      "requires": [
+        "no allow, bypass, approval, clean FDR, or Stop decision fields"
+      ],
+      "forbids": [
+        "authority claim"
+      ]
+    },
+    "confidence decimal bounds": {
+      "selectors": [
+        "confidence present"
+      ],
+      "requires": [
+        "decimal 0..1 up to 3 fractional digits"
+      ],
+      "forbids": [
+        "out-of-range confidence"
+      ]
+    }
+  },
+  "variants": [
+    "Exact result fields",
+    "provider, task, output, and backend domains",
+    "invocation, context, and scope hash equality",
+    "patch and finding object bounds",
+    "`advisory_only` must be true",
+    "clean-or-allow authority claims rejected",
+    "confidence canonical decimal 0..1 with at most three fractional digits",
+    "`result_hash` recomputation."
+  ],
+  "variant_details": {
+    "Exact result fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact result fields"
+      ]
+    },
+    "provider, task, output, and backend domains": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "provider, task, output, and backend domains"
+      ]
+    },
+    "invocation, context, and scope hash equality": {
+      "index": 3,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "invocation, context, and scope hash equality"
+      ]
+    },
+    "patch and finding object bounds": {
+      "index": 4,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "patch and finding object bounds"
+      ]
+    },
+    "`advisory_only` must be true": {
+      "index": 5,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "advisory_only must be true"
+      ]
+    },
+    "clean-or-allow authority claims rejected": {
+      "index": 6,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "clean-or-allow authority claims rejected"
+      ]
+    },
+    "confidence canonical decimal 0..1 with at most three fractional digits": {
+      "index": 7,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "confidence canonical decimal 0..1 with at most three fractional digits"
+      ]
+    },
+    "`result_hash` recomputation.": {
+      "index": 8,
+      "kind": "hash-recompute",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "result_hash recomputation."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "result parser, scoped patch/findings validator, and advisory-authority validator"
+  ],
+  "profile_hash": "697d4ccf745047cf42646f25986c6450f9d3499c5975daa683c640756245b991"
+}

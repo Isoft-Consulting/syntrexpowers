@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "schema_id": "tool.invocation.v1",
+  "owner": "[Record Edit](08-shared-core/03-record-edit.md)",
+  "input_family": "`tools-*`",
+  "hash_fields": [
+    "record_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "seq",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "turn_marker",
+    "tool_kind",
+    "tool_name",
+    "command_hash",
+    "command_hash_source",
+    "write_intent",
+    "payload_hash",
+    "pre_tool_intent_seq",
+    "pre_tool_intent_hash",
+    "ts",
+    "record_hash"
+  ],
+  "referenced_terms": [
+
+  ],
+  "referenced_details": {
+  },
+  "field_profiles": [
+
+  ],
+  "field_details": {
+  },
+  "enum_families": [
+    "tool_kind",
+    "command_hash_source",
+    "write_intent"
+  ],
+  "enum_values": {
+    "tool_kind": [
+      "shell",
+      "write",
+      "edit",
+      "multi-edit",
+      "patch",
+      "read",
+      "other",
+      "unknown"
+    ],
+    "command_hash_source": [
+      "none",
+      "shell-string",
+      "argv",
+      "trusted-import-argv"
+    ],
+    "write_intent": [
+      "none",
+      "read",
+      "write",
+      "unknown"
+    ]
+  },
+  "variant_requirements": [
+    "pre-tool intent linkage",
+    "command hash parity",
+    "payload hash parity"
+  ],
+  "variant_rules": {
+    "pre-tool intent linkage": {
+      "selectors": [
+        "pre_tool_intent_seq present"
+      ],
+      "requires": [
+        "pre_tool_intent_hash matches intent"
+      ],
+      "forbids": [
+        "missing intent link"
+      ]
+    },
+    "command hash parity": {
+      "selectors": [
+        "command_hash_source selected"
+      ],
+      "requires": [
+        "command_hash equals intent normalized_command_hash"
+      ],
+      "forbids": [
+        "mismatched command_hash"
+      ]
+    },
+    "payload hash parity": {
+      "selectors": [
+        "payload_hash present"
+      ],
+      "requires": [
+        "payload_hash equals intent payload_hash"
+      ],
+      "forbids": [
+        "mismatched payload_hash"
+      ]
+    }
+  },
+  "variants": [
+    "Exact tool invocation fields",
+    "pre-tool intent seq/hash linkage",
+    "command hash source parity with the intent record",
+    "write-intent and payload-hash parity",
+    "`record_hash` recomputation."
+  ],
+  "variant_details": {
+    "Exact tool invocation fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact tool invocation fields"
+      ]
+    },
+    "pre-tool intent seq/hash linkage": {
+      "index": 2,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "pre-tool intent seq/hash linkage"
+      ]
+    },
+    "command hash source parity with the intent record": {
+      "index": 3,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "command hash source parity with the intent record"
+      ]
+    },
+    "write-intent and payload-hash parity": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "write-intent and payload-hash parity"
+      ]
+    },
+    "`record_hash` recomputation.": {
+      "index": 5,
+      "kind": "hash-recompute",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "record_hash recomputation."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "tool invocation parser and intent-hash linkage validator"
+  ],
+  "profile_hash": "751ada4cfbb2f1d02048af4297c79307206511af1b411b5da47de1bcaae861f7"
+}

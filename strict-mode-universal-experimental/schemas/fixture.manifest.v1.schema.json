@@ -1,0 +1,261 @@
+{
+  "schema_version": 1,
+  "schema_id": "fixture.manifest.v1",
+  "owner": "[Hook Event Matrix](03-hook-event-matrix.md), [Judge Router](09-judge-router.md)",
+  "input_family": "provider fixture manifest and records",
+  "hash_fields": [
+    "manifest_hash",
+    "fixture_record_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "generated_at",
+    "records",
+    "manifest_hash"
+  ],
+  "referenced_terms": [
+    "contract_kind",
+    "exact",
+    "range",
+    "unknown-only",
+    "judge-invocation",
+    "worker-invocation"
+  ],
+  "referenced_details": {
+    "contract_kind": {
+      "kind": "field-reference",
+      "source": "fixture proof contract",
+      "rules": [
+        "record field controls hash sentinels"
+      ]
+    },
+    "exact": {
+      "kind": "enum-literal",
+      "source": "compatibility range mode",
+      "rules": [
+        "exact compatibility mode"
+      ]
+    },
+    "range": {
+      "kind": "enum-literal",
+      "source": "compatibility range mode",
+      "rules": [
+        "range compatibility mode"
+      ]
+    },
+    "unknown-only": {
+      "kind": "enum-literal",
+      "source": "compatibility range mode",
+      "rules": [
+        "unknown-only compatibility mode"
+      ]
+    },
+    "judge-invocation": {
+      "kind": "enum-literal",
+      "source": "contract kind domain",
+      "rules": [
+        "judge invocation proof contract"
+      ]
+    },
+    "worker-invocation": {
+      "kind": "enum-literal",
+      "source": "contract kind domain",
+      "rules": [
+        "bounded worker invocation proof contract"
+      ]
+    }
+  },
+  "field_profiles": [
+    "records",
+    "records.fixture_file_hashes",
+    "records.compatibility_range"
+  ],
+  "field_details": {
+    "records": {
+      "shape": "array",
+      "members": [
+        "contract_id",
+        "provider",
+        "contract_kind",
+        "fixture hashes"
+      ],
+      "rules": [
+        "record hash fields match contract kind"
+      ]
+    },
+    "records.fixture_file_hashes": {
+      "shape": "object-map",
+      "members": [
+        "fixture relative path",
+        "sha256"
+      ],
+      "rules": [
+        "lowercase sha256 values"
+      ]
+    },
+    "records.compatibility_range": {
+      "shape": "object",
+      "members": [
+        "mode",
+        "exact version",
+        "min version",
+        "max version"
+      ],
+      "rules": [
+        "mode-specific comparator fields"
+      ]
+    }
+  },
+  "enum_families": [
+    "provider",
+    "contract_kind",
+    "compatibility_range.mode"
+  ],
+  "enum_values": {
+    "provider": [
+      "claude",
+      "codex"
+    ],
+    "contract_kind": [
+      "payload-schema",
+      "matcher",
+      "command-execution",
+      "event-order",
+      "prompt-extraction",
+      "judge-invocation",
+      "worker-invocation",
+      "decision-output",
+      "version-comparator"
+    ],
+    "compatibility_range.mode": [
+      "exact",
+      "range",
+      "unknown-only"
+    ]
+  },
+  "variant_requirements": [
+    "hash sentinel fields by contract kind",
+    "exact compatibility range",
+    "range compatibility comparator"
+  ],
+  "variant_rules": {
+    "hash sentinel fields by contract kind": {
+      "selectors": [
+        "contract_kind selected"
+      ],
+      "requires": [
+        "fixture_file_hashes match contract_kind"
+      ],
+      "forbids": [
+        "missing required hash sentinel"
+      ]
+    },
+    "exact compatibility range": {
+      "selectors": [
+        "compatibility_range.mode=exact"
+      ],
+      "requires": [
+        "exact version fields"
+      ],
+      "forbids": [
+        "comparator fields"
+      ]
+    },
+    "range compatibility comparator": {
+      "selectors": [
+        "compatibility_range.mode=range"
+      ],
+      "requires": [
+        "min_version",
+        "max_version",
+        "comparator"
+      ],
+      "forbids": [
+        "exact-only fields"
+      ]
+    }
+  },
+  "variants": [
+    "Top-level manifest fields `schema_version`, `generated_at`, `records`, `manifest_hash`",
+    "record fields from the fixture proof contract",
+    "`contract_kind` enum",
+    "compatibility modes `exact`, `range`, `unknown-only`",
+    "fixture-file hash object schema",
+    "hash sentinels per contract kind",
+    "`judge-invocation` contract records bound to Judge Router prompt delivery, command execution, timeout, state-isolation, and output-shape fixture requirements",
+    "`worker-invocation` contract records bound to Bounded Worker Delegation prompt delivery, no-tool sandbox, timeout, output-shape, and state-isolation fixture requirements."
+  ],
+  "variant_details": {
+    "Top-level manifest fields `schema_version`, `generated_at`, `records`, `manifest_hash`": {
+      "index": 1,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Top-level manifest fields schema_version, generated_at, records, manifest_hash"
+      ]
+    },
+    "record fields from the fixture proof contract": {
+      "index": 2,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "record fields from the fixture proof contract"
+      ]
+    },
+    "`contract_kind` enum": {
+      "index": 3,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "contract_kind enum"
+      ]
+    },
+    "compatibility modes `exact`, `range`, `unknown-only`": {
+      "index": 4,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "compatibility modes exact, range, unknown-only"
+      ]
+    },
+    "fixture-file hash object schema": {
+      "index": 5,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "fixture-file hash object schema"
+      ]
+    },
+    "hash sentinels per contract kind": {
+      "index": 6,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "hash sentinels per contract kind"
+      ]
+    },
+    "`judge-invocation` contract records bound to Judge Router prompt delivery, command execution, timeout, state-isolation, and output-shape fixture requirements": {
+      "index": 7,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "judge-invocation contract records bound to Judge Router prompt delivery, command execution, timeout, state-isolation, and output-shape fixture requirements"
+      ]
+    },
+    "`worker-invocation` contract records bound to Bounded Worker Delegation prompt delivery, no-tool sandbox, timeout, output-shape, and state-isolation fixture requirements.": {
+      "index": 8,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "worker-invocation contract records bound to Bounded Worker Delegation prompt delivery, no-tool sandbox, timeout, output-shape, and state-isolation fixture requirements."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "schema parser, compatibility-range validator, fixture hash validator"
+  ],
+  "profile_hash": "246d75cca6434501ecd6eaaa42c198127e9afb215427d61eec0db715ef4670cd"
+}

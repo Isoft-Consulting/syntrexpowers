@@ -1,0 +1,232 @@
+{
+  "schema_version": 1,
+  "schema_id": "tool.permission-decision.v1",
+  "owner": "[Record Edit](08-shared-core/03-record-edit.md)",
+  "input_family": "`permission-decisions-*`",
+  "hash_fields": [
+    "record_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "seq",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "turn_marker",
+    "logical_event",
+    "permission_operation",
+    "requested_tool_kind",
+    "decision",
+    "reason_code",
+    "normalized_path_list",
+    "network_tuple_list",
+    "payload_hash",
+    "ts",
+    "previous_record_hash",
+    "record_hash"
+  ],
+  "referenced_terms": [
+    "matrix.permission-decision-domain.v1"
+  ],
+  "referenced_details": {
+    "matrix.permission-decision-domain.v1": {
+      "kind": "matrix-id",
+      "source": "closed matrix registry",
+      "rules": [
+        "permission decision matrix validator"
+      ]
+    }
+  },
+  "field_profiles": [
+    "normalized_path_list",
+    "network_tuple_list",
+    "network_tuple_list entries"
+  ],
+  "field_details": {
+    "normalized_path_list": {
+      "shape": "array",
+      "members": [
+        "normalized paths"
+      ],
+      "rules": [
+        "allow records require concrete paths"
+      ]
+    },
+    "network_tuple_list": {
+      "shape": "array",
+      "members": [
+        "network tuple entries"
+      ],
+      "rules": [
+        "allow records require concrete network tuple"
+      ]
+    },
+    "network_tuple_list entries": {
+      "shape": "object",
+      "members": [
+        "scheme",
+        "host",
+        "port",
+        "operation"
+      ],
+      "rules": [
+        "port 1..65535"
+      ]
+    }
+  },
+  "enum_families": [
+    "permission_operation",
+    "requested_tool_kind",
+    "decision",
+    "reason_code"
+  ],
+  "enum_values": {
+    "permission_operation": [
+      "tool",
+      "shell",
+      "write",
+      "network",
+      "filesystem",
+      "combined",
+      "unknown"
+    ],
+    "requested_tool_kind": [
+      "shell",
+      "write",
+      "edit",
+      "multi-edit",
+      "patch",
+      "read",
+      "other",
+      "unknown"
+    ],
+    "decision": [
+      "allow",
+      "deny"
+    ],
+    "reason_code": [
+      "allow-safe",
+      "allow-read-only",
+      "allow-exact-allowlist",
+      "deny-protected-root",
+      "deny-destructive",
+      "deny-network",
+      "deny-filesystem",
+      "deny-broad-scope",
+      "deny-unknown",
+      "deny-invalid-payload",
+      "deny-untrusted-state",
+      "deny-install-integrity",
+      "deny-fixture-missing",
+      "deny-record-failure",
+      "deny-policy"
+    ]
+  },
+  "variant_requirements": [
+    "allow path entries must be absolute",
+    "deny may use unknown sentinel",
+    "first previous hash zero sentinel"
+  ],
+  "variant_rules": {
+    "allow path entries must be absolute": {
+      "selectors": [
+        "decision=allow"
+      ],
+      "requires": [
+        "absolute normalized_path_list entries"
+      ],
+      "forbids": [
+        "unknown path sentinels"
+      ]
+    },
+    "deny may use unknown sentinel": {
+      "selectors": [
+        "decision=deny"
+      ],
+      "requires": [
+        "unknown sentinel allowed"
+      ],
+      "forbids": [
+        "allowlist source required"
+      ]
+    },
+    "first previous hash zero sentinel": {
+      "selectors": [
+        "seq first"
+      ],
+      "requires": [
+        "previous_record_hash=64-zero"
+      ],
+      "forbids": [
+        "missing previous hash"
+      ]
+    }
+  },
+  "variants": [
+    "Exact permission-decision fields",
+    "`permission_operation`, `requested_tool_kind`, `decision`, and `reason_code` domains",
+    "path and network tuple schemas",
+    "allow/deny unknown-sentinel restrictions",
+    "`previous_record_hash` chain",
+    "closed matrix validator `matrix.permission-decision-domain.v1`."
+  ],
+  "variant_details": {
+    "Exact permission-decision fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact permission-decision fields"
+      ]
+    },
+    "`permission_operation`, `requested_tool_kind`, `decision`, and `reason_code` domains": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "permission_operation, requested_tool_kind, decision, and reason_code domains"
+      ]
+    },
+    "path and network tuple schemas": {
+      "index": 3,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "path and network tuple schemas"
+      ]
+    },
+    "allow/deny unknown-sentinel restrictions": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "allow/deny unknown-sentinel restrictions"
+      ]
+    },
+    "`previous_record_hash` chain": {
+      "index": 5,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "previous_record_hash chain"
+      ]
+    },
+    "closed matrix validator `matrix.permission-decision-domain.v1`.": {
+      "index": 6,
+      "kind": "matrix-binding",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "closed matrix validator matrix.permission-decision-domain.v1."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "permission-decision parser and allow/deny domain validator"
+  ],
+  "profile_hash": "5d64cf39fed707b14bc8bf1d73b5a4540b73c60c261c4548761742f742e4c7d7"
+}

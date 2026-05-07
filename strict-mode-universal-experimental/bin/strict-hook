@@ -1,0 +1,269 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "digest"
+require "fileutils"
+require "json"
+require "optparse"
+require "pathname"
+require "securerandom"
+require "time"
+require_relative "../tools/destructive_gate_lib"
+require_relative "../tools/normalized_event_lib"
+require_relative "../tools/preflight_record_lib"
+require_relative "../tools/protected_baseline_lib"
+require_relative "../tools/provider_detection_lib"
+
+options = { "provider" => nil }
+parser = OptionParser.new do |opts|
+  opts.on("--provider PROVIDER") { |value| options["provider"] = value }
+end
+
+begin
+  parser.order!(ARGV)
+rescue OptionParser::ParseError => e
+  warn "strict-hook usage error: #{e.message}"
+  exit 2
+end
+
+event = ARGV.shift || "unknown"
+provider_arg_source = if options["provider"]
+                        "argv"
+                      elsif ENV["STRICT_PROVIDER"]
+                        "env"
+                      else
+                        "unknown"
+                      end
+provider = options["provider"] || ENV["STRICT_PROVIDER"] || "unknown"
+unless %w[claude codex unknown].include?(provider)
+  warn "strict-hook provider mismatch: unsupported provider #{provider.inspect}"
+  provider = "unknown"
+  provider_arg_source = "unknown"
+end
+
+def safe_component(value)
+  raw = value.to_s
+  component = raw.downcase
+  raw.match?(/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/) && component.match?(/\A[a-z0-9][a-z0-9._-]*\z/) ? component : "unknown"
+end
+
+def inferred_install_root(state_root = nil)
+  return Pathname.new(ENV["STRICT_INSTALL_ROOT"]).expand_path.cleanpath if ENV["STRICT_INSTALL_ROOT"]
+
+  program = Pathname.new($PROGRAM_NAME).expand_path.cleanpath
+  if program.basename.to_s == "strict-hook" &&
+     program.dirname.basename.to_s == "bin" &&
+     program.dirname.dirname.basename.to_s == "active"
+    return program.dirname.dirname.dirname
+  end
+
+  return state_root.dirname if state_root
+
+  Pathname.new(File.join(Dir.home, ".strict-mode"))
+end
+
+def hook_cwd
+  Pathname.new(ENV["STRICT_CWD"] || Dir.pwd).expand_path.cleanpath
+end
+
+def hook_project_dir(cwd)
+  Pathname.new(ENV["STRICT_PROJECT_DIR"] || cwd.to_s).expand_path.cleanpath
+end
+
+def preflight_not_attempted(logical_event)
+  StrictModePreflightRecord.not_attempted(logical_event)
+end
+
+def preflight_error(logical_event, reason_code, errors)
+  StrictModePreflightRecord.untrusted(logical_event, reason_code, errors)
+end
+
+def validate_preflight_or_error(logical_event, preflight)
+  errors = StrictModePreflightRecord.validate(preflight)
+  return preflight if errors.empty?
+
+  warn "strict-hook preflight contract invalid: #{errors.length} validation errors (discovery log-only)"
+  preflight_error(logical_event, "preflight-error", errors)
+end
+
+def classify_preflight(payload:, provider:, logical_event:, payload_hash:, state_root:)
+  return preflight_not_attempted(logical_event) unless logical_event == "pre-tool-use"
+  return preflight_error(logical_event, "payload-untrusted", ["payload JSON root is not an object"]) unless payload.is_a?(Hash)
+
+  cwd = hook_cwd
+  project_dir = hook_project_dir(cwd)
+  install_root = inferred_install_root(state_root)
+  event = StrictModeNormalized.normalize(
+    payload,
+    provider: provider,
+    logical_event: logical_event,
+    cwd: cwd,
+    project_dir: project_dir,
+    payload_sha256: payload_hash
+  )
+  baseline = StrictModeProtectedBaseline.load(
+    install_root: install_root,
+    state_root: state_root,
+    project_dir: project_dir,
+    home: Dir.home
+  )
+  unless baseline.fetch("trusted")
+    return preflight_error(
+      logical_event,
+      "protected-baseline-untrusted",
+      baseline.fetch("errors") + baseline.fetch("config_errors")
+    )
+  end
+
+  decision = StrictModeDestructiveGate.classify_tool(
+    event.fetch("tool"),
+    cwd: event.fetch("cwd"),
+    project_dir: event.fetch("project_dir"),
+    protected_roots: baseline.fetch("protected_roots"),
+    protected_inodes: baseline.fetch("protected_inodes"),
+    destructive_patterns: baseline.fetch("destructive_patterns"),
+    home: baseline.fetch("home"),
+    install_root: baseline.fetch("install_root")
+  )
+  tool = event.fetch("tool")
+  StrictModePreflightRecord.trusted_from_classifier(logical_event, decision, tool)
+rescue RuntimeError, SystemCallError, ArgumentError => e
+  preflight_error(logical_event, "preflight-error", [e.message])
+end
+
+def protected_runtime_settings(state_root)
+  cwd = hook_cwd
+  loaded = StrictModeProtectedBaseline.load(
+    install_root: inferred_install_root(state_root),
+    state_root: state_root,
+    project_dir: hook_project_dir(cwd),
+    home: Dir.home
+  )
+  unless loaded.fetch("trusted")
+    warn "strict-hook protected runtime config unavailable: #{(loaded.fetch("errors") + loaded.fetch("config_errors")).join("; ")}"
+    return {}
+  end
+
+  runtime = loaded.fetch("config_results").fetch("runtime.env", { "records" => [] })
+  runtime.fetch("records").each_with_object({}) do |record, settings|
+    settings[record.fetch("key")] = record.fetch("value")
+  end
+rescue RuntimeError, SystemCallError, ArgumentError => e
+  warn "strict-hook protected runtime config unavailable: #{e.message}"
+  {}
+end
+
+payload_cap = 65_536
+payload = STDIN.read(payload_cap + 1) || ""
+payload_truncated = payload.bytesize > payload_cap
+payload = payload.byteslice(0, payload_cap) if payload_truncated
+payload_hash = Digest::SHA256.hexdigest(payload)
+state_root = if ENV["STRICT_STATE_ROOT"]
+               Pathname.new(ENV["STRICT_STATE_ROOT"]).expand_path.cleanpath
+             else
+               inferred_install_root.join("state")
+             end
+log_dir = state_root.join("discovery")
+event_component = safe_component(event)
+raw_payload_path = ""
+raw_payload_captured = false
+provider_proof = nil
+provider_detection_error = ""
+parsed_payload = nil
+
+begin
+  parsed_payload = JSON.parse(payload, object_class: StrictModeFixtures::DuplicateKeyHash)
+  if parsed_payload.is_a?(Hash)
+    provider_proof = StrictModeProviderDetection.proof(
+      JSON.parse(JSON.generate(parsed_payload)),
+      provider_arg: provider,
+      provider_arg_source: provider_arg_source,
+      payload_sha256: payload_hash
+    )
+    provider_errors = StrictModeProviderDetection.validate(provider_proof)
+    raise provider_errors.join("; ") unless provider_errors.empty?
+  else
+    provider_detection_error = "payload JSON root is not an object"
+  end
+rescue JSON::ParserError
+  provider_detection_error = "payload JSON parse failed"
+rescue RuntimeError
+  provider_detection_error = "provider proof validation failed"
+end
+
+provider_detection_decision = provider_proof ? provider_proof.fetch("decision") : "unknown"
+provider_detection_diagnostic = if provider_proof
+                                  provider_proof.fetch("diagnostic")
+                                else
+                                  "provider #{provider} could not be proven from payload: #{provider_detection_error}"
+                                end
+detected_provider = provider_proof ? provider_proof.fetch("detected_provider") : "unknown"
+provider_proof_hash = provider_proof ? provider_proof.fetch("provider_proof_hash") : ("0" * 64)
+warn "strict-hook provider mismatch: #{provider_detection_diagnostic}" if %w[mismatch conflict].include?(provider_detection_decision)
+warn "strict-hook provider unknown: #{provider_detection_diagnostic}" if provider_detection_decision == "unknown"
+logical_event = StrictModeNormalized.native_logical_event(event)
+logical_event = "unknown" if logical_event.empty?
+
+preflight = if provider_detection_decision == "match" && !payload_truncated
+              classify_preflight(
+                payload: parsed_payload,
+                provider: provider,
+                logical_event: logical_event,
+                payload_hash: payload_hash,
+                state_root: state_root
+              )
+            elsif logical_event == "pre-tool-use"
+              preflight_error(
+                logical_event,
+                provider_detection_decision == "match" ? "payload-truncated" : "provider-untrusted",
+                [provider_detection_diagnostic]
+              )
+            else
+              preflight_not_attempted(logical_event)
+            end
+preflight = validate_preflight_or_error(logical_event, preflight)
+warn "strict-hook preflight would block in enforcement: #{preflight.fetch("reason_code")} (discovery log-only)" if preflight.fetch("would_block")
+
+runtime_settings = protected_runtime_settings(state_root)
+if runtime_settings["STRICT_CAPTURE_RAW_PAYLOADS"] == "1" && !payload_truncated && %w[claude codex].include?(provider) && provider_detection_decision == "match"
+  begin
+    raw_dir = log_dir.join("raw", provider, event_component)
+    FileUtils.mkdir_p(raw_dir, mode: 0o700)
+    raw_payload_path = raw_dir.join("#{Time.now.utc.strftime("%Y%m%dT%H%M%S")}-#{$$}-#{SecureRandom.hex(4)}-#{payload_hash[0, 12]}.payload").to_s
+    File.open(raw_payload_path, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write(payload) }
+    raw_payload_captured = true
+  rescue SystemCallError, RuntimeError => e
+    raw_payload_path = ""
+    warn "strict-hook raw payload capture failed: #{e.message}"
+  end
+end
+
+record = {
+  "schema_version" => 1,
+  "recorded_at" => Time.now.utc.iso8601,
+  "provider" => provider,
+  "event" => event,
+  "mode" => "discovery-log-only",
+  "provider_arg_source" => provider_arg_source,
+  "detected_provider" => detected_provider,
+  "provider_detection_decision" => provider_detection_decision,
+  "provider_detection_diagnostic" => provider_detection_diagnostic,
+  "provider_proof_hash" => provider_proof_hash,
+  "payload_bytes" => payload.bytesize,
+  "payload_truncated" => payload_truncated,
+  "payload_sha256" => payload_hash,
+  "raw_payload_captured" => raw_payload_captured,
+  "raw_payload_path" => raw_payload_path,
+  "preflight" => preflight,
+  "trusted_state_written" => false
+}
+
+begin
+  FileUtils.mkdir_p(log_dir, mode: 0o700)
+  path = log_dir.join("#{provider}-#{event_component}.jsonl")
+  File.open(path, "a", 0o600) { |file| file.puts(JSON.generate(record)) }
+rescue SystemCallError, RuntimeError => e
+  warn "strict-hook discovery log failed: #{e.message}"
+end
+
+exit 0

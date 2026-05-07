@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "matrix_id": "matrix.fdr-cycle-decision-reason.v1",
+  "owner": "[FDR Challenge](08-shared-core/06-fdr-challenge.md)",
+  "dimensions": [
+    "Decision, allowed `challenge_reason`, judge invocation state, `cycle_index`, `max_cycles`, prompt hash sentinel, response hash sentinel, original challenge hash sentinel, bypass hash sentinels, artifact state/value coupling."
+  ],
+  "allowed_rows": [
+    "Skipped decision with zero prompt/response/original/bypass hashes",
+    "judge-clean with clean reason, nonzero prompt/response hashes, and zero bypass hashes",
+    "judge-challenge with challenge reason and nonzero prompt/response hashes",
+    "judge-unknown with unknown reason and audited unknown result",
+    "blocked-reused bound to original challenge hash",
+    "bypassed bound to marker, audit, ledger, original challenge, and bypass hashes."
+  ],
+  "forbidden_row_classes": [
+    "`judge-clean` with unknown reason",
+    "`judge-unknown` reason outside the unknown enum",
+    "skipped decisions with nonzero prompt/response hashes",
+    "`judge-clean` or `judge-challenge` with zero prompt hash",
+    "`blocked-reused` without original challenge hash",
+    "`bypassed` without marker/audit/ledger hashes",
+    "`judge-unknown` disabling artifact gates",
+    "transient unknown reused as clean evidence."
+  ],
+  "fixture_requirements": [
+    "Bind `decision`, `challenge_reason`, prompt/response sentinels, original challenge hash, and bypass hashes"
+  ],
+  "profile_hash": "9d2d186aeea4923f97ac44396c73969947bc27602456b1260c7f8fb30dfcf14d"
+}

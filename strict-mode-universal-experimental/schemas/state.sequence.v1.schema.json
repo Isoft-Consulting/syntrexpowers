@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "schema_id": "state.sequence.v1",
+  "owner": "[State Layout](07-state-layout.md)",
+  "input_family": "`seq-<provider>-<sid>.json`",
+  "hash_fields": [
+    "sequence_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "last_seq_by_record_type",
+    "last_record_hash_by_record_type",
+    "created_at",
+    "updated_at",
+    "sequence_hash"
+  ],
+  "referenced_terms": [
+
+  ],
+  "referenced_details": {
+  },
+  "field_profiles": [
+    "last_seq_by_record_type",
+    "last_record_hash_by_record_type"
+  ],
+  "field_details": {
+    "last_seq_by_record_type": {
+      "shape": "object-map",
+      "members": [
+        "record type",
+        "last seq"
+      ],
+      "rules": [
+        "non-negative monotonic counters"
+      ]
+    },
+    "last_record_hash_by_record_type": {
+      "shape": "object-map",
+      "members": [
+        "record type",
+        "last hash"
+      ],
+      "rules": [
+        "hash matches log tail"
+      ]
+    }
+  },
+  "enum_families": [
+    "record type domain"
+  ],
+  "enum_values": {
+    "record type domain": [
+      "tool_intent",
+      "permission_decision",
+      "tool",
+      "edit"
+    ]
+  },
+  "variant_requirements": [
+    "zero sequence hash sentinel",
+    "monotonic counter binding"
+  ],
+  "variant_rules": {
+    "zero sequence hash sentinel": {
+      "selectors": [
+        "no prior record"
+      ],
+      "requires": [
+        "last_record_hash=64-zero"
+      ],
+      "forbids": [
+        "missing zero sentinel"
+      ]
+    },
+    "monotonic counter binding": {
+      "selectors": [
+        "record update"
+      ],
+      "requires": [
+        "last_seq increases",
+        "last_record_hash matches log tail"
+      ],
+      "forbids": [
+        "counter regression"
+      ]
+    }
+  },
+  "variants": [
+    "Exact sequence fields",
+    "monotonic counters for tool-intent, permission-decision, tool, and edit domains",
+    "last sequence/hash binding to the corresponding logs",
+    "`sequence_hash` recomputation",
+    "regression and duplicate detection."
+  ],
+  "variant_details": {
+    "Exact sequence fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact sequence fields"
+      ]
+    },
+    "monotonic counters for tool-intent, permission-decision, tool, and edit domains": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "monotonic counters for tool-intent, permission-decision, tool, and edit domains"
+      ]
+    },
+    "last sequence/hash binding to the corresponding logs": {
+      "index": 3,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "last sequence/hash binding to the corresponding logs"
+      ]
+    },
+    "`sequence_hash` recomputation": {
+      "index": 4,
+      "kind": "hash-recompute",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "sequence_hash recomputation"
+      ]
+    },
+    "regression and duplicate detection.": {
+      "index": 5,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "regression and duplicate detection."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "monotonic sequence parser and log-tail hash validator"
+  ],
+  "profile_hash": "43c689131a1084971703bae99efe25b601bcdb5b2d650c56d674a76edd99f043"
+}

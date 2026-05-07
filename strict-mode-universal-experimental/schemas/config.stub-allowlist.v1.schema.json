@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "schema_id": "config.stub-allowlist.v1",
+  "owner": "[Hook Event Matrix](03-hook-event-matrix.md), [Stub Scan](08-shared-core/01-stub-scan.md)",
+  "input_family": "`stub-allowlist.txt`",
+  "hash_fields": [
+
+  ],
+  "required_fields": [
+
+  ],
+  "referenced_terms": [
+    "finding"
+  ],
+  "referenced_details": {
+    "finding": {
+      "kind": "directive-literal",
+      "source": "stub allowlist parser",
+      "rules": [
+        "finding digest directive"
+      ]
+    }
+  },
+  "field_profiles": [
+    "directive lines"
+  ],
+  "field_details": {
+    "directive lines": {
+      "shape": "line-list",
+      "members": [
+        "directive",
+        "finding digest"
+      ],
+      "rules": [
+        "full sha256 identity"
+      ]
+    }
+  },
+  "enum_families": [
+    "directive kind"
+  ],
+  "enum_values": {
+    "directive kind": [
+      "finding"
+    ]
+  },
+  "variant_requirements": [
+    "finding digest identity"
+  ],
+  "variant_rules": {
+    "finding digest identity": {
+      "selectors": [
+        "directive=finding"
+      ],
+      "requires": [
+        "lowercase sha256 digest"
+      ],
+      "forbids": [
+        "line-number-only identity"
+      ]
+    }
+  },
+  "variants": [
+    "UTF-8 line grammar",
+    "directive `finding`",
+    "full lowercase SHA-256 finding digest validation",
+    "previous-baseline or approved-bypass activation requirement",
+    "line-number-only identity rejection."
+  ],
+  "variant_details": {
+    "UTF-8 line grammar": {
+      "index": 1,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "UTF-8 line grammar"
+      ]
+    },
+    "directive `finding`": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "directive finding"
+      ]
+    },
+    "full lowercase SHA-256 finding digest validation": {
+      "index": 3,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "full lowercase SHA-256 finding digest validation"
+      ]
+    },
+    "previous-baseline or approved-bypass activation requirement": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "previous-baseline or approved-bypass activation requirement"
+      ]
+    },
+    "line-number-only identity rejection.": {
+      "index": 5,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "line-number-only identity rejection."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "protected text parser and finding digest validator"
+  ],
+  "profile_hash": "4a8681d2473c454155acb0a986a9082a44e40a4d4472abcea155a42c67eb8243"
+}

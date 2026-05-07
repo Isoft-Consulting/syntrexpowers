@@ -1,0 +1,318 @@
+{
+  "schema_version": 1,
+  "schema_id": "install.baseline.v1",
+  "owner": "[State Layout](07-state-layout.md), [Install And Uninstall](10-install-and-uninstall.md)",
+  "input_family": "`protected-install-baseline.json`",
+  "hash_fields": [
+    "baseline_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "kind",
+    "transaction_id",
+    "install_root",
+    "active_runtime_link",
+    "active_runtime_target",
+    "state_root",
+    "config_root",
+    "provider_config_paths",
+    "managed_hook_entries",
+    "generated_hook_commands",
+    "generated_hook_env",
+    "package_version",
+    "install_manifest_hash",
+    "runtime_file_records",
+    "runtime_config_records",
+    "provider_config_records",
+    "protected_config_records",
+    "fixture_manifest_records",
+    "selected_output_contracts",
+    "protected_file_inode_index",
+    "created_at",
+    "updated_at",
+    "baseline_hash"
+  ],
+  "referenced_terms": [
+    "<install-root>/active/bin/strict-hook"
+  ],
+  "referenced_details": {
+    "<install-root>/active/bin/strict-hook": {
+      "kind": "path-template",
+      "source": "managed hook command parser",
+      "rules": [
+        "lexical active hook command path"
+      ]
+    }
+  },
+  "field_profiles": [
+    "managed_hook_entries",
+    "generated_hook_commands",
+    "generated_hook_env",
+    "runtime_file_records",
+    "runtime_config_records",
+    "provider_config_records",
+    "protected_config_records",
+    "fixture_manifest_records",
+    "selected_output_contracts",
+    "protected_file_inode_index"
+  ],
+  "field_details": {
+    "managed_hook_entries": {
+      "shape": "array",
+      "members": [
+        "provider",
+        "hook event",
+        "command",
+        "env"
+      ],
+      "rules": [
+        "lexical active strict-hook command binding",
+        "active hook baseline"
+      ]
+    },
+    "generated_hook_commands": {
+      "shape": "array",
+      "members": [
+        "provider",
+        "hook event",
+        "command argv"
+      ],
+      "rules": [
+        "generated command proof",
+        "no outside install-root command"
+      ]
+    },
+    "generated_hook_env": {
+      "shape": "object-map",
+      "members": [
+        "env key",
+        "env value"
+      ],
+      "rules": [
+        "protected env proof"
+      ]
+    },
+    "runtime_file_records": {
+      "shape": "array",
+      "members": [
+        "path",
+        "kind",
+        "fingerprint"
+      ],
+      "rules": [
+        "active runtime baseline"
+      ]
+    },
+    "runtime_config_records": {
+      "shape": "array",
+      "members": [
+        "path",
+        "kind",
+        "fingerprint"
+      ],
+      "rules": [
+        "runtime config baseline"
+      ]
+    },
+    "provider_config_records": {
+      "shape": "array",
+      "members": [
+        "provider",
+        "path",
+        "fingerprint"
+      ],
+      "rules": [
+        "provider config baseline"
+      ]
+    },
+    "protected_config_records": {
+      "shape": "array",
+      "members": [
+        "path",
+        "fingerprint",
+        "inode tuple"
+      ],
+      "rules": [
+        "protected config baseline"
+      ]
+    },
+    "fixture_manifest_records": {
+      "shape": "array",
+      "members": [
+        "contract id",
+        "fixture hash"
+      ],
+      "rules": [
+        "fixture proof baseline"
+      ]
+    },
+    "selected_output_contracts": {
+      "shape": "array",
+      "members": [
+        "provider",
+        "event",
+        "contract id",
+        "provider action",
+        "decision hash",
+        "fixture hashes"
+      ],
+      "rules": [
+        "selected block/deny output baseline"
+      ]
+    },
+    "protected_file_inode_index": {
+      "shape": "object-map",
+      "members": [
+        "dev+inode",
+        "protected path"
+      ],
+      "rules": [
+        "protected file swap detection"
+      ]
+    }
+  },
+  "enum_families": [
+    "kind",
+    "provider",
+    "file record kind",
+    "protected inode kind"
+  ],
+  "enum_values": {
+    "kind": [
+      "protected-install-baseline"
+    ],
+    "provider": [
+      "claude",
+      "codex"
+    ],
+    "file record kind": [
+      "runtime-file",
+      "runtime-config",
+      "provider-config",
+      "protected-config",
+      "fixture-manifest",
+      "install-manifest"
+    ],
+    "protected inode kind": [
+      "runtime-file",
+      "runtime-config",
+      "provider-config",
+      "protected-config",
+      "fixture-manifest",
+      "install-manifest"
+    ]
+  },
+  "variant_requirements": [
+    "protected baseline-only fields required",
+    "manifest-only fields forbidden"
+  ],
+  "variant_rules": {
+    "protected baseline-only fields required": {
+      "selectors": [
+        "kind=protected-install-baseline"
+      ],
+      "requires": [
+        "protected_file_inode_index",
+        "generated_hook_commands"
+      ],
+      "forbids": [
+        "missing protected inode index"
+      ]
+    },
+    "manifest-only fields forbidden": {
+      "selectors": [
+        "baseline record"
+      ],
+      "requires": [
+        "no removal selector",
+        "no manifest-only plan fields"
+      ],
+      "forbids": [
+        "manifest-only fields present"
+      ]
+    }
+  },
+  "variants": [
+    "Exact protected install baseline fields",
+    "managed hook entries matching manifest",
+    "selected output contracts matching manifest",
+    "active runtime lexical/resolved path distinction",
+    "managed hook command grammar and lexical `<install-root>/active/bin/strict-hook` binding",
+    "protected inode index schema",
+    "generated timeout/env proof",
+    "current disk fingerprint verification."
+  ],
+  "variant_details": {
+    "Exact protected install baseline fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact protected install baseline fields"
+      ]
+    },
+    "managed hook entries matching manifest": {
+      "index": 2,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "managed hook entries matching manifest"
+      ]
+    },
+    "selected output contracts matching manifest": {
+      "index": 3,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "selected output contracts matching manifest"
+      ]
+    },
+    "active runtime lexical/resolved path distinction": {
+      "index": 4,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "active runtime lexical/resolved path distinction"
+      ]
+    },
+    "managed hook command grammar and lexical `<install-root>/active/bin/strict-hook` binding": {
+      "index": 5,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "managed hook command grammar and lexical <install-root>/active/bin/strict-hook binding"
+      ]
+    },
+    "protected inode index schema": {
+      "index": 6,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "protected inode index schema"
+      ]
+    },
+    "generated timeout/env proof": {
+      "index": 7,
+      "kind": "fixture-proof",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "generated timeout/env proof"
+      ]
+    },
+    "current disk fingerprint verification.": {
+      "index": 8,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "current disk fingerprint verification."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "protected install baseline parser and disk-fingerprint verifier"
+  ],
+  "profile_hash": "ad7140198cc399d3a06f029844453dfbbb31f7176cfdb8d4ad785acd8108391a"
+}

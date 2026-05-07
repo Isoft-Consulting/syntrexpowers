@@ -1,0 +1,240 @@
+{
+  "schema_version": 1,
+  "schema_id": "install.transaction-marker.v1",
+  "owner": "[Install And Uninstall](10-install-and-uninstall.md)",
+  "input_family": "install transaction pending/complete markers",
+  "hash_fields": [
+    "marker_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "transaction_id",
+    "phase",
+    "install_root",
+    "state_root",
+    "staged_runtime_path",
+    "previous_active_runtime_path",
+    "previous_install_manifest_hash",
+    "previous_install_baseline_hash",
+    "backup_manifest_hash",
+    "staged_install_manifest_hash",
+    "staged_install_baseline_hash",
+    "provider_config_plan_hash",
+    "created_at",
+    "updated_at",
+    "marker_hash"
+  ],
+  "referenced_terms": [
+    ".pending.json",
+    ".complete.json"
+  ],
+  "referenced_details": {
+    ".pending.json": {
+      "kind": "filename-suffix",
+      "source": "installer marker files",
+      "rules": [
+        "unsettled marker suffix"
+      ]
+    },
+    ".complete.json": {
+      "kind": "filename-suffix",
+      "source": "installer marker files",
+      "rules": [
+        "complete marker suffix"
+      ]
+    }
+  },
+  "field_profiles": [
+
+  ],
+  "field_details": {
+  },
+  "enum_families": [
+    "phase"
+  ],
+  "enum_values": {
+    "phase": [
+      "pre-activation",
+      "activating",
+      "post-activation-failed",
+      "rollback-in-progress",
+      "uninstalling",
+      "uninstall-failed",
+      "complete"
+    ]
+  },
+  "variant_requirements": [
+    "pending marker unsettled phase",
+    "complete marker complete phase",
+    "completed pending cleanup",
+    "install staged fields",
+    "uninstall staged fields"
+  ],
+  "variant_rules": {
+    "pending marker unsettled phase": {
+      "selectors": [
+        "phase!=complete"
+      ],
+      "requires": [
+        ".pending.json path",
+        "staged hashes"
+      ],
+      "forbids": [
+        ".complete.json path"
+      ]
+    },
+    "complete marker complete phase": {
+      "selectors": [
+        "phase=complete"
+      ],
+      "requires": [
+        ".complete.json path",
+        "final hashes"
+      ],
+      "forbids": [
+        "staged unsettled fields"
+      ]
+    },
+    "completed pending cleanup": {
+      "selectors": [
+        "pending+complete present or complete-only repair"
+      ],
+      "requires": [
+        "filename/root binding",
+        "completed phase before repair",
+        "ledger create repair",
+        "pending-delete repair",
+        "cross-writer ledger mismatch refusal",
+        "complete-only create-writer/latest-pending-writer match",
+        "non-noop pending-delete preimage",
+        "phase-derived writer delete"
+      ],
+      "forbids": [
+        "mismatched root",
+        "invalid pending phase",
+        "cross-writer create/delete",
+        "duplicate create",
+        "duplicate delete",
+        "stale install writer for rollback complete",
+        "missing delete preimage"
+      ]
+    },
+    "install staged fields": {
+      "selectors": [
+        "install marker"
+      ],
+      "requires": [
+        "staged_runtime_path",
+        "staged_install_manifest_hash",
+        "staged_install_baseline_hash"
+      ],
+      "forbids": [
+        "empty staged_runtime_path"
+      ]
+    },
+    "uninstall staged fields": {
+      "selectors": [
+        "uninstall marker"
+      ],
+      "requires": [
+        "staged_runtime_path empty",
+        "previous hashes present"
+      ],
+      "forbids": [
+        "staged_runtime_path populated"
+      ]
+    }
+  },
+  "variants": [
+    "Exact marker fields",
+    "install, rollback, and uninstall phase enum",
+    "`.pending.json` versus `.complete.json` phase restrictions",
+    "install versus uninstall staged-field semantics including empty uninstall `staged_runtime_path` and post-uninstall manifest/baseline candidate hashes",
+    "previous manifest/baseline hash zero sentinels",
+    "phase-transition hash rewrite",
+    "pending filename/install-root/state-root binding",
+    "completed-pending cleanup with phase validation before repair, complete-marker ledger repair, pending-delete ledger repair, cross-writer ledger mismatch refusal, complete-only create-writer binding to latest pending writer, non-noop pending-delete preimage requirement, and phase-derived writer attribution",
+    "rollback and uninstall recovery eligibility fields."
+  ],
+  "variant_details": {
+    "Exact marker fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact marker fields"
+      ]
+    },
+    "install, rollback, and uninstall phase enum": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "install, rollback, and uninstall phase enum"
+      ]
+    },
+    "`.pending.json` versus `.complete.json` phase restrictions": {
+      "index": 3,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        ".pending.json versus .complete.json phase restrictions"
+      ]
+    },
+    "install versus uninstall staged-field semantics including empty uninstall `staged_runtime_path` and post-uninstall manifest/baseline candidate hashes": {
+      "index": 4,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "install versus uninstall staged-field semantics including empty uninstall staged_runtime_path and post-uninstall manifest/baseline candidate hashes"
+      ]
+    },
+    "previous manifest/baseline hash zero sentinels": {
+      "index": 5,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "previous manifest/baseline hash zero sentinels"
+      ]
+    },
+    "phase-transition hash rewrite": {
+      "index": 6,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "phase-transition hash rewrite"
+      ]
+    },
+    "pending filename/install-root/state-root binding": {
+      "index": 7,
+      "kind": "filename-binding",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "pending filename/install-root/state-root binding"
+      ]
+    },
+    "completed-pending cleanup with phase validation before repair, complete-marker ledger repair, pending-delete ledger repair, cross-writer ledger mismatch refusal, complete-only create-writer binding to latest pending writer, non-noop pending-delete preimage requirement, and phase-derived writer attribution": {
+      "index": 8,
+      "kind": "negative-rule",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "completed-pending cleanup with phase validation before repair, complete-marker ledger repair, pending-delete ledger repair, cross-writer ledger mismatch refusal, complete-only create-writer binding to latest pending writer, non-noop pending-delete preimage requirement, and phase-derived writer attribution"
+      ]
+    },
+    "rollback and uninstall recovery eligibility fields.": {
+      "index": 9,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "rollback and uninstall recovery eligibility fields."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "transaction marker parser and phase-transition validator"
+  ],
+  "profile_hash": "b737b7d362f6c30284e06cb56385f44d377f08f6e79f991ba65b0f1292ca4045"
+}

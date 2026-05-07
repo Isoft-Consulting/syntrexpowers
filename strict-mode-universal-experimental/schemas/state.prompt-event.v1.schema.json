@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "schema_id": "state.prompt-event.v1",
+  "owner": "[State Layout](07-state-layout.md)",
+  "input_family": "`prompt-events-<provider>-<sid>.jsonl`",
+  "hash_fields": [
+    "record_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "prompt_seq",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "turn_marker",
+    "payload_hash",
+    "ts",
+    "previous_record_hash",
+    "record_hash"
+  ],
+  "referenced_terms": [
+
+  ],
+  "referenced_details": {
+  },
+  "field_profiles": [
+
+  ],
+  "field_details": {
+  },
+  "enum_families": [
+
+  ],
+  "enum_values": {
+  },
+  "variant_requirements": [
+    "first prompt-event previous hash zero sentinel",
+    "prompt sequence monotonicity"
+  ],
+  "variant_rules": {
+    "first prompt-event previous hash zero sentinel": {
+      "selectors": [
+        "prompt_seq=1"
+      ],
+      "requires": [
+        "previous_record_hash=64-zero"
+      ],
+      "forbids": [
+        "nonzero previous hash"
+      ]
+    },
+    "prompt sequence monotonicity": {
+      "selectors": [
+        "prompt_seq>1"
+      ],
+      "requires": [
+        "previous_record_hash matches prior prompt event"
+      ],
+      "forbids": [
+        "prompt_seq regression"
+      ]
+    }
+  },
+  "variants": [
+    "Exact prompt-event fields",
+    "monotonic `prompt_seq`",
+    "tuple binding",
+    "redacted payload hash",
+    "`previous_record_hash` chain",
+    "first-record zero sentinel."
+  ],
+  "variant_details": {
+    "Exact prompt-event fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact prompt-event fields"
+      ]
+    },
+    "monotonic `prompt_seq`": {
+      "index": 2,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "monotonic prompt_seq"
+      ]
+    },
+    "tuple binding": {
+      "index": 3,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "tuple binding"
+      ]
+    },
+    "redacted payload hash": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "redacted payload hash"
+      ]
+    },
+    "`previous_record_hash` chain": {
+      "index": 5,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "previous_record_hash chain"
+      ]
+    },
+    "first-record zero sentinel.": {
+      "index": 6,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "first-record zero sentinel."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "prompt-event parser and hash-chain validator"
+  ],
+  "profile_hash": "375f372bea521cc4581a5d2289075cef99f4f425a56c7d7e3450402806ae1da3"
+}

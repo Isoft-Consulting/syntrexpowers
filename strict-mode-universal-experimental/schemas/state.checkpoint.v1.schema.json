@@ -1,0 +1,257 @@
+{
+  "schema_version": 1,
+  "schema_id": "state.checkpoint.v1",
+  "owner": "[State Layout](07-state-layout.md)",
+  "input_family": "`checkpoints-*`, `checkpoints-global.jsonl`",
+  "hash_fields": [
+    "checkpoint_hash",
+    "record_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "checkpoint_scope",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "checkpointed_path",
+    "checkpointed_kind",
+    "covered_seq_min",
+    "covered_seq_max",
+    "covered_byte_min",
+    "covered_byte_max",
+    "last_covered_record_hash",
+    "retained_successor_record_hash",
+    "source_ledger_record_hash",
+    "created_at",
+    "checkpoint_hash",
+    "previous_record_hash",
+    "record_hash"
+  ],
+  "referenced_terms": [
+    "writer=\"repair\"",
+    "operation=\"checkpoint\"",
+    "related_record_hash"
+  ],
+  "referenced_details": {
+    "writer=\"repair\"": {
+      "kind": "binding-literal",
+      "source": "ledger checkpoint binding",
+      "rules": [
+        "source ledger writer requirement"
+      ]
+    },
+    "operation=\"checkpoint\"": {
+      "kind": "binding-literal",
+      "source": "ledger checkpoint binding",
+      "rules": [
+        "source ledger operation requirement"
+      ]
+    },
+    "related_record_hash": {
+      "kind": "hash-binding",
+      "source": "ledger checkpoint binding",
+      "rules": [
+        "ledger related hash zero sentinel"
+      ]
+    }
+  },
+  "field_profiles": [
+
+  ],
+  "field_details": {
+  },
+  "enum_families": [
+    "checkpoint_scope",
+    "checkpointed_kind"
+  ],
+  "enum_values": {
+    "checkpoint_scope": [
+      "session",
+      "global"
+    ],
+    "checkpointed_kind": [
+      "prompt-event-log",
+      "permission-decision-log",
+      "ledger",
+      "fdr-cycle-log"
+    ]
+  },
+  "variant_requirements": [
+    "session tuple required",
+    "global tuple empty",
+    "retained successor zero sentinel",
+    "source ledger checkpoint binding"
+  ],
+  "variant_rules": {
+    "session tuple required": {
+      "selectors": [
+        "checkpoint_scope=session"
+      ],
+      "requires": [
+        "provider",
+        "session_key",
+        "raw_session_hash",
+        "cwd",
+        "project_dir"
+      ],
+      "forbids": [
+        "empty session tuple"
+      ]
+    },
+    "global tuple empty": {
+      "selectors": [
+        "checkpoint_scope=global"
+      ],
+      "requires": [
+        "empty provider tuple"
+      ],
+      "forbids": [
+        "populated provider tuple"
+      ]
+    },
+    "retained successor zero sentinel": {
+      "selectors": [
+        "retained_successor_absent"
+      ],
+      "requires": [
+        "retained_successor_record_hash=64-zero"
+      ],
+      "forbids": [
+        "missing retained_successor_record_hash"
+      ]
+    },
+    "source ledger checkpoint binding": {
+      "selectors": [
+        "source_ledger_record_hash present"
+      ],
+      "requires": [
+        "ledger writer=repair",
+        "ledger operation=checkpoint"
+      ],
+      "forbids": [
+        "noncheckpoint source ledger"
+      ]
+    }
+  },
+  "variants": [
+    "Exact checkpoint fields",
+    "checkpoint scope tuple with full tuple required for session checkpoints and empty tuple required for global checkpoints",
+    "checkpointed file path/kind",
+    "closed checkpointed-kind enum excluding baselines, approval audit logs, consumed tombstones, and FDR artifacts",
+    "covered sequence range",
+    "covered byte range",
+    "last covered record hash",
+    "source ledger record hash",
+    "retained successor record hash",
+    "source ledger binding to an already chained `writer=\"repair\"`, `operation=\"checkpoint\"` ledger record with checkpointable target class, 64-zero `related_record_hash`, and old/new fingerprints matching compaction",
+    "`checkpoint_hash` and `record_hash` recomputation",
+    "rejection when any pending approval/import/challenge or unresolved blocked Stop scope still references covered evidence."
+  ],
+  "variant_details": {
+    "Exact checkpoint fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact checkpoint fields"
+      ]
+    },
+    "checkpoint scope tuple with full tuple required for session checkpoints and empty tuple required for global checkpoints": {
+      "index": 2,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "checkpoint scope tuple with full tuple required for session checkpoints and empty tuple required for global checkpoints"
+      ]
+    },
+    "checkpointed file path/kind": {
+      "index": 3,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "checkpointed file path/kind"
+      ]
+    },
+    "closed checkpointed-kind enum excluding baselines, approval audit logs, consumed tombstones, and FDR artifacts": {
+      "index": 4,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "closed checkpointed-kind enum excluding baselines, approval audit logs, consumed tombstones, and FDR artifacts"
+      ]
+    },
+    "covered sequence range": {
+      "index": 5,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "covered sequence range"
+      ]
+    },
+    "covered byte range": {
+      "index": 6,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "covered byte range"
+      ]
+    },
+    "last covered record hash": {
+      "index": 7,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "last covered record hash"
+      ]
+    },
+    "source ledger record hash": {
+      "index": 8,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "source ledger record hash"
+      ]
+    },
+    "retained successor record hash": {
+      "index": 9,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "retained successor record hash"
+      ]
+    },
+    "source ledger binding to an already chained `writer=\"repair\"`, `operation=\"checkpoint\"` ledger record with checkpointable target class, 64-zero `related_record_hash`, and old/new fingerprints matching compaction": {
+      "index": 10,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "source ledger binding to an already chained writer=\"repair\", operation=\"checkpoint\" ledger record with checkpointable target class, 64-zero related_record_hash, and old/new fingerprints matching compaction"
+      ]
+    },
+    "`checkpoint_hash` and `record_hash` recomputation": {
+      "index": 11,
+      "kind": "hash-recompute",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "checkpoint_hash and record_hash recomputation"
+      ]
+    },
+    "rejection when any pending approval/import/challenge or unresolved blocked Stop scope still references covered evidence.": {
+      "index": 12,
+      "kind": "negative-rule",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "rejection when any pending approval/import/challenge or unresolved blocked Stop scope still references covered evidence."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "checkpoint parser, covered-range validator, and checkpoint ledger binder"
+  ],
+  "profile_hash": "64f0f1cb0cc9ef9a9acd8cf9e3e8766cbbcb92e76051d2ef9161ec06499f2d56"
+}

@@ -1,0 +1,261 @@
+{
+  "schema_version": 1,
+  "schema_id": "fdr.cycle.v1",
+  "owner": "[FDR Challenge](08-shared-core/06-fdr-challenge.md)",
+  "input_family": "`fdr-cycles-*`",
+  "hash_fields": [
+    "record_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "turn_marker",
+    "cycle_index",
+    "max_cycles",
+    "scope_digest",
+    "tool_intent_seq_list",
+    "tool_seq_list",
+    "edit_seq_list",
+    "tool_intent_log_digest",
+    "tool_log_digest",
+    "edit_log_digest",
+    "content_scope_fingerprint_digest",
+    "artifact_state",
+    "artifact_hash",
+    "artifact_verdict",
+    "finding_count",
+    "challenge_reason",
+    "judge_backend",
+    "judge_model",
+    "prompt_hash",
+    "response_hash",
+    "decision",
+    "original_challenge_record_hash",
+    "bypass_marker_hash",
+    "bypass_consumed_record_hash",
+    "bypass_ledger_record_hash",
+    "ts",
+    "previous_record_hash",
+    "record_hash"
+  ],
+  "referenced_terms": [
+    "matrix.fdr-cycle-decision-reason.v1"
+  ],
+  "referenced_details": {
+    "matrix.fdr-cycle-decision-reason.v1": {
+      "kind": "matrix-id",
+      "source": "closed matrix registry",
+      "rules": [
+        "FDR cycle decision matrix validator"
+      ]
+    }
+  },
+  "field_profiles": [
+    "sequence lists",
+    "log digests"
+  ],
+  "field_details": {
+    "sequence lists": {
+      "shape": "array-group",
+      "members": [
+        "tool intent seqs",
+        "tool seqs",
+        "edit seqs"
+      ],
+      "rules": [
+        "coverage cutoff bounded"
+      ]
+    },
+    "log digests": {
+      "shape": "array-group",
+      "members": [
+        "tool intent digest",
+        "tool digest",
+        "edit digest"
+      ],
+      "rules": [
+        "digest binds sequence lists"
+      ]
+    }
+  },
+  "enum_families": [
+    "artifact_state",
+    "artifact_verdict",
+    "decision",
+    "challenge_reason"
+  ],
+  "enum_values": {
+    "artifact_state": [
+      "missing",
+      "invalid",
+      "clean",
+      "findings",
+      "incomplete"
+    ],
+    "artifact_verdict": [
+      "<empty>",
+      "clean",
+      "findings",
+      "incomplete"
+    ],
+    "decision": [
+      "skipped-no-turn-text",
+      "skipped-trivial",
+      "judge-unknown",
+      "judge-clean",
+      "judge-challenge",
+      "blocked-reused",
+      "bypassed"
+    ],
+    "challenge_reason": [
+      "no-normalized-turn-text",
+      "trivial-diff",
+      "judge-clean",
+      "judge-reported-challenge",
+      "reused-blocking-challenge",
+      "approved-quality-bypass",
+      "judge-disabled",
+      "judge-invocation-unverified",
+      "judge-state-isolation-failed-until-repair",
+      "timeout",
+      "nonzero-exit",
+      "invalid-output",
+      "empty-output",
+      "parse-failure"
+    ]
+  },
+  "variant_requirements": [
+    "challenge decision fields",
+    "allow decision sentinels",
+    "blocked decision sentinels",
+    "bypassed decision references"
+  ],
+  "variant_rules": {
+    "challenge decision fields": {
+      "selectors": [
+        "decision=judge-challenge"
+      ],
+      "requires": [
+        "prompt_hash",
+        "response_hash",
+        "challenge_reason"
+      ],
+      "forbids": [
+        "zero prompt_hash"
+      ]
+    },
+    "allow decision sentinels": {
+      "selectors": [
+        "decision=judge-clean or skipped-trivial"
+      ],
+      "requires": [
+        "zero bypass hashes"
+      ],
+      "forbids": [
+        "nonzero bypass hash"
+      ]
+    },
+    "blocked decision sentinels": {
+      "selectors": [
+        "decision=blocked-reused"
+      ],
+      "requires": [
+        "original_challenge_record_hash"
+      ],
+      "forbids": [
+        "zero original_challenge_record_hash"
+      ]
+    },
+    "bypassed decision references": {
+      "selectors": [
+        "decision=bypassed"
+      ],
+      "requires": [
+        "bypass_marker_hash",
+        "bypass_consumed_record_hash",
+        "bypass_ledger_record_hash"
+      ],
+      "forbids": [
+        "zero bypass hashes"
+      ]
+    }
+  },
+  "variants": [
+    "Exact FDR cycle fields",
+    "artifact state/value coupling",
+    "decision-specific `challenge_reason`",
+    "prompt/response/original/bypass hash sentinels",
+    "cycle index/max-cycle rules",
+    "`previous_record_hash` chain",
+    "closed matrix validator `matrix.fdr-cycle-decision-reason.v1`."
+  ],
+  "variant_details": {
+    "Exact FDR cycle fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact FDR cycle fields"
+      ]
+    },
+    "artifact state/value coupling": {
+      "index": 2,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "artifact state/value coupling"
+      ]
+    },
+    "decision-specific `challenge_reason`": {
+      "index": 3,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "decision-specific challenge_reason"
+      ]
+    },
+    "prompt/response/original/bypass hash sentinels": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "prompt/response/original/bypass hash sentinels"
+      ]
+    },
+    "cycle index/max-cycle rules": {
+      "index": 5,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "cycle index/max-cycle rules"
+      ]
+    },
+    "`previous_record_hash` chain": {
+      "index": 6,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "previous_record_hash chain"
+      ]
+    },
+    "closed matrix validator `matrix.fdr-cycle-decision-reason.v1`.": {
+      "index": 7,
+      "kind": "matrix-binding",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "closed matrix validator matrix.fdr-cycle-decision-reason.v1."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "FDR cycle parser plus decision/reason/hash sentinel matrix"
+  ],
+  "profile_hash": "ed661824642fbfb7590ddd91db09d0f41680208b5a2a84d794a5616489144d18"
+}

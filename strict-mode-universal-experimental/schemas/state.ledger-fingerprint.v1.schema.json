@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "schema_id": "state.ledger-fingerprint.v1",
+  "owner": "[State Layout](07-state-layout.md)",
+  "input_family": "ledger fingerprints, protected baseline fingerprints, edit/artifact fingerprints",
+  "hash_fields": [
+
+  ],
+  "required_fields": [
+    "exists",
+    "kind",
+    "dev",
+    "inode",
+    "mode",
+    "size_bytes",
+    "mtime_ns",
+    "content_sha256",
+    "link_target",
+    "tree_hash"
+  ],
+  "referenced_terms": [
+    "readlink",
+    "<install-root>/active"
+  ],
+  "referenced_details": {
+    "readlink": {
+      "kind": "syscall-reference",
+      "source": "ledger fingerprint parser",
+      "rules": [
+        "symlink target hash input"
+      ]
+    },
+    "<install-root>/active": {
+      "kind": "path-template",
+      "source": "install layout",
+      "rules": [
+        "active runtime lexical path"
+      ]
+    }
+  },
+  "field_profiles": [
+
+  ],
+  "field_details": {
+  },
+  "enum_families": [
+    "exists",
+    "kind"
+  ],
+  "enum_values": {
+    "exists": [
+      "0",
+      "1"
+    ],
+    "kind": [
+      "missing",
+      "file",
+      "directory",
+      "symlink"
+    ]
+  },
+  "variant_requirements": [
+    "missing sentinel fields",
+    "file content hash",
+    "directory tree hash",
+    "symlink link target hash"
+  ],
+  "variant_rules": {
+    "missing sentinel fields": {
+      "selectors": [
+        "exists=0",
+        "kind=missing"
+      ],
+      "requires": [
+        "zero dev inode mode size mtime",
+        "empty hashes"
+      ],
+      "forbids": [
+        "content hash populated"
+      ]
+    },
+    "file content hash": {
+      "selectors": [
+        "exists=1",
+        "kind=file"
+      ],
+      "requires": [
+        "content_sha256"
+      ],
+      "forbids": [
+        "tree_hash or link_target"
+      ]
+    },
+    "directory tree hash": {
+      "selectors": [
+        "exists=1",
+        "kind=directory"
+      ],
+      "requires": [
+        "tree_hash"
+      ],
+      "forbids": [
+        "content_sha256"
+      ]
+    },
+    "symlink link target hash": {
+      "selectors": [
+        "exists=1",
+        "kind=symlink"
+      ],
+      "requires": [
+        "link_target"
+      ],
+      "forbids": [
+        "content_sha256"
+      ]
+    }
+  },
+  "variants": [
+    "Exact fingerprint object fields",
+    "`exists` and `kind` coupling",
+    "missing/file/directory/symlink field sentinels",
+    "symlink `readlink` hashing",
+    "directory `tree_hash` only where an owner schema names a sorted child-record input",
+    "active-runtime-link restriction to lexical `<install-root>/active`."
+  ],
+  "variant_details": {
+    "Exact fingerprint object fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact fingerprint object fields"
+      ]
+    },
+    "`exists` and `kind` coupling": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "exists and kind coupling"
+      ]
+    },
+    "missing/file/directory/symlink field sentinels": {
+      "index": 3,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "missing/file/directory/symlink field sentinels"
+      ]
+    },
+    "symlink `readlink` hashing": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "symlink readlink hashing"
+      ]
+    },
+    "directory `tree_hash` only where an owner schema names a sorted child-record input": {
+      "index": 5,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "directory tree_hash only where an owner schema names a sorted child-record input"
+      ]
+    },
+    "active-runtime-link restriction to lexical `<install-root>/active`.": {
+      "index": 6,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "active-runtime-link restriction to lexical <install-root>/active."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "canonical fingerprint parser with kind-specific field rules"
+  ],
+  "profile_hash": "30180760ea038344ef2f23f5e5f46ba5743ad54b29f5bac67c31a5ce5c207ce6"
+}

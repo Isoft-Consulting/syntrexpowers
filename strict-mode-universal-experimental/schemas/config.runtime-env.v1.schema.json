@@ -1,0 +1,211 @@
+{
+  "schema_version": 1,
+  "schema_id": "config.runtime-env.v1",
+  "owner": "[State Layout](07-state-layout.md), [Judge Router](09-judge-router.md)",
+  "input_family": "protected `runtime.env` key/value config",
+  "hash_fields": [
+
+  ],
+  "required_fields": [
+
+  ],
+  "referenced_terms": [
+    "KEY=VALUE",
+    "matrix.runtime-config-domain.v1"
+  ],
+  "referenced_details": {
+    "KEY=VALUE": {
+      "kind": "line-grammar",
+      "source": "runtime env parser",
+      "rules": [
+        "exact assignment grammar"
+      ]
+    },
+    "matrix.runtime-config-domain.v1": {
+      "kind": "matrix-id",
+      "source": "closed matrix registry",
+      "rules": [
+        "runtime config domain validator"
+      ]
+    }
+  },
+  "field_profiles": [
+    "runtime config lines",
+    "integer bounds"
+  ],
+  "field_details": {
+    "runtime config lines": {
+      "shape": "line-list",
+      "members": [
+        "key",
+        "value"
+      ],
+      "rules": [
+        "UTF-8 KEY=VALUE grammar"
+      ]
+    },
+    "integer bounds": {
+      "shape": "bounds-map",
+      "members": [
+        "key",
+        "min",
+        "max"
+      ],
+      "rules": [
+        "invalid integers fall back safe"
+      ]
+    }
+  },
+  "enum_families": [
+    "runtime key",
+    "boolean value",
+    "claude judge model",
+    "codex judge model",
+    "claude worker model",
+    "codex worker model"
+  ],
+  "enum_values": {
+    "runtime key": [
+      "STRICT_NO_ARTIFACT_GATE",
+      "STRICT_CAPTURE_RAW_PAYLOADS",
+      "STRICT_CAPTURE_FULL_TEXT",
+      "STRICT_LOG_VALUE_MAX_BYTES",
+      "STRICT_LOG_MAX_BYTES",
+      "STRICT_LOG_MAX_AGE_DAYS",
+      "STRICT_CONFIRM_MAX_AGE_SEC",
+      "STRICT_CONFIRM_MIN_AGE_SEC",
+      "STRICT_FDR_SOURCE_MAX_BYTES",
+      "STRICT_DIRTY_IGNORED_MAX_FILES",
+      "STRICT_CONFIG_LINE_MAX_BYTES",
+      "STRICT_CLAUDE_JUDGE_MODEL",
+      "STRICT_CODEX_JUDGE_MODEL",
+      "STRICT_JUDGE_TIMEOUT_SEC",
+      "STRICT_CLAUDE_WORKER_MODEL",
+      "STRICT_CODEX_WORKER_MODEL",
+      "STRICT_WORKER_TIMEOUT_SEC",
+      "STRICT_WORKER_CONTEXT_MAX_BYTES",
+      "STRICT_WORKER_RESULT_MAX_BYTES",
+      "STRICT_NO_HAIKU_JUDGE",
+      "STRICT_NO_CODEX_JUDGE",
+      "STRICT_NO_CLAUDE_WORKER",
+      "STRICT_NO_CODEX_WORKER",
+      "STRICT_LEGACY_CLAUDE_OPTOUTS"
+    ],
+    "boolean value": [
+      "0",
+      "1"
+    ],
+    "claude judge model": [
+      "claude-haiku-4-5-20251001"
+    ],
+    "codex judge model": [
+      "gpt-5.3-codex-spark"
+    ],
+    "claude worker model": [
+      "claude-haiku-4-5-20251001"
+    ],
+    "codex worker model": [
+      "gpt-5.3-codex-spark"
+    ]
+  },
+  "variant_requirements": [
+    "key-specific value parser and safe fallback behavior"
+  ],
+  "variant_rules": {
+    "key-specific value parser and safe fallback behavior": {
+      "selectors": [
+        "runtime key selected"
+      ],
+      "requires": [
+        "value parser bound to key",
+        "safe default on invalid"
+      ],
+      "forbids": [
+        "unknown key accepted"
+      ]
+    }
+  },
+  "variants": [
+    "UTF-8 line grammar",
+    "blank/comment handling",
+    "exact `KEY=VALUE` syntax",
+    "duplicate-key rejection",
+    "shell syntax rejection",
+    "whitelist key domains and integer/bool/model bounds for judge and worker routes",
+    "resolution source rules",
+    "closed matrix validator `matrix.runtime-config-domain.v1`."
+  ],
+  "variant_details": {
+    "UTF-8 line grammar": {
+      "index": 1,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "UTF-8 line grammar"
+      ]
+    },
+    "blank/comment handling": {
+      "index": 2,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "blank/comment handling"
+      ]
+    },
+    "exact `KEY=VALUE` syntax": {
+      "index": 3,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "exact KEY=VALUE syntax"
+      ]
+    },
+    "duplicate-key rejection": {
+      "index": 4,
+      "kind": "negative-rule",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "duplicate-key rejection"
+      ]
+    },
+    "shell syntax rejection": {
+      "index": 5,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "shell syntax rejection"
+      ]
+    },
+    "whitelist key domains and integer/bool/model bounds for judge and worker routes": {
+      "index": 6,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "whitelist key domains and integer/bool/model bounds for judge and worker routes"
+      ]
+    },
+    "resolution source rules": {
+      "index": 7,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "resolution source rules"
+      ]
+    },
+    "closed matrix validator `matrix.runtime-config-domain.v1`.": {
+      "index": 8,
+      "kind": "matrix-binding",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "closed matrix validator matrix.runtime-config-domain.v1."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "protected text parser plus runtime config domain matrix"
+  ],
+  "profile_hash": "8a0390a7e6cd2ab89286c30654fcd671a94cbc5dca136b84508d512a804b59aa"
+}

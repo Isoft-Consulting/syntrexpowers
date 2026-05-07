@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "schema_id": "approval.marker.v1",
+  "owner": "[State Layout](07-state-layout.md)",
+  "input_family": "`confirm-*`, `bypass-*`, consumed tombstones",
+  "hash_fields": [
+    "marker_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "kind",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "approval_hash",
+    "pending_record_hash",
+    "next_user_prompt_marker",
+    "approval_prompt_seq",
+    "approval_log_record_hash",
+    "source",
+    "created_at",
+    "expires_at",
+    "marker_hash"
+  ],
+  "referenced_terms": [
+    "user-prompt-hook"
+  ],
+  "referenced_details": {
+    "user-prompt-hook": {
+      "kind": "hook-source",
+      "source": "approval marker parser",
+      "rules": [
+        "fixed marker source"
+      ]
+    }
+  },
+  "field_profiles": [
+
+  ],
+  "field_details": {
+  },
+  "enum_families": [
+    "kind",
+    "source"
+  ],
+  "enum_values": {
+    "kind": [
+      "destructive-confirm",
+      "quality-bypass"
+    ],
+    "source": [
+      "user-prompt-hook"
+    ]
+  },
+  "variant_requirements": [
+    "destructive marker fields",
+    "quality-bypass marker fields",
+    "consumed tombstone preserves marker bytes"
+  ],
+  "variant_rules": {
+    "destructive marker fields": {
+      "selectors": [
+        "kind=destructive-confirm"
+      ],
+      "requires": [
+        "approval_prompt_seq",
+        "approval_log_record_hash"
+      ],
+      "forbids": [
+        "gate_context"
+      ]
+    },
+    "quality-bypass marker fields": {
+      "selectors": [
+        "kind=quality-bypass"
+      ],
+      "requires": [
+        "gate_context",
+        "approval_prompt_seq"
+      ],
+      "forbids": [
+        "normalized_command_hash"
+      ]
+    },
+    "consumed tombstone preserves marker bytes": {
+      "selectors": [
+        "consumed tombstone"
+      ],
+      "requires": [
+        "original marker bytes",
+        "marker_hash unchanged"
+      ],
+      "forbids": [
+        "rewritten marker payload"
+      ]
+    }
+  },
+  "variants": [
+    "Exact marker fields",
+    "destructive and quality-bypass `kind` variants",
+    "source fixed to `user-prompt-hook`",
+    "marker filename/hash binding",
+    "consumed tombstone as preserved marker bytes",
+    "consumed audit and ledger relation validation."
+  ],
+  "variant_details": {
+    "Exact marker fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact marker fields"
+      ]
+    },
+    "destructive and quality-bypass `kind` variants": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "destructive and quality-bypass kind variants"
+      ]
+    },
+    "source fixed to `user-prompt-hook`": {
+      "index": 3,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "source fixed to user-prompt-hook"
+      ]
+    },
+    "marker filename/hash binding": {
+      "index": 4,
+      "kind": "filename-binding",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "marker filename/hash binding"
+      ]
+    },
+    "consumed tombstone as preserved marker bytes": {
+      "index": 5,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "consumed tombstone as preserved marker bytes"
+      ]
+    },
+    "consumed audit and ledger relation validation.": {
+      "index": 6,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "consumed audit and ledger relation validation."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "marker parser, tombstone parser, and consumed-audit/ledger binder"
+  ],
+  "profile_hash": "c930e785799d9e797df5d766718812821e5c44d317d39280b68048d8af50313a"
+}

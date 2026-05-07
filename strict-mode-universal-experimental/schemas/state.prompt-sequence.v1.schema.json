@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "schema_id": "state.prompt-sequence.v1",
+  "owner": "[State Layout](07-state-layout.md)",
+  "input_family": "`prompt-seq-<provider>-<sid>.json`",
+  "hash_fields": [
+    "sequence_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "last_prompt_seq",
+    "last_prompt_event_hash",
+    "created_at",
+    "updated_at",
+    "sequence_hash"
+  ],
+  "referenced_terms": [
+
+  ],
+  "referenced_details": {
+  },
+  "field_profiles": [
+
+  ],
+  "field_details": {
+  },
+  "enum_families": [
+
+  ],
+  "enum_values": {
+  },
+  "variant_requirements": [
+    "zero prompt-event hash sentinel",
+    "prompt-event tail binding"
+  ],
+  "variant_rules": {
+    "zero prompt-event hash sentinel": {
+      "selectors": [
+        "last_prompt_seq=0"
+      ],
+      "requires": [
+        "last_prompt_event_hash=64-zero"
+      ],
+      "forbids": [
+        "nonzero hash without events"
+      ]
+    },
+    "prompt-event tail binding": {
+      "selectors": [
+        "last_prompt_seq>0"
+      ],
+      "requires": [
+        "last_prompt_event_hash matches prompt-event tail"
+      ],
+      "forbids": [
+        "stale tail hash"
+      ]
+    }
+  },
+  "variants": [
+    "Exact prompt sequence fields",
+    "non-negative `last_prompt_seq`",
+    "`last_prompt_event_hash` zero sentinel for no events",
+    "prompt-event tail binding",
+    "`sequence_hash` recomputation."
+  ],
+  "variant_details": {
+    "Exact prompt sequence fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact prompt sequence fields"
+      ]
+    },
+    "non-negative `last_prompt_seq`": {
+      "index": 2,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "non-negative last_prompt_seq"
+      ]
+    },
+    "`last_prompt_event_hash` zero sentinel for no events": {
+      "index": 3,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "last_prompt_event_hash zero sentinel for no events"
+      ]
+    },
+    "prompt-event tail binding": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "prompt-event tail binding"
+      ]
+    },
+    "`sequence_hash` recomputation.": {
+      "index": 5,
+      "kind": "hash-recompute",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "sequence_hash recomputation."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "prompt sequence parser and prompt-event tail validator"
+  ],
+  "profile_hash": "cdaa42c26f999fdf718baf72c52528f1d7b009a46d887a798dfb09103f0d81f2"
+}

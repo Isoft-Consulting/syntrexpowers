@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "matrix_id": "matrix.ledger-scope-writer-target-operation.v1",
+  "owner": "[State Layout](07-state-layout.md)",
+  "dimensions": [
+    "`ledger_scope` (`session`, `global`), writer enum, target class enum, operation enum, tuple-presence rule, and related-record hash requirements",
+    "`strict-hook` writes session sequence/log/baseline/FDR-cycle/pending/marker/tombstone plus global approval-audit records",
+    "`strict-fdr` writes only import edit/sequence state plus FDR artifacts",
+    "`strict-judge` writes only nested tokens",
+    "`strict-worker` writes only session worker context-pack, invocation, and result records",
+    "`install`, `rollback`, and `uninstall` write only global install target classes",
+    "`cleanup` may append `expired` approval-audit-log records for expired approval state, expire pending/marker state, and delete expired nested-token state without approval audit records",
+    "`repair` may write checkpoint records and matching `operation=\"checkpoint\"` ledger records only for `prompt-event-log`, `permission-decision-log`, `ledger`, and `fdr-cycle-log`, plus clean verified stale pre-activation state only."
+  ],
+  "allowed_rows": [
+    "Session-scoped target class with session scope, full provider/session/cwd/project tuple, and an allowed session writer/operation",
+    "strict-worker append of worker-context-pack, worker-invocation-log, or worker-result-log with full provider/session/cwd/project tuple and advisory-only related record binding",
+    "global install target class with global scope, empty tuple, and `install`, `rollback`, or `uninstall` writer",
+    "global approval-audit-log append tied to the exact approval record session tuple by strict-hook or by cleanup for expired approval records",
+    "checkpoint operation on a checkpointable target class with matching `state.checkpoint.v1`, correct session/global tuple presence, 64-zero `related_record_hash`, and compaction old/new fingerprints",
+    "cleanup expiry of pending approval or approval marker state with expired approval audit plus session ledger delete",
+    "cleanup expiry of nested-token state with token TTL plus session ledger delete and no approval audit",
+    "repair checkpoint or verified stale pre-activation installer cleanup."
+  ],
+  "forbidden_row_classes": [
+    "Session target with global scope",
+    "global install target with session scope",
+    "provider tuple missing on session records",
+    "ordinary global tuple populated without a tied approval",
+    "global checkpoint with populated provider/session/cwd/project tuple",
+    "worker target with non-strict-worker writer",
+    "strict-worker writing approval, install, tool/edit, FDR, judge, or protected config state",
+    "worker target with global scope",
+    "nested-token expiry requiring approval-audit-log evidence",
+    "`repair` creating approval evidence",
+    "`cleanup` modifying install state",
+    "`strict-fdr` writing approval or install state",
+    "`strict-judge` writing anything except nested-token records",
+    "`checkpoint` without matching `state.checkpoint.v1`",
+    "checkpoint with nonzero `related_record_hash`",
+    "checkpoint on non-checkpointable target class, including `baseline`, `approval-audit-log`, `consumed-tombstone`, `fdr-artifact`, `worker-context-pack`, `worker-invocation-log`, or `worker-result-log`",
+    "append-only logs using non-`append` outside checkpoint compaction",
+    "consumed tombstone using non-`rename`",
+    "active-runtime-link outside lexical `<install-root>/active`."
+  ],
+  "fixture_requirements": [
+    "Prevent valid enum fields from forming impossible trusted-state mutations"
+  ],
+  "profile_hash": "bb68ac4221f2a977884dccff81c611dcd20aacafbbbb44e9d7d966b0c1f61258"
+}

@@ -1,0 +1,269 @@
+{
+  "schema_version": 1,
+  "schema_id": "worker.invocation.v1",
+  "owner": "[Bounded Worker Delegation](08-shared-core/11-bounded-worker-delegation.md)",
+  "input_family": "`worker-invocations-*`",
+  "hash_fields": [
+    "record_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "worker_backend",
+    "worker_model",
+    "task_kind",
+    "scope_digest",
+    "context_pack_hash",
+    "prompt_hash",
+    "input_hash",
+    "selected_source_paths_hash",
+    "allowed_output_kind",
+    "timeout_ms",
+    "output_hash",
+    "result_hash",
+    "decision",
+    "reason",
+    "started_at",
+    "completed_at",
+    "previous_record_hash",
+    "record_hash"
+  ],
+  "referenced_terms": [
+
+  ],
+  "referenced_details": {
+  },
+  "field_profiles": [
+    "hash bindings",
+    "model route"
+  ],
+  "field_details": {
+    "hash bindings": {
+      "shape": "hash-group",
+      "members": [
+        "context_pack_hash",
+        "prompt_hash",
+        "input_hash",
+        "selected_source_paths_hash",
+        "output_hash",
+        "result_hash",
+        "record_hash"
+      ],
+      "rules": [
+        "lowercase SHA-256",
+        "stale scope rejected"
+      ]
+    },
+    "model route": {
+      "shape": "object-fields",
+      "members": [
+        "provider",
+        "worker_backend",
+        "worker_model",
+        "task_kind"
+      ],
+      "rules": [
+        "provider-bound fixture-proven route"
+      ]
+    }
+  },
+  "enum_families": [
+    "provider",
+    "worker_backend",
+    "task_kind",
+    "allowed_output_kind",
+    "decision",
+    "reason"
+  ],
+  "enum_values": {
+    "provider": [
+      "claude",
+      "codex"
+    ],
+    "worker_backend": [
+      "claude",
+      "codex",
+      "local-mock",
+      "unknown"
+    ],
+    "task_kind": [
+      "intra-file-rewrite",
+      "file-review",
+      "stub-scan",
+      "fdr-sweep",
+      "research-summary",
+      "test-fix-suggestion"
+    ],
+    "allowed_output_kind": [
+      "patch",
+      "findings",
+      "rewrite-suggestion",
+      "review-note",
+      "unknown"
+    ],
+    "decision": [
+      "accepted",
+      "rejected",
+      "unknown"
+    ],
+    "reason": [
+      "completed",
+      "timeout",
+      "nonzero-exit",
+      "invalid-output",
+      "scope-mismatch",
+      "route-unverified",
+      "state-isolation-failed",
+      "stale-context",
+      "hash-mismatch"
+    ]
+  },
+  "variant_requirements": [
+    "fresh scope binding",
+    "worker cannot authorize",
+    "provider-bound model route"
+  ],
+  "variant_rules": {
+    "fresh scope binding": {
+      "selectors": [
+        "result_hash nonzero"
+      ],
+      "requires": [
+        "result context_pack_hash and scope_digest match invocation"
+      ],
+      "forbids": [
+        "stale result hash or stale context hash"
+      ]
+    },
+    "worker cannot authorize": {
+      "selectors": [
+        "decision selected"
+      ],
+      "requires": [
+        "advisory evidence only"
+      ],
+      "forbids": [
+        "allow, bypass, approval, FDR clean, or Stop authority"
+      ]
+    },
+    "provider-bound model route": {
+      "selectors": [
+        "worker_backend selected"
+      ],
+      "requires": [
+        "backend matches provider",
+        "model allowlist",
+        "worker-invocation fixture proof"
+      ],
+      "forbids": [
+        "cross-provider route",
+        "provider env override"
+      ]
+    }
+  },
+  "variants": [
+    "Exact invocation fields",
+    "provider session cwd project tuple",
+    "backend and model route domain",
+    "task kind and allowed output kind domains",
+    "context, prompt, input, selected source paths, output, result, and record hash binding",
+    "timeout and completion state bounds",
+    "decision and reason coupling",
+    "provider-bound route enforcement",
+    "previous record hash chain",
+    "advisory-only authority."
+  ],
+  "variant_details": {
+    "Exact invocation fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact invocation fields"
+      ]
+    },
+    "provider session cwd project tuple": {
+      "index": 2,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "provider session cwd project tuple"
+      ]
+    },
+    "backend and model route domain": {
+      "index": 3,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "backend and model route domain"
+      ]
+    },
+    "task kind and allowed output kind domains": {
+      "index": 4,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "task kind and allowed output kind domains"
+      ]
+    },
+    "context, prompt, input, selected source paths, output, result, and record hash binding": {
+      "index": 5,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "context, prompt, input, selected source paths, output, result, and record hash binding"
+      ]
+    },
+    "timeout and completion state bounds": {
+      "index": 6,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "timeout and completion state bounds"
+      ]
+    },
+    "decision and reason coupling": {
+      "index": 7,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "decision and reason coupling"
+      ]
+    },
+    "provider-bound route enforcement": {
+      "index": 8,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "provider-bound route enforcement"
+      ]
+    },
+    "previous record hash chain": {
+      "index": 9,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "previous record hash chain"
+      ]
+    },
+    "advisory-only authority.": {
+      "index": 10,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "advisory-only authority."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "invocation parser, provider-bound model route validator, and context/result hash binder"
+  ],
+  "profile_hash": "df8a5883a3fb6bd6efa697a23537c986159d2fbbdfec9f7b62f28b5014a6b1e5"
+}

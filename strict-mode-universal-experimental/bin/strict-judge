@@ -1,0 +1,35 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "optparse"
+
+provider = nil
+begin
+  OptionParser.new do |opts|
+    opts.on("--provider PROVIDER") { |value| provider = value }
+  end.parse!(ARGV)
+rescue OptionParser::ParseError => e
+  warn "strict-judge usage error: #{e.message}"
+  exit 2
+end
+
+backend = case provider
+          when "claude"
+            "haiku"
+          when "codex"
+            "gpt-5.3-codex-spark"
+          else
+            "unknown"
+          end
+
+puts JSON.pretty_generate({
+  "schema_version" => 1,
+  "verdict" => "invalid",
+  "reason" => "judge invocation is fixture-gated in the discovery skeleton",
+  "confidence" => "0.00",
+  "backend" => backend,
+  "findings" => []
+})
+
+exit(provider ? 0 : 1)

@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "schema_id": "judge.response.v1",
+  "owner": "[Judge Router](09-judge-router.md)",
+  "input_family": "`strict-judge` JSON response",
+  "hash_fields": [
+    "response_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "verdict",
+    "reason",
+    "findings",
+    "reviewed_scope_digest",
+    "reviewed_artifact_hash",
+    "confidence",
+    "model",
+    "backend",
+    "response_hash"
+  ],
+  "referenced_terms": [
+    "0..1"
+  ],
+  "referenced_details": {
+    "0..1": {
+      "kind": "numeric-bound",
+      "source": "judge response parser",
+      "rules": [
+        "confidence inclusive decimal range"
+      ]
+    }
+  },
+  "field_profiles": [
+    "findings"
+  ],
+  "field_details": {
+    "findings": {
+      "shape": "array",
+      "members": [
+        "severity",
+        "source",
+        "message"
+      ],
+      "rules": [
+        "challenge verdict requires findings"
+      ]
+    }
+  },
+  "enum_families": [
+    "verdict",
+    "reason",
+    "findings.severity",
+    "findings.source",
+    "backend"
+  ],
+  "enum_values": {
+    "verdict": [
+      "clean",
+      "challenge",
+      "unknown"
+    ],
+    "reason": [
+      "clean",
+      "challenge",
+      "judge-disabled",
+      "judge-invocation-unverified",
+      "judge-state-isolation-failed-until-repair",
+      "timeout",
+      "nonzero-exit",
+      "invalid-output",
+      "empty-output",
+      "parse-failure"
+    ],
+    "findings.severity": [
+      "critical",
+      "high",
+      "medium",
+      "low",
+      "info"
+    ],
+    "findings.source": [
+      "artifact",
+      "assistant-text",
+      "scope-metadata"
+    ],
+    "backend": [
+      "claude",
+      "codex",
+      "unknown"
+    ]
+  },
+  "variant_requirements": [
+    "challenge findings required",
+    "allow and invalid findings empty",
+    "confidence decimal bounds"
+  ],
+  "variant_rules": {
+    "challenge findings required": {
+      "selectors": [
+        "verdict=challenge"
+      ],
+      "requires": [
+        "findings non-empty",
+        "reason=challenge"
+      ],
+      "forbids": [
+        "findings empty"
+      ]
+    },
+    "allow and invalid findings empty": {
+      "selectors": [
+        "verdict=clean or unknown"
+      ],
+      "requires": [
+        "findings empty"
+      ],
+      "forbids": [
+        "findings non-empty"
+      ]
+    },
+    "confidence decimal bounds": {
+      "selectors": [
+        "confidence present"
+      ],
+      "requires": [
+        "decimal 0..1 up to 3 fractional digits"
+      ],
+      "forbids": [
+        "out-of-range confidence"
+      ]
+    }
+  },
+  "variants": [
+    "Exact response fields",
+    "verdict enum",
+    "closed reason enum coupled to verdict",
+    "finding schema for challenge only",
+    "confidence canonical decimal `0..1` with at most three fractional digits",
+    "model/backend binding",
+    "scope/artifact hash equality",
+    "`response_hash` recomputation."
+  ],
+  "variant_details": {
+    "Exact response fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact response fields"
+      ]
+    },
+    "verdict enum": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "verdict enum"
+      ]
+    },
+    "closed reason enum coupled to verdict": {
+      "index": 3,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "closed reason enum coupled to verdict"
+      ]
+    },
+    "finding schema for challenge only": {
+      "index": 4,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "finding schema for challenge only"
+      ]
+    },
+    "confidence canonical decimal `0..1` with at most three fractional digits": {
+      "index": 5,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "confidence canonical decimal 0..1 with at most three fractional digits"
+      ]
+    },
+    "model/backend binding": {
+      "index": 6,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "model/backend binding"
+      ]
+    },
+    "scope/artifact hash equality": {
+      "index": 7,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "scope/artifact hash equality"
+      ]
+    },
+    "`response_hash` recomputation.": {
+      "index": 8,
+      "kind": "hash-recompute",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "response_hash recomputation."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "judge response parser with bounded confidence decimal and reason/verdict coupling"
+  ],
+  "profile_hash": "7831c69ab71c7c42b8e08e1d85fc9982d0575fae19057904c8303206a420d6f1"
+}

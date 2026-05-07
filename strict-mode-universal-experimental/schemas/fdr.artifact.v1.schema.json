@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "schema_id": "fdr.artifact.v1",
+  "owner": "[Stop Guard](08-shared-core/04-stop-guard.md)",
+  "input_family": "normalized `json strict-fdr-v1` state-root artifact",
+  "hash_fields": [
+    "imported_artifact_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "review_generated_at",
+    "imported_at",
+    "turn_marker",
+    "coverage_cutoff_tool_intent_seq",
+    "coverage_cutoff_tool_seq",
+    "coverage_cutoff_edit_seq",
+    "tool_intent_seq_min",
+    "tool_intent_seq_max",
+    "tool_intent_seq_list",
+    "tool_intent_log_digest",
+    "tool_seq_min",
+    "tool_seq_max",
+    "tool_seq_list",
+    "tool_log_digest",
+    "edit_seq_min",
+    "edit_seq_max",
+    "edit_seq_list",
+    "edit_log_digest",
+    "edited_paths",
+    "deleted_paths",
+    "renamed_paths",
+    "findings",
+    "finding_count",
+    "verdict",
+    "reviewer",
+    "import_provenance"
+  ],
+  "referenced_terms": [
+    "json strict-fdr-v1",
+    "fdr.import-provenance.v1"
+  ],
+  "referenced_details": {
+    "json strict-fdr-v1": {
+      "kind": "artifact-format",
+      "source": "FDR artifact parser",
+      "rules": [
+        "strict FDR JSON format marker"
+      ]
+    },
+    "fdr.import-provenance.v1": {
+      "kind": "schema-id",
+      "source": "schema registry",
+      "rules": [
+        "nested import provenance schema"
+      ]
+    }
+  },
+  "field_profiles": [
+    "edited_paths",
+    "deleted_paths",
+    "renamed_paths",
+    "findings",
+    "import_provenance"
+  ],
+  "field_details": {
+    "edited_paths": {
+      "shape": "array",
+      "members": [
+        "path",
+        "action",
+        "fingerprint"
+      ],
+      "rules": [
+        "edit action create or modify"
+      ]
+    },
+    "deleted_paths": {
+      "shape": "array",
+      "members": [
+        "path",
+        "action",
+        "old fingerprint"
+      ],
+      "rules": [
+        "delete action only"
+      ]
+    },
+    "renamed_paths": {
+      "shape": "array",
+      "members": [
+        "old_path",
+        "new_path",
+        "action"
+      ],
+      "rules": [
+        "rename action only"
+      ]
+    },
+    "findings": {
+      "shape": "array",
+      "members": [
+        "severity",
+        "source",
+        "message",
+        "evidence"
+      ],
+      "rules": [
+        "verdict coupling"
+      ]
+    },
+    "import_provenance": {
+      "shape": "nested-object",
+      "members": [
+        "fdr.import-provenance.v1"
+      ],
+      "rules": [
+        "required for imported artifacts"
+      ]
+    }
+  },
+  "enum_families": [
+    "edited path action",
+    "deleted path action",
+    "renamed path action",
+    "findings.severity",
+    "verdict"
+  ],
+  "enum_values": {
+    "edited path action": [
+      "create",
+      "modify"
+    ],
+    "deleted path action": [
+      "delete"
+    ],
+    "renamed path action": [
+      "rename"
+    ],
+    "findings.severity": [
+      "critical",
+      "high",
+      "medium",
+      "low",
+      "info"
+    ],
+    "verdict": [
+      "clean",
+      "findings",
+      "incomplete"
+    ]
+  },
+  "variant_requirements": [
+    "verdict and finding-count coupling",
+    "coverage cutoff coupling",
+    "import provenance nested object required",
+    "reviewer diagnostic bounded string"
+  ],
+  "variant_rules": {
+    "verdict and finding-count coupling": {
+      "selectors": [
+        "verdict selected"
+      ],
+      "requires": [
+        "finding_count equals findings length"
+      ],
+      "forbids": [
+        "clean with nonzero finding_count"
+      ]
+    },
+    "coverage cutoff coupling": {
+      "selectors": [
+        "artifact generated"
+      ],
+      "requires": [
+        "coverage cutoff seqs",
+        "seq lists bounded"
+      ],
+      "forbids": [
+        "seq beyond cutoff"
+      ]
+    },
+    "import provenance nested object required": {
+      "selectors": [
+        "imported artifact"
+      ],
+      "requires": [
+        "import_provenance fdr.import-provenance.v1"
+      ],
+      "forbids": [
+        "missing import_provenance"
+      ]
+    },
+    "reviewer diagnostic bounded string": {
+      "selectors": [
+        "reviewer present"
+      ],
+      "requires": [
+        "bounded reviewer string"
+      ],
+      "forbids": [
+        "oversized reviewer diagnostic"
+      ]
+    }
+  },
+  "variants": [
+    "Exact `json strict-fdr-v1` top-level fields",
+    "coverage cutoff/list/min/max/log-digest coupling",
+    "edited/deleted/renamed path object variants",
+    "finding schema and verdict/finding-count coupling",
+    "`import_provenance` using `fdr.import-provenance.v1`",
+    "normalized artifact hash recomputation."
+  ],
+  "variant_details": {
+    "Exact `json strict-fdr-v1` top-level fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact json strict-fdr-v1 top-level fields"
+      ]
+    },
+    "coverage cutoff/list/min/max/log-digest coupling": {
+      "index": 2,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "coverage cutoff/list/min/max/log-digest coupling"
+      ]
+    },
+    "edited/deleted/renamed path object variants": {
+      "index": 3,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "edited/deleted/renamed path object variants"
+      ]
+    },
+    "finding schema and verdict/finding-count coupling": {
+      "index": 4,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "finding schema and verdict/finding-count coupling"
+      ]
+    },
+    "`import_provenance` using `fdr.import-provenance.v1`": {
+      "index": 5,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "import_provenance using fdr.import-provenance.v1"
+      ]
+    },
+    "normalized artifact hash recomputation.": {
+      "index": 6,
+      "kind": "hash-recompute",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "normalized artifact hash recomputation."
+      ]
+    }
+  },
+  "nested_profiles": [
+    "fdr.import-provenance.v1"
+  ],
+  "fixture_requirements": [
+    "artifact parser, freshness validator, and finding domain validator"
+  ],
+  "profile_hash": "d77ee3a6b53061df6469f6e5b64cef0bade6495cc2f3d271a31854a9efb85fe5"
+}

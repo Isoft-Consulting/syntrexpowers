@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "schema_id": "config.filesystem-read-allowlist.v1",
+  "owner": "[Hook Event Matrix](03-hook-event-matrix.md)",
+  "input_family": "`filesystem-read-allowlist.txt`",
+  "hash_fields": [
+
+  ],
+  "required_fields": [
+
+  ],
+  "referenced_terms": [
+    "read",
+    "read-tree",
+    "/**",
+    "dev+inode"
+  ],
+  "referenced_details": {
+    "read": {
+      "kind": "directive-literal",
+      "source": "filesystem read allowlist parser",
+      "rules": [
+        "file read directive"
+      ]
+    },
+    "read-tree": {
+      "kind": "directive-literal",
+      "source": "filesystem read allowlist parser",
+      "rules": [
+        "tree read directive"
+      ]
+    },
+    "/**": {
+      "kind": "grammar-token",
+      "source": "filesystem read allowlist parser",
+      "rules": [
+        "tree suffix grammar"
+      ]
+    },
+    "dev+inode": {
+      "kind": "identity-token",
+      "source": "filesystem read allowlist parser",
+      "rules": [
+        "protected inode rejection identity"
+      ]
+    }
+  },
+  "field_profiles": [
+    "directive lines"
+  ],
+  "field_details": {
+    "directive lines": {
+      "shape": "line-list",
+      "members": [
+        "directive",
+        "target path"
+      ],
+      "rules": [
+        "read-only allowlisting"
+      ]
+    }
+  },
+  "enum_families": [
+    "directive kind"
+  ],
+  "enum_values": {
+    "directive kind": [
+      "read",
+      "read-tree"
+    ]
+  },
+  "variant_requirements": [
+    "read file target",
+    "read-tree tree target"
+  ],
+  "variant_rules": {
+    "read file target": {
+      "selectors": [
+        "directive=read"
+      ],
+      "requires": [
+        "absolute file path"
+      ],
+      "forbids": [
+        "write or execute access"
+      ]
+    },
+    "read-tree tree target": {
+      "selectors": [
+        "directive=read-tree"
+      ],
+      "requires": [
+        "absolute tree path",
+        "/** suffix"
+      ],
+      "forbids": [
+        "protected root"
+      ]
+    }
+  },
+  "variants": [
+    "UTF-8 line grammar",
+    "directives `read` and `read-tree`",
+    "absolute normalized path rules",
+    "`/**` grammar suffix handling",
+    "protected-root and protected `dev+inode` rejection",
+    "no write/execute/delete/chmod allowlisting."
+  ],
+  "variant_details": {
+    "UTF-8 line grammar": {
+      "index": 1,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "UTF-8 line grammar"
+      ]
+    },
+    "directives `read` and `read-tree`": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "directives read and read-tree"
+      ]
+    },
+    "absolute normalized path rules": {
+      "index": 3,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "absolute normalized path rules"
+      ]
+    },
+    "`/**` grammar suffix handling": {
+      "index": 4,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "/** grammar suffix handling"
+      ]
+    },
+    "protected-root and protected `dev+inode` rejection": {
+      "index": 5,
+      "kind": "negative-rule",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "protected-root and protected dev+inode rejection"
+      ]
+    },
+    "no write/execute/delete/chmod allowlisting.": {
+      "index": 6,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "no write/execute/delete/chmod allowlisting."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "protected text parser and filesystem read allowlist validator"
+  ],
+  "profile_hash": "0da0e9e50d59971527f2392f63eaa2f6919a9cbc2915f7e3c27297075e03157a"
+}

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "matrix_id": "matrix.approval-log-action-source.v1",
+  "owner": "[State Layout](07-state-layout.md)",
+  "dimensions": [
+    "Log (`destructive`, `bypass`, `optout`), action, source, `prompt_seq`, required extra-field set, pending/marker relation, and ledger relation",
+    "Destructive pairs: `blocked/pre-tool-hook`, `confirmed/user-prompt-hook`, `consumed/pre-tool-hook`, `expired/user-prompt-hook|cleanup`",
+    "Bypass pairs: `blocked/stop-hook`, `approved/user-prompt-hook`, `consumed/stop-hook`, `resolved/stop-hook`, `expired/user-prompt-hook|cleanup`",
+    "Opt-out pairs: `pending/user-prompt-hook|stop-hook`, `approved/user-prompt-hook`, `expired/user-prompt-hook|cleanup`."
+  ],
+  "allowed_rows": [
+    "Destructive blocked by pre-tool-hook",
+    "destructive confirmed by user-prompt-hook",
+    "destructive consumed by pre-tool-hook with tombstone evidence",
+    "destructive expired by user-prompt-hook or cleanup",
+    "bypass blocked, consumed, or resolved by stop-hook",
+    "bypass approved by user-prompt-hook",
+    "bypass expired by user-prompt-hook or cleanup",
+    "opt-out pending by user-prompt-hook or stop-hook",
+    "opt-out approved by user-prompt-hook",
+    "opt-out expired by user-prompt-hook or cleanup."
+  ],
+  "forbidden_row_classes": [
+    "Approval from `cleanup`",
+    "consume from `user-prompt-hook`",
+    "nonzero `prompt_seq` outside `user-prompt-hook`",
+    "missing consumed tombstone fields on `consumed`",
+    "resolved fields on non-`resolved`",
+    "approval without exact pending record hash and next prompt marker",
+    "expired delete without matching ledger mutation."
+  ],
+  "fixture_requirements": [
+    "Prevent forged approval, consume, expire, and cleanup audit records"
+  ],
+  "profile_hash": "aabc5c3c25a39c6bcd9bd780e60064d1c5d71579781de4cc34ee6bae66185016"
+}

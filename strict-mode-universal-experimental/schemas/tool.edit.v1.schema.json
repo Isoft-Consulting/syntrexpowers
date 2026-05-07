@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "schema_id": "tool.edit.v1",
+  "owner": "[Record Edit](08-shared-core/03-record-edit.md)",
+  "input_family": "`edits-*`",
+  "hash_fields": [
+    "record_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "seq",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "turn_marker",
+    "path",
+    "old_path",
+    "new_path",
+    "action",
+    "source",
+    "ts",
+    "record_hash"
+  ],
+  "referenced_terms": [
+
+  ],
+  "referenced_details": {
+  },
+  "field_profiles": [
+
+  ],
+  "field_details": {
+  },
+  "enum_families": [
+    "action",
+    "source"
+  ],
+  "enum_values": {
+    "action": [
+      "create",
+      "modify",
+      "delete",
+      "rename"
+    ],
+    "source": [
+      "payload",
+      "patch",
+      "dirty-snapshot"
+    ]
+  },
+  "variant_requirements": [
+    "create path fields",
+    "modify path fields",
+    "delete path fields",
+    "rename old and new path fields"
+  ],
+  "variant_rules": {
+    "create path fields": {
+      "selectors": [
+        "action=create"
+      ],
+      "requires": [
+        "path",
+        "new_path=path"
+      ],
+      "forbids": [
+        "old_path populated"
+      ]
+    },
+    "modify path fields": {
+      "selectors": [
+        "action=modify"
+      ],
+      "requires": [
+        "path"
+      ],
+      "forbids": [
+        "old_path or new_path populated"
+      ]
+    },
+    "delete path fields": {
+      "selectors": [
+        "action=delete"
+      ],
+      "requires": [
+        "old_path=path"
+      ],
+      "forbids": [
+        "new_path populated"
+      ]
+    },
+    "rename old and new path fields": {
+      "selectors": [
+        "action=rename"
+      ],
+      "requires": [
+        "old_path",
+        "new_path"
+      ],
+      "forbids": [
+        "missing old_path or new_path"
+      ]
+    }
+  },
+  "variants": [
+    "Exact edit fields",
+    "`action` and `source` domains",
+    "path/old_path/new_path relation by action",
+    "turn marker semantics",
+    "deleted and rename-old path retention for FDR scope",
+    "`record_hash` recomputation."
+  ],
+  "variant_details": {
+    "Exact edit fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact edit fields"
+      ]
+    },
+    "`action` and `source` domains": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "action and source domains"
+      ]
+    },
+    "path/old_path/new_path relation by action": {
+      "index": 3,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "path/old_path/new_path relation by action"
+      ]
+    },
+    "turn marker semantics": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "turn marker semantics"
+      ]
+    },
+    "deleted and rename-old path retention for FDR scope": {
+      "index": 5,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "deleted and rename-old path retention for FDR scope"
+      ]
+    },
+    "`record_hash` recomputation.": {
+      "index": 6,
+      "kind": "hash-recompute",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "record_hash recomputation."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "edit parser and current-turn scope validator"
+  ],
+  "profile_hash": "8b7a349de84fb6ad082f486e8a2b6e058e6ba1d51633cac9af78e50d7dd37041"
+}

@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "schema_id": "worker.context-pack.v1",
+  "owner": "[Bounded Worker Delegation](08-shared-core/11-bounded-worker-delegation.md)",
+  "input_family": "`worker-context-packs-*`",
+  "hash_fields": [
+    "context_pack_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "provider",
+    "session_key",
+    "raw_session_hash",
+    "cwd",
+    "project_dir",
+    "task_kind",
+    "scope_digest",
+    "allowed_paths",
+    "source_fragments",
+    "constraints",
+    "expected_output_kind",
+    "model_route_intent",
+    "input_token_budget",
+    "created_at",
+    "context_pack_hash"
+  ],
+  "referenced_terms": [
+
+  ],
+  "referenced_details": {
+  },
+  "field_profiles": [
+    "allowed_paths",
+    "source_fragments",
+    "constraints"
+  ],
+  "field_details": {
+    "allowed_paths": {
+      "shape": "array",
+      "members": [
+        "project-relative normalized paths"
+      ],
+      "rules": [
+        "exact scope allowlist"
+      ]
+    },
+    "source_fragments": {
+      "shape": "array",
+      "members": [
+        "path",
+        "range",
+        "content_hash",
+        "text_or_omitted"
+      ],
+      "rules": [
+        "bounded source excerpts only"
+      ]
+    },
+    "constraints": {
+      "shape": "array",
+      "members": [
+        "source path",
+        "source hash",
+        "bounded text"
+      ],
+      "rules": [
+        "AGENTS/spec/FDR constraints only"
+      ]
+    }
+  },
+  "enum_families": [
+    "provider",
+    "task_kind",
+    "expected_output_kind",
+    "model_route_intent"
+  ],
+  "enum_values": {
+    "provider": [
+      "claude",
+      "codex"
+    ],
+    "task_kind": [
+      "intra-file-rewrite",
+      "file-review",
+      "stub-scan",
+      "fdr-sweep",
+      "research-summary",
+      "test-fix-suggestion"
+    ],
+    "expected_output_kind": [
+      "patch",
+      "findings",
+      "rewrite-suggestion",
+      "review-note",
+      "unknown"
+    ],
+    "model_route_intent": [
+      "provider-bound-cheap-worker",
+      "local-mock",
+      "none"
+    ]
+  },
+  "variant_requirements": [
+    "bounded source fragments",
+    "scope path allowlist",
+    "token budget bound"
+  ],
+  "variant_rules": {
+    "bounded source fragments": {
+      "selectors": [
+        "source_fragments present"
+      ],
+      "requires": [
+        "path",
+        "range",
+        "content_hash",
+        "configured byte cap"
+      ],
+      "forbids": [
+        "raw transcript",
+        "unbounded repository content"
+      ]
+    },
+    "scope path allowlist": {
+      "selectors": [
+        "allowed_paths present"
+      ],
+      "requires": [
+        "normalized project-relative paths",
+        "scope_digest covers paths"
+      ],
+      "forbids": [
+        "out-of-scope path",
+        "protected-root path"
+      ]
+    },
+    "token budget bound": {
+      "selectors": [
+        "input_token_budget present"
+      ],
+      "requires": [
+        "positive integer within protected config cap"
+      ],
+      "forbids": [
+        "unbounded context budget"
+      ]
+    }
+  },
+  "variants": [
+    "Exact context pack fields",
+    "provider session cwd project tuple",
+    "task kind, expected output kind, and model route intent domains",
+    "allowed path list",
+    "source fragment bounds",
+    "constraint list",
+    "token budget bounds",
+    "raw transcript and provider history exclusion",
+    "scope digest binding",
+    "`context_pack_hash` recomputation."
+  ],
+  "variant_details": {
+    "Exact context pack fields": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact context pack fields"
+      ]
+    },
+    "provider session cwd project tuple": {
+      "index": 2,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "provider session cwd project tuple"
+      ]
+    },
+    "task kind, expected output kind, and model route intent domains": {
+      "index": 3,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "task kind, expected output kind, and model route intent domains"
+      ]
+    },
+    "allowed path list": {
+      "index": 4,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "allowed path list"
+      ]
+    },
+    "source fragment bounds": {
+      "index": 5,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "source fragment bounds"
+      ]
+    },
+    "constraint list": {
+      "index": 6,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "constraint list"
+      ]
+    },
+    "token budget bounds": {
+      "index": 7,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "token budget bounds"
+      ]
+    },
+    "raw transcript and provider history exclusion": {
+      "index": 8,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "raw transcript and provider history exclusion"
+      ]
+    },
+    "scope digest binding": {
+      "index": 9,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "scope digest binding"
+      ]
+    },
+    "`context_pack_hash` recomputation.": {
+      "index": 10,
+      "kind": "hash-recompute",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "context_pack_hash recomputation."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "context-pack parser, scope/path/token-budget validator, and privacy exclusion validator"
+  ],
+  "profile_hash": "fd8d1baa0358e8f75e93f51fe661684cc99440fa77bcb6fbe402dde30cbc1b4b"
+}

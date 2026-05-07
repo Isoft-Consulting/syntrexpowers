@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "schema_id": "metadata.matrix-registry.v1",
+  "owner": "[Implementation Readiness](17-implementation-readiness.md)",
+  "input_family": "`matrices/matrix-registry.json`",
+  "hash_fields": [
+    "registry_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "registry_kind",
+    "ids",
+    "generated_from_spec_hash",
+    "registry_hash"
+  ],
+  "referenced_terms": [
+    "registry_kind=\"matrix\""
+  ],
+  "referenced_details": {
+    "registry_kind=\"matrix\"": {
+      "kind": "registry-literal",
+      "source": "metadata-bootstrap",
+      "rules": [
+        "registry_kind must equal matrix"
+      ]
+    }
+  },
+  "field_profiles": [
+
+  ],
+  "field_details": {
+  },
+  "enum_families": [
+    "registry_kind"
+  ],
+  "enum_values": {
+    "registry_kind": [
+      "matrix"
+    ]
+  },
+  "variant_requirements": [
+    "matrix registry kind"
+  ],
+  "variant_rules": {
+    "matrix registry kind": {
+      "selectors": [
+        "registry_kind=matrix"
+      ],
+      "requires": [
+        "registry_kind",
+        "sorted matrix ids",
+        "registry_hash recomputed"
+      ],
+      "forbids": [
+        "registry_kind!=matrix"
+      ]
+    }
+  },
+  "variants": [
+    "Exact registry fields `schema_version`, `registry_kind`, `ids`, `generated_from_spec_hash`, and `registry_hash`",
+    "`registry_kind=\"matrix\"`",
+    "sorted unique ids exactly equal the markdown Closed Matrix Registry ids",
+    "`registry_hash` recomputation",
+    "no extra matrix ids or hidden validator-only ids."
+  ],
+  "variant_details": {
+    "Exact registry fields `schema_version`, `registry_kind`, `ids`, `generated_from_spec_hash`, and `registry_hash`": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact registry fields schema_version, registry_kind, ids, generated_from_spec_hash, and registry_hash"
+      ]
+    },
+    "`registry_kind=\"matrix\"`": {
+      "index": 2,
+      "kind": "registry-kind",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "registry_kind=\"matrix\""
+      ]
+    },
+    "sorted unique ids exactly equal the markdown Closed Matrix Registry ids": {
+      "index": 3,
+      "kind": "registry-id-set",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "sorted unique ids exactly equal the markdown Closed Matrix Registry ids"
+      ]
+    },
+    "`registry_hash` recomputation": {
+      "index": 4,
+      "kind": "hash-recompute",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "registry_hash recomputation"
+      ]
+    },
+    "no extra matrix ids or hidden validator-only ids.": {
+      "index": 5,
+      "kind": "negative-rule",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "no extra matrix ids or hidden validator-only ids."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "matrix registry parser and markdown parity validator"
+  ],
+  "profile_hash": "07ce36df9c58a4c1803fd97a71658c5a38d883acf94e31b0e4d3f23ee16f1aa9"
+}

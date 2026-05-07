@@ -1,0 +1,106 @@
+# 15. Acceptance Criteria For v0
+
+Part of [Strict Mode Universal Experimental - Specification v0](../SPEC.md).
+
+
+v0 is acceptable when:
+
+- one installed package configures both Claude and Codex
+- no duplicated provider-specific core hook scripts exist
+- provider detection works for captured fixtures
+- provider enforcing activation has a fixture-proven early baseline event before model tool execution
+- provider `turn_id` is either fixture-proven as per-user-prompt or ignored for current-turn boundaries
+- provider mismatch and logical-event mismatch handling are tested
+- provider auto-detection without installer-generated `--provider` cannot create trusted state or enable enforcement
+- unknown/incomplete enforcing payloads fail closed outside Phase 0/log-only discovery
+- internal decisions are exact-schema, action/severity/text-coupled, and provider output contracts are hash-bound to `decision.provider-output.v1` metadata before any block/deny/inject emission is trusted
+- normalized tool write intent is explicit; missing or unproven write intent fails closed before tool execution in enforcing mode
+- enforcing Stop activation requires verified block output for ordinary blocks and self-timeout blocks
+- hook self-timeouts are protected manifest/baseline fields; provider-native outer timeouts, when generated, are fixture-proven and exceed the self-timeout by at least 1000 ms
+- hook self-timeout during an active trusted-state transaction never produces trusted partial allow evidence; enforcing events fail closed or deny and stale locks require repair-only cleanup
+- Claude and Codex enforcing block/inject outputs are enabled only after matching decision-output fixtures for the installed version/build
+- destructive shell gate works in both providers
+- stop hook smoke proof works in both providers
+- edit tracking works for Claude Write/Edit/MultiEdit, Codex apply_patch, and shell-created git dirty changes at least at stop-time
+- unresolved pre-tool intents for allowed shell/write-like tools fail closed instead of producing empty edit scope
+- non-git shell or unknown write-like edits fail closed in v0
+- pre-write unknown-content stub scanning mode cannot override write-intent or target-path proof requirements
+- project opt-outs and destructive confirmations cannot be created and consumed by the agent in the same turn
+- project opt-outs created by the agent cannot become active on the next turn without explicit user approval
+- opt-out activation uses immutable session baseline or exact approval evidence, not the current turn-baseline capture
+- project opt-out effects follow the explicit matrix and never disable protected-root, integrity, approval anti-forgery, or audit gates
+- provider-tool writes or deletes of project opt-out files are protected-root violations; only out-of-band deletes can deactivate an opt-out without creating approval evidence
+- project quality-gate opt-out suppresses prompt reminder only after active opt-out validation and never suppresses health or state setup
+- strict-mode runtime/state/config forgery attempts through provider tools, including project `.strict-mode/` edits, are blocked
+- protected path enforcement rejects symlink/path traversal and hardlink aliases to protected files before write/edit/patch execution
+- write/edit/patch or unknown write-like tools with missing target path evidence block before execution in enforcing mode
+- provider shell execution of strict-mode runtime scripts is blocked except exact verified `strict-fdr import -- <path>`
+- provider hook matchers cover every required shell/write-like tool or enforcing activation fails
+- Codex enforcing activation is refused unless fixture discovery proves the exact installed hook feature flag, hook config path, event names, matcher syntax, command execution, payload, and decision-output contract
+- provider hook config tampering attempts through provider tools are blocked
+- install manifest and protected install baseline exact schemas, hashes, permissions, path identities, and disk fingerprints are verified before hooks are considered active
+- schema and matrix metadata files are installed as protected runtime files, parse under fixed shared-core metadata bootstrap parsers before metadata-driven parsing is trusted, and are covered by install manifest, protected install baseline, active runtime self-check, and rollback verification
+- install activation uses a recoverable commit with atomic per-file renames, and rollback restores active runtime package files or symlink as well as provider configs, runtime config, protected config, manifests, and baselines
+- activation refuses unrecognized directories at `<install-root>/active`; legacy active runtime directories are moved aside and restored only when previous manifest/baseline fingerprints prove strict-mode ownership
+- rollback uses a hash-bound transaction backup manifest with previous install manifest/baseline hashes, runtime config records, and active runtime fingerprints, then verifies restored files before success
+- default uninstall deactivates provider hooks without deleting runtime/state only after verifying the current protected install baseline, active-runtime-link/target, provider config, and fixture metadata fingerprints, then rewrites and verifies manifest/baseline metadata so trusted install state matches the post-uninstall provider configs and installer-backup ledger coverage
+- interrupted uninstall writes an unsettled transaction marker with empty `staged_runtime_path` plus post-uninstall candidate hashes, makes hooks fail closed, and resumes idempotently or refuses with repair guidance before trusted install state can be considered settled
+- fresh-install rollback handles missing previous active runtime without deleting unrelated later files
+- stale pre-activation install markers and interrupted rollback-in-progress markers are recoverable without leaving hooks permanently blocked, deleting unverified active runtime/config files, or using repair as a broad install/config writer outside the ledger matrix
+- missing protected-baseline after provider tool execution fails closed
+- quality bypass files cannot be created and consumed by the agent in the same turn
+- quality bypass approval is bound to exact current-turn tool-intent/tool/edit seq lists, log digests, content-scope fingerprint digest with full trusted ledger fingerprints, and exact gate context
+- quality bypass consumption is an exact quality-block waiver in the final allow-side transaction, not a general allow and not a bypass for non-quality Stop blocks
+- quality bypass markers are not consumed unless consuming the complete matched set is part of the final allow transaction
+- unresolved blocked Stop scopes survive intervening user prompts and cannot be hidden by a fresh turn-baseline
+- resolved quality scopes are auditable before the safe turn boundary advances past them, including original blocked scope fields, resolved superseding scope fields, allow-side audit batch hash, and the baseline ledger relation
+- safe allowed Stop boundaries advance only after all required allow-side audit and ledger mutations are committed and bound to the turn-baseline update
+- FDR challenge bypass approval is bound to scope digest, artifact hash, and the original blocking FDR cycle record hash even across repeated Stop retries; diagnostic `blocked-reused` and `bypassed` cycle records also hash-bind that original challenge record
+- FDR challenge bypassed state is recorded only after successful one-shot bypass consumption, never before tombstone/audit/ledger commit
+- protected runtime settings cannot be weakened or made more verbose by provider tool environment or project files
+- protected full-text capture never persists provider transcripts, raw session/history files, transcript slices, or normalized FDR `turn.assistant_text`
+- over-limit current-turn assistant text cannot bypass FDR challenge; it is sent as a deterministic bounded excerpt with truncation recorded in the prompt hash
+- protected pattern and allowlist config files cannot be weakened without protected-baseline tamper detection, and their parser line-length limit is a whitelisted bounded protected runtime setting
+- confirmation, bypass, and opt-out approval require exact `strict-mode ... <hash>` phrases using canonical full SHA-256 hashes
+- confirmation and bypass approvals expire; pending opt-out approval windows expire and are valid only for the first `user-prompt-submit` after the pending record, while approved opt-out activation remains fingerprint/path/owner/permission-bound
+- the first `user-prompt-submit` rule is enforced by monotonic `prompt_seq` and exact `next_user_prompt_marker`, not wall-clock timing or provider turn ids alone
+- approval audit logs enforce closed action/source pairs so approvals cannot be forged by cleanup, pre-tool, or stop sources outside their owning hook flow
+- expired pending approval or marker deletion requires matching `expired` audit plus trusted-state ledger records; otherwise the delete is protected-state forgery
+- user-prompt-hook-created confirmations and bypasses do not deadlock on min-age, while pre-existing files still require min-age
+- confirmation and bypass consumption happen under lock before allow and append consumed audit/ledger evidence that hash-binds the marker, active marker path, tombstone path, pre/post rename fingerprints, and ledger relation
+- trusted FDR artifacts are created only by `strict-fdr import -- <path>`, not direct provider writes to state
+- enforcing v0 does not accept `STRICT_NO_ARTIFACT_GATE=1` as a global missing/stale artifact bypass
+- trusted FDR import freezes dirty-snapshot scope and coverage cutoffs before validation; only verified exact-schema import provenance is excluded from review coverage
+- Stop import-freeze handling is compare-only and cannot silently append covered edit records after trusted import
+- trusted state writes use the session transaction lock for session-scoped records and the global transaction lock for unscoped audit/install records, with fixed global-then-session ordering for mixed writes
+- installer/admin trusted state writes are allowed only outside provider tool execution; provider tools cannot invoke those entrypoints to create trusted state
+- protected baselines do not hash themselves or mutable active state contents; mutable trusted-state changes are verified through ledger hash chains
+- trusted-state ledger records enforce closed scope/writer/target/operation combinations, not just independent enum validation
+- active tool-intent/permission-decision/tool/edit and prompt sequence state are never compacted; prompt event logs, permission-decision logs, trusted ledgers, and FDR cycle logs are protected from rotation unless strict-mode writes a trusted checkpoint
+- approval audit logs, consumed tombstones, session/turn/dirty/protected baselines, and trusted FDR artifacts are exact evidence files, not checkpointable streams; v0 rotation must not checkpoint, truncate, or delete them
+- trusted checkpoint records are exact-schema, hash-bound, ledger-bound to `writer="repair"` plus `operation="checkpoint"` on a checkpointable target class, and cannot cover evidence still referenced by pending approval/import/challenge or unresolved blocked Stop scope
+- trusted FDR import command matching uses exact argv parsing and rejects wrappers, redirections, substitutions, globs, out-of-project sources, protected-root sources, symlink paths, protected-root hardlinks, devices, FIFOs, sockets, directories, and oversize source files
+- Codex PermissionRequest cannot approve risky operations unless strict-mode's deny/block contract for that event is fixture-verified; approval-capable PermissionRequest without verified deny contract prevents enforcing provider activation
+- PermissionRequest network/filesystem approvals are deny-by-default unless exact protected allowlist and path/mode rules apply, and filesystem read allowlists cannot expose protected files through hardlink aliases
+- judge router selects Haiku for Claude and Spark for Codex
+- bounded worker delegation, when enabled, uses provider-bound cheap models only after fixture proof and cannot create allow, bypass, approval, FDR clean, or Stop decisions
+- worker context packs, invocations, and results are hash-bound, scope-bound, stale-checked, and advisory until normal tool/edit/FDR gates accept any resulting change
+- judge disable flags default to off and cannot accidentally disable both semantic judges in the generated protected runtime config
+- judge-disabled results still produce caller-owned `judge-unknown` FDR cycle records under the Stop transaction
+- judge router invokes real Claude/Codex only with a matching `judge-invocation` fixture for the installed provider version/build; otherwise it returns audited `unknown`
+- judge response hashes use a canonical bounded-decimal confidence value
+- nested judge invocation is enabled only after fixture proof that provider session/history writes are absent or confined to a strict-mode-owned temporary state root
+- nested judge calls skip recursive hooks only with a valid protected nested token; bare env cannot bypass hooks
+- nested hook stdin buffering is single-read, protected when spilled to disk, ignores provider-supplied buffer paths, and preserves payloads after invalid nested-token attempts
+- Codex judge prompt passing uses stdin by default or a fixture-verified argument separator, with protected prompt temp-file creation and cleanup
+- FDR challenge cycles use exact schema, scope digest binding, prompt/response hash sentinel rules, hash-chain validation, explicit cycle index semantics, original challenge record binding, bypass consumption hash binding, and max-cycle limits
+- `judge-unknown` never disables artifact validation or other Stop gates
+- transient `judge-unknown` records are not cached as stable clean evidence for the same scope/artifact
+- uninstall removes only universal strict-mode hook entries
+- uninstall does not remove candidate hooks automatically when manifest is missing
+- provider config merge uses structured JSON/TOML parsing, rejects malformed or duplicate-key configs, and preserves unrelated user entries
+- README provider support matrix status and proof text are covered by closed provider-feature enums, and their claims match the protected installer feature gates and selected fixture proofs
+- README maps Codex FDR challenge to the closed `disabled-until-proof` status until current-turn extraction is verified, if still unproven
+- every normalized event, trusted schema, protected text config grammar, internal/provider decision contract, and closed matrix used by enforcing runtime behavior has a stable schema id or matrix id in [Implementation Readiness](17-implementation-readiness.md) with protected executable metadata, parser or validator coverage, valid and malformed fixtures, hash coverage when applicable, positive and negative matrix coverage when applicable, invalid-combination coverage where a matrix is involved, and fail-closed test coverage
+
+---

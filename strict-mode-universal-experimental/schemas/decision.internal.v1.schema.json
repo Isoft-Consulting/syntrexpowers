@@ -1,0 +1,231 @@
+{
+  "schema_version": 1,
+  "schema_id": "decision.internal.v1",
+  "owner": "[Decision Contract](06-decision-contract.md)",
+  "input_family": "internal decision JSON returned by core scripts to `strict-hook`",
+  "hash_fields": [
+
+  ],
+  "required_fields": [
+    "schema_version",
+    "action",
+    "reason",
+    "severity",
+    "additional_context",
+    "metadata"
+  ],
+  "referenced_terms": [
+    "allow",
+    "block",
+    "warn",
+    "inject",
+    "info",
+    "warning",
+    "error",
+    "critical"
+  ],
+  "referenced_details": {
+    "allow": {
+      "kind": "enum-literal",
+      "source": "decision action domain",
+      "rules": [
+        "action literal"
+      ]
+    },
+    "block": {
+      "kind": "enum-literal",
+      "source": "decision action domain",
+      "rules": [
+        "action literal"
+      ]
+    },
+    "warn": {
+      "kind": "enum-literal",
+      "source": "decision action domain",
+      "rules": [
+        "action literal"
+      ]
+    },
+    "inject": {
+      "kind": "enum-literal",
+      "source": "decision action domain",
+      "rules": [
+        "action literal"
+      ]
+    },
+    "info": {
+      "kind": "enum-literal",
+      "source": "decision severity domain",
+      "rules": [
+        "severity literal"
+      ]
+    },
+    "warning": {
+      "kind": "enum-literal",
+      "source": "decision severity domain",
+      "rules": [
+        "severity literal"
+      ]
+    },
+    "error": {
+      "kind": "enum-literal",
+      "source": "decision severity domain",
+      "rules": [
+        "severity literal"
+      ]
+    },
+    "critical": {
+      "kind": "enum-literal",
+      "source": "decision severity domain",
+      "rules": [
+        "severity literal"
+      ]
+    }
+  },
+  "field_profiles": [
+    "metadata"
+  ],
+  "field_details": {
+    "metadata": {
+      "shape": "object",
+      "members": [
+        "provider tuple",
+        "evidence hashes"
+      ],
+      "rules": [
+        "unsafe metadata rejected"
+      ]
+    }
+  },
+  "enum_families": [
+    "action",
+    "severity"
+  ],
+  "enum_values": {
+    "action": [
+      "allow",
+      "block",
+      "warn",
+      "inject"
+    ],
+    "severity": [
+      "info",
+      "warning",
+      "error",
+      "critical"
+    ]
+  },
+  "variant_requirements": [
+    "allow empty text",
+    "warn warning text",
+    "block reason text",
+    "inject context text"
+  ],
+  "variant_rules": {
+    "allow empty text": {
+      "selectors": [
+        "action=allow"
+      ],
+      "requires": [
+        "reason=<empty>",
+        "additional_context=<empty>"
+      ],
+      "forbids": [
+        "reason non-empty",
+        "additional_context non-empty"
+      ]
+    },
+    "warn warning text": {
+      "selectors": [
+        "action=warn"
+      ],
+      "requires": [
+        "reason non-empty",
+        "severity=warning"
+      ],
+      "forbids": [
+        "reason empty",
+        "severity=info"
+      ]
+    },
+    "block reason text": {
+      "selectors": [
+        "action=block"
+      ],
+      "requires": [
+        "reason non-empty",
+        "severity=error or critical"
+      ],
+      "forbids": [
+        "reason empty"
+      ]
+    },
+    "inject context text": {
+      "selectors": [
+        "action=inject"
+      ],
+      "requires": [
+        "additional_context non-empty"
+      ],
+      "forbids": [
+        "additional_context empty"
+      ]
+    }
+  },
+  "variants": [
+    "Exact internal decision fields `schema_version`, `action`, `reason`, `severity`, `additional_context`, and `metadata`",
+    "action domain `allow`, `block`, `warn`, `inject`",
+    "severity domain `info`, `warning`, `error`, `critical`",
+    "unsafe metadata rejection",
+    "action-specific required/empty text rules before provider emission."
+  ],
+  "variant_details": {
+    "Exact internal decision fields `schema_version`, `action`, `reason`, `severity`, `additional_context`, and `metadata`": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact internal decision fields schema_version, action, reason, severity, additional_context, and metadata"
+      ]
+    },
+    "action domain `allow`, `block`, `warn`, `inject`": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "action domain allow, block, warn, inject"
+      ]
+    },
+    "severity domain `info`, `warning`, `error`, `critical`": {
+      "index": 3,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "severity domain info, warning, error, critical"
+      ]
+    },
+    "unsafe metadata rejection": {
+      "index": 4,
+      "kind": "negative-rule",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "unsafe metadata rejection"
+      ]
+    },
+    "action-specific required/empty text rules before provider emission.": {
+      "index": 5,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "action-specific required/empty text rules before provider emission."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "internal decision parser and action/severity/domain validator"
+  ],
+  "profile_hash": "ebb6cde82c05d0e3eb1ba7e20ea31635b7e5487f31dfccc9d4970f0cb119d244"
+}

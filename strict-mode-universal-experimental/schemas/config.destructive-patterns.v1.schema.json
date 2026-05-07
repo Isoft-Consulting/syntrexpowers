@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "schema_id": "config.destructive-patterns.v1",
+  "owner": "[Hook Event Matrix](03-hook-event-matrix.md), [Destructive Gate](08-shared-core/05-destructive-gate.md)",
+  "input_family": "`destructive-patterns.txt`",
+  "hash_fields": [
+
+  ],
+  "required_fields": [
+
+  ],
+  "referenced_terms": [
+    "shell-ere",
+    "argv-token"
+  ],
+  "referenced_details": {
+    "shell-ere": {
+      "kind": "directive-literal",
+      "source": "destructive patterns parser",
+      "rules": [
+        "POSIX ERE directive"
+      ]
+    },
+    "argv-token": {
+      "kind": "directive-literal",
+      "source": "destructive patterns parser",
+      "rules": [
+        "literal argv-token directive"
+      ]
+    }
+  },
+  "field_profiles": [
+    "directive lines"
+  ],
+  "field_details": {
+    "directive lines": {
+      "shape": "line-list",
+      "members": [
+        "directive",
+        "pattern or token"
+      ],
+      "rules": [
+        "no shell sourcing"
+      ]
+    }
+  },
+  "enum_families": [
+    "directive kind"
+  ],
+  "enum_values": {
+    "directive kind": [
+      "shell-ere",
+      "argv-token"
+    ]
+  },
+  "variant_requirements": [
+    "shell-ere compile validation",
+    "argv-token token comparison"
+  ],
+  "variant_rules": {
+    "shell-ere compile validation": {
+      "selectors": [
+        "directive=shell-ere"
+      ],
+      "requires": [
+        "POSIX ERE compiles"
+      ],
+      "forbids": [
+        "shell expansion"
+      ]
+    },
+    "argv-token token comparison": {
+      "selectors": [
+        "directive=argv-token"
+      ],
+      "requires": [
+        "literal argv token"
+      ],
+      "forbids": [
+        "regex comparison"
+      ]
+    }
+  },
+  "variants": [
+    "UTF-8 line grammar",
+    "directives `shell-ere` and `argv-token`",
+    "POSIX ERE compile validation",
+    "shell-token comparison input rules",
+    "no shell sourcing, expansion, or grep/sed/awk shell pass-through."
+  ],
+  "variant_details": {
+    "UTF-8 line grammar": {
+      "index": 1,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "UTF-8 line grammar"
+      ]
+    },
+    "directives `shell-ere` and `argv-token`": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "directives shell-ere and argv-token"
+      ]
+    },
+    "POSIX ERE compile validation": {
+      "index": 3,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "POSIX ERE compile validation"
+      ]
+    },
+    "shell-token comparison input rules": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "shell-token comparison input rules"
+      ]
+    },
+    "no shell sourcing, expansion, or grep/sed/awk shell pass-through.": {
+      "index": 5,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "no shell sourcing, expansion, or grep/sed/awk shell pass-through."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "protected text parser and destructive pattern compiler validator"
+  ],
+  "profile_hash": "6bb3b4274b9e46447ad89d2be7afd5436c8706a51589471c0001e3cec7736b0f"
+}

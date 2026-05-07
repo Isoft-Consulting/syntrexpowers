@@ -1,0 +1,273 @@
+{
+  "schema_version": 1,
+  "schema_id": "hook.preflight.v1",
+  "owner": "[Hook Event Matrix](03-hook-event-matrix.md), [Destructive Gate](08-shared-core/05-destructive-gate.md)",
+  "input_family": "strict-hook discovery `preflight` object",
+  "hash_fields": [
+    "preflight_hash"
+  ],
+  "required_fields": [
+    "schema_version",
+    "attempted",
+    "trusted",
+    "logical_event",
+    "decision",
+    "would_block",
+    "reason_code",
+    "reason_hash",
+    "tool_kind",
+    "tool_write_intent",
+    "tool_name_hash",
+    "command_hash",
+    "path_list_hash",
+    "error_count",
+    "error_hash",
+    "preflight_hash"
+  ],
+  "referenced_terms": [
+
+  ],
+  "referenced_details": {
+  },
+  "field_profiles": [
+    "data hash fields",
+    "tool summary fields",
+    "error diagnostic fields"
+  ],
+  "field_details": {
+    "data hash fields": {
+      "shape": "hash-group",
+      "members": [
+        "reason_hash",
+        "tool_name_hash",
+        "command_hash",
+        "path_list_hash",
+        "error_hash",
+        "preflight_hash"
+      ],
+      "rules": [
+        "lowercase SHA-256",
+        "preflight_hash recomputed",
+        "raw values not retained"
+      ]
+    },
+    "tool summary fields": {
+      "shape": "object-fields",
+      "members": [
+        "tool_kind",
+        "tool_write_intent",
+        "tool_name_hash",
+        "command_hash",
+        "path_list_hash"
+      ],
+      "rules": [
+        "hashed command, path list, and tool name only"
+      ]
+    },
+    "error diagnostic fields": {
+      "shape": "object-fields",
+      "members": [
+        "error_count",
+        "error_hash"
+      ],
+      "rules": [
+        "untrusted diagnostics hashed only"
+      ]
+    }
+  },
+  "enum_families": [
+    "logical_event",
+    "decision",
+    "reason_code",
+    "tool_kind",
+    "tool_write_intent"
+  ],
+  "enum_values": {
+    "logical_event": [
+      "session-start",
+      "user-prompt-submit",
+      "pre-tool-use",
+      "post-tool-use",
+      "stop",
+      "subagent-stop",
+      "permission-request",
+      "unknown"
+    ],
+    "decision": [
+      "allow",
+      "block",
+      "unknown"
+    ],
+    "reason_code": [
+      "not-applicable",
+      "payload-untrusted",
+      "provider-untrusted",
+      "payload-truncated",
+      "protected-baseline-untrusted",
+      "preflight-error",
+      "shell-read-only-or-unmatched",
+      "non-write-tool",
+      "write-targets-disjoint",
+      "trusted-fdr-import",
+      "invalid-identity",
+      "shell-command-missing",
+      "shell-parse-error",
+      "protected-runtime-execution",
+      "destructive-command",
+      "protected-root",
+      "unknown-write-target",
+      "protected-target-unknown",
+      "trusted-import-invalid"
+    ],
+    "tool_kind": [
+      "shell",
+      "write",
+      "edit",
+      "multi-edit",
+      "patch",
+      "read",
+      "other",
+      "unknown"
+    ],
+    "tool_write_intent": [
+      "none",
+      "read",
+      "write",
+      "unknown"
+    ]
+  },
+  "variant_requirements": [
+    "not-attempted sentinel fields",
+    "untrusted diagnostic sentinel fields",
+    "trusted classifier decision coupling"
+  ],
+  "variant_rules": {
+    "not-attempted sentinel fields": {
+      "selectors": [
+        "attempted=false"
+      ],
+      "requires": [
+        "trusted=false",
+        "decision=unknown",
+        "would_block=false",
+        "reason_code=not-applicable",
+        "data hashes zero",
+        "error_count=0"
+      ],
+      "forbids": [
+        "trusted=true",
+        "nonzero data hash"
+      ]
+    },
+    "untrusted diagnostic sentinel fields": {
+      "selectors": [
+        "attempted=true",
+        "trusted=false"
+      ],
+      "requires": [
+        "decision=unknown",
+        "would_block=false",
+        "untrusted reason_code",
+        "positive error_count",
+        "nonzero error_hash",
+        "tool hashes zero"
+      ],
+      "forbids": [
+        "decision=allow or block",
+        "would_block=true",
+        "raw diagnostic text"
+      ]
+    },
+    "trusted classifier decision coupling": {
+      "selectors": [
+        "attempted=true",
+        "trusted=true"
+      ],
+      "requires": [
+        "decision allow or block",
+        "would_block equals block decision",
+        "classifier reason_code matches decision",
+        "error_hash zero"
+      ],
+      "forbids": [
+        "unknown decision",
+        "mismatched allow/block reason_code",
+        "diagnostic errors populated"
+      ]
+    }
+  },
+  "variants": [
+    "Exact preflight fields `schema_version`, `attempted`, `trusted`, `logical_event`, `decision`, `would_block`, `reason_code`, `reason_hash`, `tool_kind`, `tool_write_intent`, `tool_name_hash`, `command_hash`, `path_list_hash`, `error_count`, `error_hash`, and `preflight_hash`",
+    "logical event, decision, reason code, tool kind, and write intent domains",
+    "data hash and `preflight_hash` recomputation",
+    "not-attempted sentinel fields",
+    "untrusted diagnostic sentinel fields",
+    "trusted classifier decision coupling",
+    "no raw tool command, raw reason, path list, or error text retention."
+  ],
+  "variant_details": {
+    "Exact preflight fields `schema_version`, `attempted`, `trusted`, `logical_event`, `decision`, `would_block`, `reason_code`, `reason_hash`, `tool_kind`, `tool_write_intent`, `tool_name_hash`, `command_hash`, `path_list_hash`, `error_count`, `error_hash`, and `preflight_hash`": {
+      "index": 1,
+      "kind": "exact-fields",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "Exact preflight fields schema_version, attempted, trusted, logical_event, decision, would_block, reason_code, reason_hash, tool_kind, tool_write_intent, tool_name_hash, command_hash, path_list_hash, error_count, error_hash, and preflight_hash"
+      ]
+    },
+    "logical event, decision, reason code, tool kind, and write intent domains": {
+      "index": 2,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "logical event, decision, reason code, tool kind, and write intent domains"
+      ]
+    },
+    "data hash and `preflight_hash` recomputation": {
+      "index": 3,
+      "kind": "hash-recompute",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "data hash and preflight_hash recomputation"
+      ]
+    },
+    "not-attempted sentinel fields": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "not-attempted sentinel fields"
+      ]
+    },
+    "untrusted diagnostic sentinel fields": {
+      "index": 5,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "untrusted diagnostic sentinel fields"
+      ]
+    },
+    "trusted classifier decision coupling": {
+      "index": 6,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "trusted classifier decision coupling"
+      ]
+    },
+    "no raw tool command, raw reason, path list, or error text retention.": {
+      "index": 7,
+      "kind": "nested-shape",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "no raw tool command, raw reason, path list, or error text retention."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "preflight record parser, hash binder, and attempt/trust/decision coupling validator"
+  ],
+  "profile_hash": "42c149d33c24c9a96db3c860cdde4ec48dece66025d2636498f6a61408437716"
+}

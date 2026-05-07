@@ -1,0 +1,26 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "digest"
+require "json"
+
+command = ARGV.shift
+separator = ARGV.shift
+path = ARGV.shift
+
+unless command == "import" && separator == "--" && path && ARGV.empty?
+  warn "usage: strict-fdr import -- <artifact-path>"
+  exit 2
+end
+
+unless File.file?(path)
+  warn "#{path}: artifact is not a file"
+  exit 1
+end
+
+puts JSON.pretty_generate({
+  "schema_version" => 1,
+  "mode" => "discovery-import",
+  "source_path" => File.expand_path(path),
+  "imported_artifact_hash" => Digest::SHA256.file(path).hexdigest
+})
