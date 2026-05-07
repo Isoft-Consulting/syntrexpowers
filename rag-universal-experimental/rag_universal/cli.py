@@ -6,6 +6,7 @@ import sys
 from typing import Any
 
 from .core import build_index, index_status, lookup_deps, lookup_symbol, search_index
+from .eval_quality import evaluate_quality
 from .mcp_server import run_stdio
 
 
@@ -37,6 +38,10 @@ def build_parser() -> argparse.ArgumentParser:
     deps.add_argument("target")
     deps.add_argument("--direction", choices=["reverse", "forward"], default="reverse")
     deps.add_argument("--limit", type=int, default=20)
+
+    eval_quality = subparsers.add_parser("eval-quality", help="Compare RAG retrieval against keyword baseline")
+    eval_quality.add_argument("--cases", required=True, help="Gold query JSON file.")
+    eval_quality.add_argument("--top-k", type=int, default=10)
 
     subparsers.add_parser("serve-mcp", help="Run MCP stdio server")
     return parser
@@ -78,6 +83,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "deps":
         emit(lookup_deps(args.root, args.config, args.target, args.direction, args.limit))
+        return 0
+    if args.command == "eval-quality":
+        emit(evaluate_quality(args.root, args.config, args.cases, args.top_k))
         return 0
     if args.command == "serve-mcp":
         return run_stdio(args.root, args.config)

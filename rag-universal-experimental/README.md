@@ -15,6 +15,7 @@ python3 tools/rag.py status --root ..
 python3 tools/rag.py search --root .. "strict mode stop guard"
 python3 tools/rag.py symbol --root .. strict-hook
 python3 tools/rag.py deps --root .. json --direction reverse
+python3 tools/rag.py eval-quality --root .. --cases evals/syntrexpowers-gold.json
 ```
 
 Use an explicit config:
@@ -104,6 +105,22 @@ Do not commit generated index artifacts. The repository `.gitignore` excludes `.
 cd rag-universal-experimental
 tests/run-tests.sh
 ```
+
+## Quality Eval
+
+`eval-quality` compares `rag_search` against a simple file-level keyword baseline on a gold-query JSON file:
+
+```bash
+python3 tools/rag.py index --root .. --config rag.config.example.json
+python3 tools/rag.py eval-quality --root .. --config rag.config.example.json --cases evals/syntrexpowers-gold.json
+```
+
+Current `syntrexpowers` gold-set result after v2 lexical ranking:
+
+| Mode | Top-1 | Top-3 | Top-5 | MRR |
+|---|---:|---:|---:|---:|
+| RAG v2 | 8/10 | 10/10 | 10/10 | 0.900 |
+| Keyword baseline | 6/10 | 10/10 | 10/10 | 0.767 |
 
 ## Current Limits
 

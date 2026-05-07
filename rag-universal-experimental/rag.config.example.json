@@ -26,6 +26,7 @@
     "dist",
     "build",
     "coverage",
+    "evals",
     "__pycache__",
     ".pytest_cache",
     ".ruff_cache"
@@ -60,7 +61,17 @@
   "search": {
     "hash_dim": 512,
     "min_score": 0.02,
-    "docs_boost": 1.08,
+    "docs_boost": 1.28,
+    "matrix_boost": 1.12,
+    "schema_boost": 1.05,
+    "test_boost": 1.08,
+    "code_boost": 0.55,
+    "vector_weight": 0.42,
+    "bm25_weight": 0.30,
+    "source_weight": 0.20,
+    "heading_weight": 0.08,
+    "max_chunks_per_source": 1,
+    "expand_english_synonyms": false,
     "preview_chars": 500
   }
 }

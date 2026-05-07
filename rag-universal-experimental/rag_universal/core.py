@@ -19,7 +19,7 @@ SYMBOL_VERSION = "rag.symbol.v1"
 DEP_VERSION = "rag.dep-edge.v1"
 CHUNKER_VERSION = "lexical-chunker.v1"
 TOKENIZER_VERSION = "unicode-tokenizer.v1"
-SEARCH_VERSION = "hash-vector-bm25.v1"
+SEARCH_VERSION = "hash-vector-bm25.v2"
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "schema_version": CONFIG_VERSION,
@@ -49,6 +49,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "dist",
         "build",
         "coverage",
+        "evals",
         "__pycache__",
         ".pytest_cache",
         ".ruff_cache",
@@ -83,12 +84,73 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "search": {
         "hash_dim": 512,
         "min_score": 0.02,
-        "docs_boost": 1.08,
+        "docs_boost": 1.28,
+        "matrix_boost": 1.12,
+        "schema_boost": 1.05,
+        "test_boost": 1.08,
+        "code_boost": 0.55,
+        "vector_weight": 0.42,
+        "bm25_weight": 0.30,
+        "source_weight": 0.20,
+        "heading_weight": 0.08,
+        "max_chunks_per_source": 1,
         "preview_chars": 500,
+        "expand_english_synonyms": False,
+        "synonyms": {
+            "approval": ["permission", "authorize"],
+            "block": ["deny", "guard", "stop"],
+            "config": ["configuration", "settings"],
+            "dependency": ["deps", "import", "require"],
+            "deps": ["dependency", "dependencies", "import", "require"],
+            "deploy": ["install", "runtime", "enforce"],
+            "enforcing": ["enforce", "enforcement", "install"],
+            "fixture": ["proof", "contract", "payload"],
+            "guard": ["block", "deny", "stop"],
+            "hook": ["entry", "event"],
+            "matrix": ["matrices"],
+            "metadata": ["registry", "schema"],
+            "mcp": ["mcpservers", "stdio", "tool"],
+            "permission": ["approval", "deny"],
+            "proof": ["fixture", "contract", "evidence"],
+            "provider": ["codex", "claude", "deepseek"],
+            "rag": ["retrieval", "search", "index"],
+            "readiness": ["ready", "gate", "enforcing"],
+            "registry": ["metadata", "schema"],
+            "schema": ["registry", "contract"],
+            "search": ["lookup", "retrieval", "rag"],
+            "stop": ["guard", "final", "continuation"],
+            "symbol": ["symbols", "lookup"],
+            "tool": ["mcp", "command"],
+            "готовність": ["readiness", "ready", "gate"],
+            "доказ": ["proof", "evidence"],
+            "докази": ["proof", "evidence"],
+            "залежність": ["dependency", "deps"],
+            "залежності": ["dependency", "deps"],
+            "захист": ["guard", "protection"],
+            "знайти": ["search", "lookup"],
+            "команда": ["command", "tool"],
+            "команд": ["command", "commands"],
+            "небезпечна": ["destructive", "dangerous"],
+            "небезпечних": ["destructive", "dangerous"],
+            "пошук": ["search", "retrieval"],
+            "символ": ["symbol"],
+            "символи": ["symbol", "symbols"],
+            "фінальна": ["final", "stop"],
+            "фінальною": ["final", "stop"],
+            "блокирует": ["block", "deny"],
+            "готовность": ["readiness", "ready"],
+            "зависимости": ["dependency", "deps"],
+            "защита": ["guard", "protection"],
+            "найти": ["search", "lookup"],
+            "опасных": ["destructive", "dangerous"],
+            "символы": ["symbol", "symbols"]
+        },
     },
 }
 
-TOKEN_RE = re.compile(r"[\w./:-]{2,}", re.UNICODE)
+TOKEN_RE = re.compile(r"[\w./:\\-]{2,}", re.UNICODE)
+SPLIT_RE = re.compile(r"[./:\\\-_]+")
+CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 
 
@@ -558,22 +620,101 @@ def index_status(root_arg: str | os.PathLike[str] | None = None, config_path: st
             "reason": "missing manifest",
         }
 
-    stale = manifest.get("config_hash") != expected_hash
+    stale_reasons = []
+    if manifest.get("config_hash") != expected_hash:
+        stale_reasons.append("config hash changed")
+    if manifest.get("search_version") != SEARCH_VERSION:
+        stale_reasons.append("search version changed")
+    if manifest.get("tokenizer_version") != TOKENIZER_VERSION:
+        stale_reasons.append("tokenizer version changed")
+    if manifest.get("chunker_version") != CHUNKER_VERSION:
+        stale_reasons.append("chunker version changed")
     return {
         "exists": True,
         "index_dir": str(index_dir),
-        "stale": stale,
-        "reason": "config hash changed" if stale else None,
+        "stale": bool(stale_reasons),
+        "reason": ", ".join(stale_reasons) if stale_reasons else None,
         "manifest": manifest,
     }
 
 
 def tokenize(text: str) -> list[str]:
-    return [token.lower() for token in TOKEN_RE.findall(text)]
+    tokens: list[str] = []
+    for raw_token in TOKEN_RE.findall(text):
+        lowered = raw_token.lower()
+        if len(lowered) >= 2:
+            tokens.append(lowered)
+        parts: list[str] = []
+        for part in SPLIT_RE.split(raw_token):
+            for camel_part in CAMEL_RE.split(part):
+                normalized = camel_part.lower()
+                if len(normalized) >= 2:
+                    parts.append(normalized)
+                    if normalized.endswith("ed") and len(normalized) > 4:
+                        parts.append(normalized[:-1])
+                        parts.append(normalized[:-2])
+        tokens.extend(parts)
+        if len(parts) > 1:
+            tokens.append("_".join(parts))
+    return tokens
 
 
 def token_counts(text: str) -> Counter[str]:
     return Counter(tokenize(text))
+
+
+def expand_query(query: str, config: dict[str, Any]) -> str:
+    search_cfg = config.get("search", {})
+    synonyms = search_cfg.get("synonyms", {})
+    if not isinstance(synonyms, dict):
+        return query
+    has_cyrillic = any("а" <= char.lower() <= "я" or char.lower() in "єіїґ" for char in query)
+    if not has_cyrillic and not bool(search_cfg.get("expand_english_synonyms", False)):
+        return query
+    expansions: list[str] = []
+    seen: set[str] = set()
+    for token in tokenize(query):
+        for synonym in synonyms.get(token, [])[:4]:
+            normalized = str(synonym).strip()
+            key = normalized.lower()
+            if normalized and key not in seen:
+                expansions.append(normalized)
+                seen.add(key)
+    if not expansions:
+        return query
+    return f"{query} {' '.join(expansions)}"
+
+
+def weighted_document_text(chunk: dict[str, Any]) -> str:
+    source = str(chunk.get("source", ""))
+    heading = str(chunk.get("heading", ""))
+    text = str(chunk.get("text", ""))
+    path_words = " ".join(SPLIT_RE.split(source))
+    return f"{source} {path_words} {source} {heading} {heading} {text}"
+
+
+def artifact_boost(source: str, artifact: str, config: dict[str, Any]) -> float:
+    search_cfg = config.get("search", {})
+    if "/matrices/" in f"/{source}" or ".matrix." in source:
+        return float(search_cfg.get("matrix_boost", 1.18))
+    if artifact in ("json_schema", "yaml_schema") or "/schemas/" in f"/{source}":
+        return float(search_cfg.get("schema_boost", 1.12))
+    if artifact.startswith("markdown"):
+        return float(search_cfg.get("docs_boost", 1.18))
+    if "/tests/" in f"/{source}" or source.startswith("tests/"):
+        return float(search_cfg.get("test_boost", 1.08))
+    if artifact in ("python_file", "ruby_file", "ts_module", "php_file", "shell_script"):
+        return float(search_cfg.get("code_boost", 0.9))
+    return 1.0
+
+
+def overlap_score(query_terms: set[str], text: str) -> float:
+    if not query_terms:
+        return 0.0
+    terms = set(tokenize(text))
+    if not terms:
+        return 0.0
+    return len(query_terms & terms) / len(query_terms)
 
 
 def hashed_vector(counts: Counter[str], dim: int) -> dict[int, float]:
@@ -642,12 +783,18 @@ def search_index(
     search_cfg = config.get("search", {})
     dim = int(search_cfg.get("hash_dim", 512))
     min_score = float(search_cfg.get("min_score", 0.02))
-    docs_boost = float(search_cfg.get("docs_boost", 1.08))
     preview_chars = int(search_cfg.get("preview_chars", 500))
+    vector_weight = float(search_cfg.get("vector_weight", 0.45))
+    bm25_weight = float(search_cfg.get("bm25_weight", 0.35))
+    source_weight = float(search_cfg.get("source_weight", 0.14))
+    heading_weight = float(search_cfg.get("heading_weight", 0.06))
+    max_chunks_per_source = max(1, int(search_cfg.get("max_chunks_per_source", 2)))
 
-    query_counts = token_counts(query)
+    expanded_query = expand_query(query, config)
+    query_counts = token_counts(expanded_query)
+    query_terms = set(query_counts)
     query_vector = hashed_vector(query_counts, dim)
-    doc_counts = [token_counts(chunk.get("text", "")) for chunk in chunks]
+    doc_counts = [token_counts(weighted_document_text(chunk)) for chunk in chunks]
     raw_bm25 = bm25_scores(query_counts, doc_counts)
     max_bm25 = max(raw_bm25) if raw_bm25 else 0.0
 
@@ -661,9 +808,15 @@ def search_index(
             continue
         vector_score = max(cosine_sparse(query_vector, hashed_vector(doc_counts[index], dim)), 0.0)
         bm25 = raw_bm25[index] / max_bm25 if max_bm25 > 0 else 0.0
-        score = 0.6 * vector_score + 0.4 * bm25
-        if chunk_type.startswith("markdown"):
-            score *= docs_boost
+        source_match = overlap_score(query_terms, source)
+        heading_match = overlap_score(query_terms, str(chunk.get("heading", "")))
+        score = (
+            vector_weight * vector_score
+            + bm25_weight * bm25
+            + source_weight * source_match
+            + heading_weight * heading_match
+        )
+        score *= artifact_boost(source, chunk_type, config)
         if score < min_score:
             continue
         preview = re.sub(r"\s+", " ", str(chunk.get("text", ""))).strip()[:preview_chars]
@@ -672,6 +825,8 @@ def search_index(
                 "score": round(score, 6),
                 "vector": round(vector_score, 6),
                 "bm25": round(bm25, 6),
+                "source_match": round(source_match, 6),
+                "heading_match": round(heading_match, 6),
                 "source": source,
                 "heading": chunk.get("heading", ""),
                 "artifact_type": chunk_type,
@@ -681,7 +836,18 @@ def search_index(
         )
 
     results.sort(key=lambda item: (-item["score"], item["source"], item["start_line"]))
-    return results[: max(1, min(int(top_k), 50))]
+    limit = max(1, min(int(top_k), 50))
+    diverse: list[dict[str, Any]] = []
+    source_counts: Counter[str] = Counter()
+    for result in results:
+        source = str(result["source"])
+        if source_counts[source] >= max_chunks_per_source:
+            continue
+        diverse.append(result)
+        source_counts[source] += 1
+        if len(diverse) >= limit:
+            break
+    return diverse
 
 
 def lookup_symbol(

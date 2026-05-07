@@ -27,7 +27,24 @@
         "hash_dim": { "type": "integer", "minimum": 16 },
         "min_score": { "type": "number", "minimum": 0 },
         "docs_boost": { "type": "number", "minimum": 0 },
-        "preview_chars": { "type": "integer", "minimum": 1 }
+        "matrix_boost": { "type": "number", "minimum": 0 },
+        "schema_boost": { "type": "number", "minimum": 0 },
+        "test_boost": { "type": "number", "minimum": 0 },
+        "code_boost": { "type": "number", "minimum": 0 },
+        "vector_weight": { "type": "number", "minimum": 0 },
+        "bm25_weight": { "type": "number", "minimum": 0 },
+        "source_weight": { "type": "number", "minimum": 0 },
+        "heading_weight": { "type": "number", "minimum": 0 },
+        "max_chunks_per_source": { "type": "integer", "minimum": 1 },
+        "expand_english_synonyms": { "type": "boolean" },
+        "preview_chars": { "type": "integer", "minimum": 1 },
+        "synonyms": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
       }
     }
   }

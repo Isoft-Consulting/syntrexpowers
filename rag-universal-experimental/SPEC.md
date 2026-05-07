@@ -28,6 +28,7 @@ Included in v0:
 - Symbol extraction for common docs and languages.
 - Dependency edge extraction for Python, Ruby, JavaScript/TypeScript, shell, and PHP import forms.
 - CLI commands: `index`, `status`, `search`, `symbol`, `deps`, `serve-mcp`.
+- Quality command: `eval-quality` compares RAG retrieval against a keyword baseline on gold-query files.
 - MCP tools: `rag_search`, `rag_reindex`, `rag_status`, `rag_symbol`, `rag_deps`.
 - JSON schemas for config and generated artifacts.
 - Provider-neutral operation: Codex, DeepSeek, Claude, or another model client can use the same stdio server command if it supports MCP.
@@ -85,5 +86,6 @@ Projects can loosen the rules explicitly in their own `rag.config.json`, but the
 - `python3 tools/rag.py search --root <repo> --config <config> "query"` returns ranked chunks.
 - `python3 tools/rag.py symbol --root <repo> --config <config> Name` returns exact symbol matches.
 - `python3 tools/rag.py deps --root <repo> --config <config> target` returns dependency edges.
+- `python3 tools/rag.py eval-quality --root <repo> --config <config> --cases <cases.json>` reports Top-1, Top-3, Top-5, and MRR.
 - `python3 tools/rag.py serve-mcp --root <repo> --config <config>` speaks MCP stdio.
 - Tests prove secret path exclusion, index artifact generation, search ranking, symbol lookup, dependency lookup, provider-neutral initialize handling, and MCP tool dispatch.
