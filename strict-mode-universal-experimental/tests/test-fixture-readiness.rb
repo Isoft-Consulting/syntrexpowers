@@ -13,6 +13,7 @@ require_relative "../tools/fixture_readiness_lib"
 ROOT = StrictModeMetadata.project_root
 CHECKER = ROOT.join("tools/check-fixture-readiness.rb")
 REPORTER = ROOT.join("tools/report-enforcement-readiness.rb")
+PLANNER = ROOT.join("tools/plan-fixture-capture.rb")
 IMPORTER = ROOT.join("tools/import-discovery-fixture.rb")
 CONTRACT_IMPORTER = ROOT.join("tools/import-contract-fixture.rb")
 
@@ -293,6 +294,45 @@ with_root do |root|
 end
 
 with_root do |root|
+  name = "fixture capture planner emits importer checklist for missing proofs"
+  status, output = run_cmd(PLANNER, "--root", root, "--provider", "codex", "--format", "json")
+  assert_no_stacktrace(name, output)
+  record_failure(name, "expected planner exit 0, got #{status}", output) unless status.zero?
+  parsed = JSON.parse(output)
+  provider = parsed.fetch("providers").first
+  missing_required = provider.fetch("missing_required")
+  missing_optional = provider.fetch("missing_optional")
+  record_failure(name, "wrong plan kind", output) unless parsed.fetch("plan_kind") == "fixture-capture"
+  record_failure(name, "planner should report not ready", output) if parsed.fetch("ready")
+  record_failure(name, "wrong required missing count", output) unless parsed.fetch("missing_required_count") == 14 && missing_required.length == 14
+  record_failure(name, "wrong optional missing count", output) unless parsed.fetch("missing_optional_count") == 3 && missing_optional.length == 3
+  early = missing_required.find { |step| step.fetch("event") == "early-baseline" && step.fetch("contract_kind") == "event-order" }
+  payload = missing_required.find { |step| step.fetch("event") == "pre-tool-use" && step.fetch("contract_kind") == "payload-schema" }
+  decision = missing_required.find { |step| step.fetch("event") == "stop" && step.fetch("contract_kind") == "decision-output" }
+  record_failure(name, "missing early baseline step", output) unless early
+  record_failure(name, "missing payload step", output) unless payload
+  record_failure(name, "missing decision step", output) unless decision
+  if early
+    record_failure(name, "early accepted events mismatch", output) unless early.fetch("accepted_events") == %w[session-start user-prompt-submit]
+    record_failure(name, "early command must use accepted event placeholder", output) unless early.fetch("example_command").include?("--event <session-start-or-user-prompt-submit>")
+  end
+  if payload
+    record_failure(name, "payload importer mismatch", output) unless payload.fetch("importer") == "tools/import-discovery-fixture.rb"
+    record_failure(name, "payload source input missing", output) unless payload.fetch("required_inputs").any? { |input| input.fetch("name") == "source_payload" }
+  end
+  if decision
+    record_failure(name, "decision importer mismatch", output) unless decision.fetch("importer") == "tools/import-contract-fixture.rb"
+    record_failure(name, "decision metadata input missing", output) unless decision.fetch("required_inputs").any? { |input| input.fetch("name") == "provider_output_metadata" }
+    record_failure(name, "decision command missing captured output args", output) unless decision.fetch("example_command").include?("--metadata <provider-output.json>") && decision.fetch("example_command").include?("--exit-code <exit-code>")
+  end
+
+  status, output = run_cmd(PLANNER, "--root", root, "--provider", "codex")
+  assert_no_stacktrace("#{name} text", output)
+  record_failure(name, "expected text planner exit 0, got #{status}", output) unless status.zero?
+  record_failure(name, "text planner missing decision step", output) unless output.include?("required stop decision-output -> tools/import-contract-fixture.rb")
+end
+
+with_root do |root|
   name = "enforcing report accepts exact provider version selectors"
   payload_records = []
   %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
@@ -386,6 +426,21 @@ with_root do |root|
   selected = provider.fetch("selected_output_contracts")
   record_failure(name, "report should be ready", output) unless parsed.fetch("ready") && provider.fetch("ready")
   record_failure(name, "selected output contract mismatch", output) unless selected.map { |record| [record.fetch("logical_event"), record.fetch("contract_id")] } == [["pre-tool-use", "codex.pre-tool-use.block"], ["stop", "codex.stop.block"]]
+
+  status, output = run_cmd(PLANNER, "--root", root, "--provider", "codex", "--format", "json")
+  assert_no_stacktrace("#{name} planner", output)
+  record_failure(name, "expected planner exit 0, got #{status}", output) unless status.zero?
+  parsed = JSON.parse(output)
+  provider = parsed.fetch("providers").first
+  record_failure(name, "planner should report ready", output) unless parsed.fetch("ready") && provider.fetch("ready")
+  record_failure(name, "planner required gaps should be empty", output) unless provider.fetch("missing_required").empty?
+  optional = provider.fetch("missing_optional").map { |step| [step.fetch("event"), step.fetch("contract_kind")] }
+  expected_optional = [
+    ["permission-request", "payload-schema"],
+    ["permission-request", "command-execution"],
+    ["permission-request", "decision-output"]
+  ]
+  record_failure(name, "planner optional gaps mismatch", output) unless optional == expected_optional
 end
 
 with_root do |root|

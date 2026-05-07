@@ -41,9 +41,10 @@ To inspect the current enforcing blockers as a structured report, run:
 
 ```bash
 ruby tools/report-enforcement-readiness.rb --provider all --format json
+ruby tools/plan-fixture-capture.rb --provider all --format json
 ```
 
-Use `tools/check-fixture-readiness.rb` for the compact pass/fail gate and `tools/report-enforcement-readiness.rb` for structured diagnostics. Both support repeated `--provider-version PROVIDER=VERSION` selectors and exit non-zero until the required provider fixture proofs exist.
+Use `tools/check-fixture-readiness.rb` for the compact pass/fail gate, `tools/report-enforcement-readiness.rb` for structured diagnostics, and `tools/plan-fixture-capture.rb` for a required/optional capture checklist with importer commands. The checker and reporter exit non-zero until the required provider fixture proofs exist; the planner exits zero when it can generate the checklist. All three support repeated `--provider-version PROVIDER=VERSION` selectors.
 
 Use `tools/import-discovery-fixture.rb` to import captured provider payloads as `payload-schema` fixtures, or `tools/import-raw-captures.rb` to batch-promote raw payloads captured under `<state-root>/discovery/raw`. Use `tools/import-contract-fixture.rb` to import the remaining readiness proof files, including `event-order`, `matcher`, `command-execution`, and `decision-output` contracts. `decision-output` imports must provide provider-output metadata plus captured stdout, stderr, and exit-code files.
 
