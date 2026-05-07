@@ -715,16 +715,17 @@ begin
 rescue ArgumentError => e
   usage_error(e.message)
 end
+selected_output_contracts = []
 if options[:enforce]
   readiness_errors = StrictModeFixtureReadiness.enforcing_errors(StrictModeMetadata.project_root, providers, options[:provider_versions])
   unless readiness_errors.empty?
     fail_install("enforcing activation fixture readiness failed:\n#{readiness_errors.map { |error| "- #{error}" }.join("\n")}")
   end
+  selected_output_contracts = StrictModeFixtureReadiness.selected_output_contracts(StrictModeMetadata.project_root, providers, options[:provider_versions])
   if options[:plan_only]
     puts JSON.pretty_generate(build_install_plan(home, install_root, state_root, providers, enforce: true, provider_versions: options[:provider_versions]))
     exit 0
   end
-  fail_install("enforcing activation requires implemented shared-core enforcement and is not available in the discovery skeleton")
 end
 if options[:plan_only]
   puts JSON.pretty_generate(build_install_plan(home, install_root, state_root, providers, enforce: false, provider_versions: options[:provider_versions]))
@@ -829,7 +830,7 @@ begin
     case provider
     when "claude"
       path = home.join(".claude/settings.json")
-      entries = managed_entries(provider, path, install_root)
+      entries = managed_entries(provider, path, install_root, selected_output_contracts: selected_output_contracts, enforce: options[:enforce])
       install_json_hooks(path, entries)
       provider_entries.concat(entries)
       provider_config_paths[provider] = path
@@ -838,7 +839,7 @@ begin
       hooks_path = home.join(".codex/hooks.json")
       config_path = home.join(".codex/config.toml")
       ensure_codex_hooks_feature(config_path)
-      entries = managed_entries(provider, hooks_path, install_root)
+      entries = managed_entries(provider, hooks_path, install_root, selected_output_contracts: selected_output_contracts, enforce: options[:enforce])
       install_json_hooks(hooks_path, entries)
       provider_entries.concat(entries)
       provider_config_paths[provider] = hooks_path
@@ -873,7 +874,6 @@ begin
   runtime_config = runtime_config_records(config_root)
   protected_config = protected_config_records(config_root)
   fixture_manifest_records = StrictModeFixtureReadiness.fixture_manifest_records(StrictModeMetadata.project_root, providers)
-  selected_output_contracts = []
 
   manifest = {
     "schema_version" => 1,
@@ -955,7 +955,8 @@ begin
 
   StrictModeTransactionMarker.delete_pending_marker_after_complete!(state_root, "install", pending_path, complete_marker)
 
-  puts "installed strict-mode discovery skeleton at #{install_root}"
+  mode = options[:enforce] ? "enforcing" : "discovery"
+  puts "installed strict-mode #{mode} runtime at #{install_root}"
 rescue SystemCallError, RuntimeError, JSON::ParserError => e
   failure_message = e.message
   begin

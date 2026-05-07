@@ -42,6 +42,14 @@ def run_cmd(env, *args)
   [status.exitstatus, stdout + stderr]
 end
 
+def run_cmd_capture(env, *args, stdin_data: nil, chdir: nil)
+  opts = {}
+  opts[:stdin_data] = stdin_data if stdin_data
+  opts[:chdir] = chdir.to_s if chdir
+  stdout, stderr, status = Open3.capture3(env, *args.map(&:to_s), opts)
+  [status.exitstatus, stdout, stderr]
+end
+
 def run_ruby(*args)
   stdout, stderr, status = Open3.capture3(RbConfig.ruby, *args.map(&:to_s))
   [status.exitstatus, stdout + stderr]
@@ -1434,6 +1442,58 @@ with_fixture do |root, home, install_root|
   assert(name, plan.fetch("managed_hook_entries").select { |entry| entry.fetch("enforcing") }.map { |entry| entry.fetch("logical_event") } == %w[pre-tool-use stop], "exact-version plan did not enforce expected hooks", output)
   assert(name, home.join(".codex/hooks.json").read == before_hooks, "exact plan-only mutated Codex hooks")
   assert(name, !install_root.exist?, "exact plan-only created install root")
+end
+
+with_fixture do |root, home, install_root|
+  name = "enforcing install writes enforcing baseline and runtime blocks"
+  project_root = copied_project_with_codex_enforcing_fixtures(root)
+  exitstatus, output = run_cmd({ "HOME" => home.to_s }, project_root.join("install.sh"), "--provider", "codex", "--install-root", install_root, "--enforce")
+  assert_no_stacktrace(name, output)
+  assert(name, exitstatus.zero?, "expected enforcing install success, got #{exitstatus}", output)
+
+  manifest = assert_hash_valid(name, install_root.join("install-manifest.json"), "manifest_hash")
+  baseline = assert_hash_valid(name, install_root.join("state/protected-install-baseline.json"), "baseline_hash")
+  selected = manifest.fetch("selected_output_contracts")
+  assert(name, selected.map { |record| [record.fetch("logical_event"), record.fetch("contract_id")] } == [["pre-tool-use", "codex.pre-tool-use.block"], ["stop", "codex.stop.block"]], "selected output contracts mismatch", selected.inspect)
+  assert(name, baseline.fetch("selected_output_contracts") == selected, "baseline selected output contracts mismatch")
+  entries = manifest.fetch("managed_hook_entries")
+  assert(name, entries.select { |entry| entry.fetch("enforcing") }.map { |entry| entry.fetch("logical_event") } == %w[pre-tool-use stop], "wrong enforcing hook entries", entries.inspect)
+  assert(name, strict_commands(read_json(home.join(".codex/hooks.json"))).size == 5, "Codex enforcing install did not write managed hooks")
+
+  payload = {
+    "event" => "pre-tool-use",
+    "thread_id" => "t1",
+    "tool_name" => "exec_command",
+    "tool_input" => {
+      "command" => "touch \"#{install_root.join('config/runtime.env')}\""
+    }
+  }
+  project = root.join("project")
+  project.mkpath
+  hook_env = {
+    "HOME" => home.to_s,
+    "STRICT_INSTALL_ROOT" => install_root.to_s,
+    "STRICT_STATE_ROOT" => install_root.join("state").to_s,
+    "STRICT_PROJECT_DIR" => project.to_s
+  }
+  status, stdout, stderr = run_cmd_capture(
+    hook_env,
+    install_root.join("active/bin/strict-hook"),
+    "--provider",
+    "codex",
+    "pre-tool-use",
+    stdin_data: JSON.generate(payload) + "\n",
+    chdir: project
+  )
+  assert_no_stacktrace("#{name} hook", stdout + stderr)
+  assert(name, status.zero?, "provider block contract should control exit status", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "block", "enforcing hook did not emit block output", stdout)
+  assert(name, emitted.fetch("reason").include?("protected-root"), "enforcing hook reason missing preflight reason", stdout)
+  assert(name, stderr.empty?, "enforcing provider contract should keep stderr empty", stderr)
+  discovery_record = JSON.parse(install_root.join("state/discovery/codex-pre-tool-use.jsonl").read.lines.last)
+  assert(name, discovery_record.fetch("mode") == "enforcing", "hook discovery record did not mark enforcing mode", discovery_record.inspect)
+  assert(name, discovery_record.fetch("enforcement").fetch("emitted") == true, "hook discovery record missing enforcement emission", discovery_record.inspect)
 end
 
 with_fixture do |_root, home, install_root|
