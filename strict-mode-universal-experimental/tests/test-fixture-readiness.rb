@@ -12,6 +12,7 @@ require_relative "../tools/fixture_readiness_lib"
 
 ROOT = StrictModeMetadata.project_root
 CHECKER = ROOT.join("tools/check-fixture-readiness.rb")
+REPORTER = ROOT.join("tools/report-enforcement-readiness.rb")
 IMPORTER = ROOT.join("tools/import-discovery-fixture.rb")
 
 $cases = 0
@@ -166,7 +167,7 @@ def range_compatible(record)
   copy
 end
 
-def import_codex_payload(root, event)
+def import_codex_payload(root, event, provider_version: "unknown")
   source = root.join("capture/#{event}.json")
   source.dirname.mkpath
   source.write(JSON.generate({
@@ -178,7 +179,7 @@ def import_codex_payload(root, event)
   project = root.join("project")
   cwd = project.join("src")
   cwd.mkpath
-  run_cmd(IMPORTER, "--root", root, "--provider", "codex", "--event", event, "--source", source, "--cwd", cwd, "--project-dir", project, "--captured-at", "2026-05-06T00:00:00Z")
+  run_cmd(IMPORTER, "--root", root, "--provider", "codex", "--event", event, "--source", source, "--cwd", cwd, "--project-dir", project, "--captured-at", "2026-05-06T00:00:00Z", "--provider-version", provider_version)
 end
 
 def write_manifest(root, provider, records)
@@ -209,6 +210,65 @@ with_root do |root|
   record_failure(name, "missing event-order diagnostic", output) unless output.include?("missing codex event-order fixture")
   record_failure(name, "missing payload diagnostic", output) unless output.include?("missing codex stop payload-schema fixture")
   record_failure(name, "missing decision-output diagnostic", output) unless output.include?("missing codex stop decision-output fixture")
+end
+
+with_root do |root|
+  name = "enforcing report summarizes missing required fixture proofs"
+  report = StrictModeFixtureReadiness.enforcing_report(root, ["codex"])
+  record_failure(name, "report should not be ready", report.inspect) if report.fetch("ready")
+  provider = report.fetch("providers").first
+  record_failure(name, "wrong provider", report.inspect) unless provider.fetch("provider") == "codex"
+  record_failure(name, "manifest should be valid", report.inspect) unless provider.fetch("manifest_valid")
+  record_failure(name, "expected zero enforceable records", report.inspect) unless provider.fetch("enforceable_record_count") == 0
+  pre_check = provider.fetch("required_checks").find { |check| check.fetch("event") == "pre-tool-use" && check.fetch("contract_kind") == "matcher" }
+  record_failure(name, "missing pre-tool matcher check", report.inspect) unless pre_check
+  record_failure(name, "pre-tool matcher should be missing", report.inspect) if pre_check&.fetch("ready")
+  record_failure(name, "missing top-level errors", report.inspect) unless report.fetch("errors").include?("missing codex stop decision-output fixture with block/deny provider output")
+
+  status, output = run_cmd(REPORTER, "--root", root, "--provider", "codex", "--format", "json")
+  assert_no_stacktrace(name, output)
+  record_failure(name, "expected reporter exit 1, got #{status}", output) unless status == 1
+  parsed = JSON.parse(output)
+  record_failure(name, "json report mismatch", output) if parsed.fetch("report_kind") != "enforcing-readiness" || parsed.fetch("ready")
+end
+
+with_root do |root|
+  name = "enforcing report accepts exact provider version selectors"
+  payload_records = []
+  %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
+    status, output = import_codex_payload(root, event, provider_version: "1.0.0")
+    assert_no_stacktrace("#{name} import #{event}", output)
+    if status.zero?
+      payload_records = StrictModeFixtures.load_json(StrictModeFixtures.manifest_path(root, "codex")).fetch("records")
+    else
+      record_failure(name, "payload import failed for #{event}", output)
+    end
+  end
+  records = [
+    record_for(root, provider: "codex", contract_id: "codex.order", contract_kind: "event-order", event: "session-start"),
+    record_for(root, provider: "codex", contract_id: "codex.pre.matcher", contract_kind: "matcher", event: "pre-tool-use")
+  ]
+  %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
+    records << record_for(root, provider: "codex", contract_id: "codex.#{event}.command", contract_kind: "command-execution", event: event)
+  end
+  %w[pre-tool-use stop].each do |event|
+    records << record_for(root, provider: "codex", contract_id: "codex.#{event}.decision", contract_kind: "decision-output", event: event)
+  end
+  write_manifest(root, "codex", payload_records + records)
+
+  status, output = run_cmd(REPORTER, "--root", root, "--provider", "codex", "--provider-version", "codex=1.0.0", "--format", "json")
+  assert_no_stacktrace(name, output)
+  record_failure(name, "expected reporter exit 0, got #{status}", output) unless status.zero?
+  parsed = JSON.parse(output)
+  provider = parsed.fetch("providers").first
+  record_failure(name, "report should be ready", output) unless parsed.fetch("ready") && provider.fetch("ready")
+  record_failure(name, "provider version missing", output) unless provider.fetch("installed_version") == "1.0.0"
+  record_failure(name, "selected output contracts missing", output) unless provider.fetch("selected_output_contracts").length == 2
+
+  status, output = run_cmd(REPORTER, "--root", root, "--provider", "codex", "--provider-version", "claude=1.0.0")
+  assert_no_stacktrace("#{name} invalid selector", output)
+  record_failure(name, "expected invalid selector exit 2, got #{status}", output) unless status == 2
+  record_failure(name, "missing invalid selector diagnostic", output) unless output.include?("outside --provider selection")
 end
 
 with_root do |root|
@@ -285,6 +345,12 @@ with_root do |root|
   record_failure(name, "selected output contracts mismatch", selected.inspect) unless selected_ids == expected_ids
   manifest_hash = StrictModeFixtures.load_json(StrictModeFixtures.manifest_path(root, "codex")).fetch("manifest_hash")
   record_failure(name, "selected output contracts missing manifest hash", selected.inspect) unless selected.all? { |record| record.fetch("fixture_manifest_hash") == manifest_hash }
+
+  report = StrictModeFixtureReadiness.enforcing_report(root, ["codex"])
+  record_failure(name, "report should be ready", JSON.pretty_generate(report)) unless report.fetch("ready")
+  provider = report.fetch("providers").first
+  record_failure(name, "report selected output mismatch", provider.fetch("selected_output_contracts").inspect) unless provider.fetch("selected_output_contracts").map { |record| record.fetch("contract_id") } == ["codex.pre-tool-use.decision", "codex.stop.decision"]
+  record_failure(name, "required checks should be ready", JSON.pretty_generate(report)) unless provider.fetch("required_checks").all? { |check| check.fetch("ready") }
 end
 
 with_root do |root|
