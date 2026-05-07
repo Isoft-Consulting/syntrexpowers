@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from rag_universal.core import build_index, index_status, load_chunks, lookup_deps, lookup_symbol, search_index, tokenize
+from rag_universal.core import build_index, index_coverage, index_status, load_chunks, lookup_deps, lookup_symbol, search_index, tokenize
 from rag_universal.eval_quality import evaluate_quality
 from rag_universal.mcp_server import handle_message
 
@@ -43,18 +43,22 @@ class RagUniversalTest(unittest.TestCase):
         (root / ".mcp.json").write_text('{"authorization":"Bearer should-not-be-indexed"}', encoding="utf-8")
         (root / "node_modules").mkdir()
         (root / "node_modules" / "ignored.md").write_text("ignored dependency docs", encoding="utf-8")
+        (root / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+        (root / ".dockerignore").write_text(".env\n**/.env*\n", encoding="utf-8")
         return root
 
     def test_index_excludes_secret_paths_and_generates_artifacts(self) -> None:
         root = self.make_project()
         manifest = build_index(root)
-        self.assertEqual(manifest["num_files"], 4)
+        self.assertEqual(manifest["num_files"], 6)
         self.assertGreaterEqual(manifest["num_chunks"], 3)
         chunks = load_chunks(root / ".rag-index")
         sources = {chunk["source"] for chunk in chunks}
         self.assertIn("README.md", sources)
         self.assertIn("src/service.py", sources)
         self.assertIn("src/Sql.php", sources)
+        self.assertIn("Dockerfile", sources)
+        self.assertIn(".dockerignore", sources)
         self.assertNotIn(".env", sources)
         self.assertNotIn(".mcp.json", sources)
         self.assertFalse(any("should-not-be-indexed" in chunk["text"] for chunk in chunks))
@@ -114,7 +118,7 @@ class RagUniversalTest(unittest.TestCase):
 
         listed = handle_message({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, str(root), None)
         names = {tool["name"] for tool in listed["result"]["tools"]}
-        self.assertEqual({"rag_search", "rag_reindex", "rag_status", "rag_symbol", "rag_deps"}, names)
+        self.assertEqual({"rag_search", "rag_reindex", "rag_status", "rag_coverage", "rag_symbol", "rag_deps"}, names)
 
         called = handle_message(
             {
@@ -139,7 +143,7 @@ class RagUniversalTest(unittest.TestCase):
             capture_output=True,
         )
         manifest = json.loads(index.stdout)
-        self.assertEqual(manifest["num_files"], 4)
+        self.assertEqual(manifest["num_files"], 6)
 
         search = subprocess.run(
             [sys.executable, str(tool), "search", "--root", str(root), "strict stop guard", "--top-k", "1"],
@@ -165,7 +169,63 @@ class RagUniversalTest(unittest.TestCase):
             capture_output=True,
         )
         manifest = json.loads(index.stdout)
-        self.assertEqual(manifest["num_files"], 4)
+        self.assertEqual(manifest["num_files"], 6)
+
+    def test_force_include_contract_tests_and_coverage_report(self) -> None:
+        root = self.make_project()
+        (root / "tests" / "Unit").mkdir(parents=True)
+        (root / "tests" / "Unit" / "BuildAndPushNodeImagesScriptTest.php").write_text("<?php\n", encoding="utf-8")
+        (root / "tests" / "Unit" / "RegularTest.php").write_text("<?php\n", encoding="utf-8")
+        outside = root.parent / "outside.txt"
+        outside.write_text("outside root", encoding="utf-8")
+        (root / "rag.config.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "rag.config.v1",
+                    "exclude_dirs": ["tests", "node_modules"],
+                    "force_include_globs": ["tests/Unit/*ScriptTest.php"],
+                }
+            ),
+            encoding="utf-8",
+        )
+        build_index(root)
+        coverage = index_coverage(
+            root,
+            None,
+            [
+                "tests/Unit/BuildAndPushNodeImagesScriptTest.php",
+                "tests/Unit/RegularTest.php",
+                "Dockerfile",
+                ".dockerignore",
+                "../outside.txt",
+                str(outside),
+            ],
+        )
+        by_source = {entry["source"]: entry for entry in coverage["paths"]}
+        self.assertTrue(by_source["tests/Unit/BuildAndPushNodeImagesScriptTest.php"]["indexed"])
+        self.assertTrue(by_source["tests/Unit/BuildAndPushNodeImagesScriptTest.php"]["force_included"])
+        self.assertFalse(by_source["tests/Unit/RegularTest.php"]["indexed"])
+        self.assertEqual(by_source["tests/Unit/RegularTest.php"]["reason"], "excluded_dir")
+        self.assertTrue(by_source["Dockerfile"]["indexed"])
+        self.assertTrue(by_source[".dockerignore"]["indexed"])
+        self.assertEqual(coverage["paths"][4]["reason"], "outside_root")
+        self.assertFalse(coverage["paths"][4]["exists"])
+        self.assertEqual(coverage["paths"][5]["reason"], "outside_root")
+        self.assertFalse(coverage["paths"][5]["exists"])
+
+    def test_path_query_suffix_escapes_like_wildcards(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "docs" / "sub").mkdir(parents=True)
+        (root / "docs" / "sub" / "foo_bar.md").write_text("# Exact\n\nPath exact.", encoding="utf-8")
+        (root / "docs" / "sub" / "fooXbar.md").write_text("# Wrong\n\nPath wrong.", encoding="utf-8")
+        build_index(root)
+        results = search_index(root, None, "sub/foo_bar.md", top_k=2)
+        self.assertEqual(results[0]["source"], "docs/sub/foo_bar.md")
+        by_source = {item["source"]: item for item in results}
+        self.assertEqual(by_source["docs/sub/foo_bar.md"]["path_match"], 0.85)
+        self.assertEqual(by_source.get("docs/sub/fooXbar.md", {}).get("path_match", 0.0), 0.0)
 
     def test_search_uses_path_tokens_and_source_diversity(self) -> None:
         temp = tempfile.TemporaryDirectory()

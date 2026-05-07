@@ -8,6 +8,7 @@
     "schema_version": { "const": "rag.config.v1" },
     "index_dir": { "type": "string" },
     "include_globs": { "type": "array", "items": { "type": "string" } },
+    "force_include_globs": { "type": "array", "items": { "type": "string" } },
     "exclude_dirs": { "type": "array", "items": { "type": "string" } },
     "exclude_globs": { "type": "array", "items": { "type": "string" } },
     "secret_path_patterns": { "type": "array", "items": { "type": "string" } },
@@ -36,6 +37,8 @@
         "source_weight": { "type": "number", "minimum": 0 },
         "heading_weight": { "type": "number", "minimum": 0 },
         "max_chunks_per_source": { "type": "integer", "minimum": 1 },
+        "candidate_limit": { "type": "integer", "minimum": 1 },
+        "explicit_path_boost": { "type": "number", "minimum": 0 },
         "expand_english_synonyms": { "type": "boolean" },
         "preview_chars": { "type": "integer", "minimum": 1 },
         "synonyms": {

@@ -82,6 +82,7 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
 |---|---|---|
 | `index` / `rag_reindex` | CLI, MCP | Build the local `.rag-index`. |
 | `status` / `rag_status` | CLI, MCP | Inspect index counts, manifest, stale config state, and source-change state. |
+| `coverage` / `rag_coverage` | CLI, MCP | Explain whether specific paths are indexed or excluded. |
 | `search` / `rag_search` | CLI, MCP | Ranked chunk retrieval with source/type filters. |
 | `symbol` / `rag_symbol` | CLI, MCP | Exact symbol lookup. |
 | `deps` / `rag_deps` | CLI, MCP | Forward or reverse dependency edge lookup. |
@@ -99,6 +100,8 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
 ```
 
 `search.sqlite` stores precomputed postings/vector data used by `rag_search`, and `manifest.json` stores a source-state fingerprint so `rag_status` can report when indexed files changed. Do not commit generated index artifacts. The repository `.gitignore` excludes `.rag-index/`.
+
+`force_include_globs` can include narrow review-critical files from otherwise excluded directories, for example `tests/Unit/*ContractTest.php` while keeping the rest of `tests/` out of the index. `Dockerfile`, `Dockerfile.*`, and `.dockerignore` are included by default because build contracts are common FDR evidence.
 
 ## Tests
 

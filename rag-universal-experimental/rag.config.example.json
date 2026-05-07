@@ -12,7 +12,15 @@
     "**/*.js",
     "**/*.ts",
     "**/*.sh",
-    "**/*.php"
+    "**/*.php",
+    "Dockerfile",
+    "Dockerfile.*",
+    ".dockerignore"
+  ],
+  "force_include_globs": [
+    "tests/Unit/*ContractTest.php",
+    "tests/Unit/*ScriptTest.php",
+    "tests/Unit/*Dockerfile*Test.php"
   ],
   "exclude_dirs": [
     ".git",
@@ -88,6 +96,7 @@
     "heading_weight": 0.08,
     "max_chunks_per_source": 1,
     "candidate_limit": 5000,
+    "explicit_path_boost": 0.75,
     "expand_english_synonyms": false,
     "preview_chars": 500
   }

@@ -41,6 +41,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "**/*.ts",
         "**/*.sh",
         "**/*.php",
+        "Dockerfile",
+        "Dockerfile.*",
+        ".dockerignore",
+    ],
+    "force_include_globs": [
+        "tests/Unit/*ContractTest.php",
+        "tests/Unit/*ScriptTest.php",
+        "tests/Unit/*Dockerfile*Test.php",
     ],
     "exclude_dirs": [
         ".git",
@@ -116,6 +124,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "heading_weight": 0.08,
         "max_chunks_per_source": 1,
         "candidate_limit": 5000,
+        "explicit_path_boost": 0.75,
         "preview_chars": 500,
         "expand_english_synonyms": False,
         "synonyms": {
@@ -260,14 +269,46 @@ def matches_any(rel_path: str, patterns: list[str]) -> bool:
     return any(matches_pattern(rel_path, pattern) for pattern in patterns)
 
 
+def force_include_patterns(config: dict[str, Any]) -> list[str]:
+    return [str(pattern) for pattern in config.get("force_include_globs", [])]
+
+
+def is_force_included(rel_path: str, config: dict[str, Any]) -> bool:
+    return matches_any(rel_path, force_include_patterns(config))
+
+
+def dir_has_force_include(rel_dir: str, config: dict[str, Any]) -> bool:
+    rel = rel_dir.strip("/")
+    if not rel:
+        return bool(force_include_patterns(config))
+    rel_prefix = rel + "/"
+    for pattern in force_include_patterns(config):
+        normalized = pattern.strip().lstrip("/")
+        if normalized.startswith("**/"):
+            normalized = normalized[3:]
+        if normalized.startswith(rel_prefix):
+            return True
+    return False
+
+
 def should_skip_dir(rel_dir: str, dirname: str, config: dict[str, Any]) -> bool:
-    if dirname in set(config.get("exclude_dirs", [])):
+    if dirname in set(config.get("exclude_dirs", [])) and not dir_has_force_include(rel_dir, config):
         return True
     if not rel_dir:
         return False
-    return matches_any(rel_dir, config.get("exclude_globs", [])) or matches_any(
-        rel_dir, config.get("secret_path_patterns", [])
-    )
+    if dir_has_force_include(rel_dir, config):
+        return False
+    return matches_any(rel_dir, config.get("exclude_globs", [])) or matches_any(rel_dir, config.get("secret_path_patterns", []))
+
+
+def path_has_excluded_dir(rel_path: str, config: dict[str, Any]) -> bool:
+    excluded = set(str(item) for item in config.get("exclude_dirs", []))
+    parts = rel_path.split("/")[:-1]
+    for index, part in enumerate(parts):
+        prefix = "/".join(parts[: index + 1])
+        if part in excluded or prefix in excluded:
+            return True
+    return False
 
 
 def is_indexable_file(path: Path, root: Path, config: dict[str, Any]) -> bool:
@@ -277,7 +318,10 @@ def is_indexable_file(path: Path, root: Path, config: dict[str, Any]) -> bool:
         return False
     if path.is_symlink() and not config.get("follow_symlinks", False):
         return False
-    if not matches_any(rel, config.get("include_globs", [])):
+    forced = is_force_included(rel, config)
+    if not forced and not matches_any(rel, config.get("include_globs", [])):
+        return False
+    if path_has_excluded_dir(rel, config) and not forced:
         return False
     if matches_any(rel, config.get("exclude_globs", [])):
         return False
@@ -872,6 +916,93 @@ def index_status(root_arg: str | os.PathLike[str] | None = None, config_path: st
     }
 
 
+def resolve_coverage_path(root: Path, path: str) -> tuple[str, Path, bool]:
+    candidate = Path(path)
+    if candidate.is_absolute():
+        resolved = candidate.resolve()
+        try:
+            return resolved.relative_to(root).as_posix(), resolved, True
+        except ValueError:
+            return path.replace("\\", "/"), resolved, False
+    normalized = path[2:] if path.startswith("./") else path
+    resolved = (root / normalized).resolve()
+    try:
+        return resolved.relative_to(root).as_posix(), resolved, True
+    except ValueError:
+        return normalized.replace("\\", "/"), resolved, False
+
+
+def coverage_reason(path: Path, rel: str, root: Path, config: dict[str, Any]) -> str:
+    if not path.exists():
+        return "missing"
+    if not path.is_file():
+        return "not_file"
+    if path.is_symlink() and not config.get("follow_symlinks", False):
+        return "symlink_skipped"
+    forced = is_force_included(rel, config)
+    if matches_any(rel, config.get("secret_path_patterns", [])):
+        return "secret_path"
+    if path_has_excluded_dir(rel, config) and not forced:
+        return "excluded_dir"
+    if matches_any(rel, config.get("exclude_globs", [])):
+        return "excluded_glob"
+    if not forced and not matches_any(rel, config.get("include_globs", [])):
+        return "not_in_include_globs"
+    try:
+        if path.stat().st_size > int(config.get("max_file_bytes", 1_048_576)):
+            return "too_large"
+    except OSError:
+        return "stat_failed"
+    return "index_stale_or_not_rebuilt"
+
+
+def index_coverage(
+    root_arg: str | os.PathLike[str] | None,
+    config_path: str | os.PathLike[str] | None,
+    paths: list[str],
+) -> dict[str, Any]:
+    root = resolve_root(root_arg)
+    config = load_config(root, config_path)
+    index_dir = get_index_dir(root, config)
+    indexed_sources = {str(item.get("source", "")) for item in load_json_list(index_dir / "files.json")}
+    entries: list[dict[str, Any]] = []
+    for raw_path in paths:
+        rel, absolute, inside_root = resolve_coverage_path(root, str(raw_path))
+        if not inside_root:
+            entries.append(
+                {
+                    "path": str(raw_path),
+                    "source": rel,
+                    "exists": False,
+                    "indexed": False,
+                    "force_included": False,
+                    "reason": "outside_root",
+                }
+            )
+            continue
+        indexed = rel in indexed_sources
+        reason = "indexed" if indexed else coverage_reason(absolute, rel, root, config)
+        entries.append(
+            {
+                "path": str(raw_path),
+                "source": rel,
+                "exists": absolute.exists(),
+                "indexed": indexed,
+                "force_included": is_force_included(rel, config),
+                "reason": reason,
+            }
+        )
+    return {
+        "index_dir": str(index_dir),
+        "paths": entries,
+        "summary": {
+            "total": len(entries),
+            "indexed": sum(1 for entry in entries if entry["indexed"]),
+            "not_indexed": sum(1 for entry in entries if not entry["indexed"]),
+        },
+    }
+
+
 def tokenize(text: str) -> list[str]:
     tokens: list[str] = []
     for raw_token in TOKEN_RE.findall(text):
@@ -1027,6 +1158,43 @@ def overlap_terms(query_terms: set[str], terms: Any) -> float:
     return len(query_terms & term_set) / len(query_terms)
 
 
+PATH_QUERY_RE = re.compile(r"(?<![A-Za-z0-9_./-])(?:\.?[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+|(?<!\S)\.[A-Za-z0-9_.-]+")
+
+
+def extract_query_paths(query: str) -> list[str]:
+    paths: list[str] = []
+    seen: set[str] = set()
+    for match in PATH_QUERY_RE.finditer(query):
+        candidate = match.group(0).strip("`'\"()[]{}:,;")
+        if not candidate:
+            continue
+        normalized = candidate[2:] if candidate.startswith("./") else candidate
+        if normalized not in seen:
+            paths.append(normalized)
+            seen.add(normalized)
+    return paths
+
+
+def escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def fetch_path_candidates(connection: sqlite3.Connection, query_paths: list[str]) -> dict[int, float]:
+    matches: dict[int, float] = {}
+    for path in query_paths:
+        if not path:
+            continue
+        exact_rows = connection.execute("SELECT id FROM docs WHERE source = ?", (path,)).fetchall()
+        for row in exact_rows:
+            matches[int(row["id"])] = max(matches.get(int(row["id"]), 0.0), 1.0)
+        if exact_rows:
+            continue
+        suffix = "%/" + escape_like(path)
+        for row in connection.execute("SELECT id FROM docs WHERE source LIKE ? ESCAPE '\\'", (suffix,)):
+            matches[int(row["id"])] = max(matches.get(int(row["id"]), 0.0), 0.85)
+    return matches
+
+
 def fetch_cached_docs(connection: sqlite3.Connection, doc_ids: set[int]) -> dict[int, sqlite3.Row]:
     docs: dict[int, sqlite3.Row] = {}
     ordered_ids = sorted(doc_ids)
@@ -1060,11 +1228,13 @@ def search_precomputed_cache(
     heading_weight = float(search_cfg.get("heading_weight", 0.06))
     max_chunks_per_source = max(1, int(search_cfg.get("max_chunks_per_source", 2)))
     candidate_limit = max(50, int(search_cfg.get("candidate_limit", 5000)))
+    explicit_path_boost = float(search_cfg.get("explicit_path_boost", 0.75))
 
     expanded_query = expand_query(query, config)
     query_counts = token_counts(expanded_query)
     query_terms = set(query_counts)
     query_vector = hashed_vector(query_counts, dim)
+    path_matches = fetch_path_candidates(connection, extract_query_paths(query))
 
     total_docs = int(metadata.get("total_docs", 0))
     avg_len = float(metadata.get("avg_len", 1.0))
@@ -1100,6 +1270,7 @@ def search_precomputed_cache(
     else:
         ranked_candidates = sorted(raw_bm25_by_doc, key=lambda item: raw_bm25_by_doc[item], reverse=True)
         candidate_indexes = set(ranked_candidates[:candidate_limit])
+    candidate_indexes.update(path_matches)
     docs_by_id = fetch_cached_docs(connection, candidate_indexes)
 
     results: list[dict[str, Any]] = []
@@ -1117,11 +1288,13 @@ def search_precomputed_cache(
         bm25 = raw_bm25_by_doc.get(index, 0.0) / max_bm25 if max_bm25 > 0 else 0.0
         source_match = overlap_terms(query_terms, doc["source_terms"])
         heading_match = overlap_terms(query_terms, doc["heading_terms"])
+        path_match = path_matches.get(index, 0.0)
         score = (
             vector_weight * vector_score
             + bm25_weight * bm25
             + source_weight * source_match
             + heading_weight * heading_match
+            + explicit_path_boost * path_match
         )
         score *= artifact_boost(source, chunk_type, config)
         if score < min_score:
@@ -1133,6 +1306,7 @@ def search_precomputed_cache(
                 "bm25": round(bm25, 6),
                 "source_match": round(source_match, 6),
                 "heading_match": round(heading_match, 6),
+                "path_match": round(path_match, 6),
                 "source": source,
                 "heading": doc["heading"] or "",
                 "artifact_type": chunk_type,

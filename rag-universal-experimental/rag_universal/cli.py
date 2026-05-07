@@ -5,7 +5,7 @@ import json
 import sys
 from typing import Any
 
-from .core import build_index, index_status, lookup_deps, lookup_symbol, search_index
+from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index
 from .eval_quality import evaluate_quality
 from .mcp_server import run_stdio
 
@@ -22,6 +22,8 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("index", help="Build the local RAG index")
     subparsers.add_parser("status", help="Show local RAG index status")
+    coverage = subparsers.add_parser("coverage", help="Report whether specific paths are indexed")
+    coverage.add_argument("paths", nargs="+")
 
     search = subparsers.add_parser("search", help="Search the local RAG index")
     search.add_argument("query")
@@ -74,6 +76,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "status":
         emit(index_status(args.root, args.config))
+        return 0
+    if args.command == "coverage":
+        emit(index_coverage(args.root, args.config, args.paths))
         return 0
     if args.command == "search":
         emit(search_index(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type))

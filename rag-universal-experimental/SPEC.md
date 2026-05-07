@@ -59,6 +59,8 @@ Generated data is local and should not be committed:
 
 `manifest.json` is the integrity entry point. It records schema version, project root, config hash, index counts, tokenizer/chunker/search versions, a source-state fingerprint, and generated artifact names. `search.sqlite` stores precomputed postings/vector data for low-latency `rag_search`.
 
+Review-critical files can be force-included with `force_include_globs` even when a parent directory is excluded. This is intended for narrow contracts such as `tests/Unit/*ContractTest.php` and `tests/Unit/*ScriptTest.php`, not for broad dependency trees.
+
 ## Safety Defaults
 
 The default config excludes:
@@ -84,6 +86,7 @@ Projects can loosen the rules explicitly in their own `rag.config.json`, but the
 
 - `python3 tools/rag.py index --root <repo> --config <config>` builds all artifact files.
 - `python3 tools/rag.py status --root <repo> --config <config>` reports index counts, stale config state, and stale source-file state.
+- `python3 tools/rag.py coverage --root <repo> --config <config> <path>...` reports whether exact paths are indexed or why they are excluded.
 - `python3 tools/rag.py search --root <repo> --config <config> "query"` returns ranked chunks.
 - `python3 tools/rag.py symbol --root <repo> --config <config> Name` returns exact symbol matches.
 - `python3 tools/rag.py deps --root <repo> --config <config> target` returns dependency edges.

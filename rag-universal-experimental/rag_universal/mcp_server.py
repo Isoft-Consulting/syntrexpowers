@@ -4,7 +4,7 @@ import json
 import sys
 from typing import Any
 
-from .core import build_index, index_status, lookup_deps, lookup_symbol, search_index
+from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index
 
 
 def tool_definitions() -> list[dict[str, Any]]:
@@ -32,6 +32,21 @@ def tool_definitions() -> list[dict[str, Any]]:
             "name": "rag_status",
             "description": "Return local RAG index status and manifest counts.",
             "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "rag_coverage",
+            "description": "Report whether specific project paths are present in the local RAG index.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 1,
+                    }
+                },
+                "required": ["paths"],
+            },
         },
         {
             "name": "rag_symbol",
@@ -90,6 +105,10 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
         return text_content(build_index(root, config))
     if name == "rag_status":
         return text_content(index_status(root, config))
+    if name == "rag_coverage":
+        raw_paths = arguments.get("paths", [])
+        paths = [str(item) for item in raw_paths] if isinstance(raw_paths, list) else [str(raw_paths)]
+        return text_content(index_coverage(root, config, paths))
     if name == "rag_symbol":
         return text_content(
             lookup_symbol(
