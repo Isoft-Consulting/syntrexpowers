@@ -8,6 +8,7 @@ require "open3"
 require "pathname"
 require "rbconfig"
 require "tmpdir"
+require_relative "../tools/decision_contract_lib"
 require_relative "../tools/fixture_manifest_lib"
 require_relative "../tools/provider_detection_lib"
 
@@ -15,6 +16,7 @@ ROOT = StrictModeMetadata.project_root
 VALIDATOR = ROOT.join("tools/validate-fixtures.rb")
 GENERATOR = ROOT.join("tools/generate-fixture-manifests.rb")
 IMPORTER = ROOT.join("tools/import-discovery-fixture.rb")
+CONTRACT_IMPORTER = ROOT.join("tools/import-contract-fixture.rb")
 NORMALIZER = ROOT.join("tools/normalize-event.rb")
 PROVIDER_VERIFY = ROOT.join("tools/verify-provider-payload.rb")
 
@@ -228,6 +230,119 @@ expect_pass("importer creates payload fixture record") do |root|
   end
 end
 
+expect_pass("contract importer creates generic readiness fixture records") do |root|
+  source = root.join("capture/command-proof.txt")
+  source.dirname.mkpath
+  source.write("codex pre-tool-use command execution proof\n")
+  status, output = run_cmd(
+    CONTRACT_IMPORTER,
+    "--root", root,
+    "--provider", "codex",
+    "--event", "pre-tool-use",
+    "--contract-kind", "command-execution",
+    "--contract-id", "codex.pre-tool-use.command",
+    "--source", source,
+    "--captured-at", "2026-05-06T00:00:00Z"
+  )
+  assert_no_stacktrace("contract importer creates generic readiness fixture records", output)
+  unless status.zero?
+    record_failure("contract importer creates generic readiness fixture records", "command import failed", output)
+    next
+  end
+
+  matcher = root.join("capture/matcher-proof.txt")
+  matcher.write("codex pre-tool matcher proof\n")
+  status, output = run_cmd(
+    CONTRACT_IMPORTER,
+    "--root", root,
+    "--provider", "codex",
+    "--event", "pre-tool-use",
+    "--contract-kind", "matcher",
+    "--contract-id", "codex.pre.matcher",
+    "--source", matcher,
+    "--captured-at", "2026-05-06T00:00:00Z"
+  )
+  assert_no_stacktrace("contract importer creates generic readiness fixture records matcher", output)
+  unless status.zero?
+    record_failure("contract importer creates generic readiness fixture records", "matcher import failed", output)
+    next
+  end
+
+  manifest = read_json(StrictModeFixtures.manifest_path(root, "codex"))
+  command = manifest.fetch("records").find { |record| record.fetch("contract_id") == "codex.pre-tool-use.command" }
+  matcher_record = manifest.fetch("records").find { |record| record.fetch("contract_id") == "codex.pre.matcher" }
+  record_failure("contract importer creates generic readiness fixture records", "command record missing", output) unless command
+  record_failure("contract importer creates generic readiness fixture records", "matcher record missing", output) unless matcher_record
+  if command
+    record_failure("contract importer creates generic readiness fixture records", "command hash missing", output) if command.fetch("command_execution_contract_hash") == StrictModeFixtures::ZERO_HASH
+    record_failure("contract importer creates generic readiness fixture records", "command compatibility mismatch", output) unless command.fetch("compatibility_range").fetch("mode") == "unknown-only"
+  end
+  if matcher_record
+    record_failure("contract importer creates generic readiness fixture records", "matcher should use hash sentinels", output) unless matcher_record.fetch("payload_schema_hash") == StrictModeFixtures::ZERO_HASH && matcher_record.fetch("decision_contract_hash") == StrictModeFixtures::ZERO_HASH && matcher_record.fetch("command_execution_contract_hash") == StrictModeFixtures::ZERO_HASH
+  end
+end
+
+expect_pass("contract importer creates decision-output fixture record") do |root|
+  contract_id = "codex.pre-tool-use.block"
+  metadata = {
+    "schema_version" => 1,
+    "contract_id" => contract_id,
+    "provider" => "codex",
+    "event" => "pre-tool-use",
+    "logical_event" => "pre-tool-use",
+    "provider_action" => "block",
+    "stdout_mode" => "json",
+    "stdout_required_fields" => %w[decision reason],
+    "stderr_mode" => "empty",
+    "stderr_required_fields" => [],
+    "exit_code" => 0,
+    "blocks_or_denies" => 1,
+    "injects_context" => 0,
+    "decision_contract_hash" => ""
+  }
+  metadata["decision_contract_hash"] = StrictModeDecisionContract.provider_output_hash(metadata)
+  capture = root.join("capture/decision")
+  capture.mkpath
+  metadata_path = capture.join("provider-output.json")
+  stdout_path = capture.join("stdout")
+  stderr_path = capture.join("stderr")
+  exit_code_path = capture.join("exit-code")
+  metadata_path.write(JSON.pretty_generate(metadata) + "\n")
+  stdout_path.write("{\"decision\":\"block\",\"reason\":\"blocked\"}\n")
+  stderr_path.write("")
+  exit_code_path.write("0\n")
+
+  status, output = run_cmd(
+    CONTRACT_IMPORTER,
+    "--root", root,
+    "--provider", "codex",
+    "--event", "pre-tool-use",
+    "--contract-kind", "decision-output",
+    "--contract-id", contract_id,
+    "--metadata", metadata_path,
+    "--stdout", stdout_path,
+    "--stderr", stderr_path,
+    "--exit-code", exit_code_path,
+    "--captured-at", "2026-05-06T00:00:00Z"
+  )
+  assert_no_stacktrace("contract importer creates decision-output fixture record", output)
+  unless status.zero?
+    record_failure("contract importer creates decision-output fixture record", "decision-output import failed", output)
+    next
+  end
+
+  record = read_json(StrictModeFixtures.manifest_path(root, "codex")).fetch("records").fetch(0)
+  record_failure("contract importer creates decision-output fixture record", "wrong contract kind", output) unless record.fetch("contract_kind") == "decision-output"
+  record_failure("contract importer creates decision-output fixture record", "decision hash mismatch", output) unless record.fetch("decision_contract_hash") == metadata.fetch("decision_contract_hash")
+  expected_paths = [
+    "providers/codex/fixtures/decision-output/pre-tool-use/codex.pre-tool-use.block.exit-code",
+    "providers/codex/fixtures/decision-output/pre-tool-use/codex.pre-tool-use.block.provider-output.json",
+    "providers/codex/fixtures/decision-output/pre-tool-use/codex.pre-tool-use.block.stderr",
+    "providers/codex/fixtures/decision-output/pre-tool-use/codex.pre-tool-use.block.stdout"
+  ]
+  record_failure("contract importer creates decision-output fixture record", "decision fixture role paths mismatch", output) unless record.fetch("fixture_file_hashes").map { |item| item.fetch("path") } == expected_paths
+end
+
 expect_fail("payload-schema without normalized provider proof is rejected", "payload-schema must include exactly one normalized event fixture") do |root|
   path = fixture_file(root, "claude", "payloads/stop/only-raw.json", "{\"hook_event_name\":\"Stop\",\"session_id\":\"s1\"}\n")
   record = record_for(root, provider: "claude", contract_id: "claude.stop.payload", contract_kind: "payload-schema", event: "stop", fixture_paths: [path])
@@ -322,6 +437,13 @@ expect_import_fail("importer rejects unsafe fixture destination", "fixture desti
   source.dirname.mkpath
   source.write("{\"event\":\"stop\"}\n")
   run_cmd(IMPORTER, "--root", root, "--provider", "codex", "--event", "stop", "--source", source, "--fixture-name", "../outside.json")
+end
+
+expect_import_fail("contract importer rejects payload-schema kind", "payload-schema must use import-discovery-fixture.rb") do |root|
+  source = root.join("capture/proof.txt")
+  source.dirname.mkpath
+  source.write("payload proof must go through the payload importer\n")
+  run_cmd(CONTRACT_IMPORTER, "--root", root, "--provider", "codex", "--event", "stop", "--contract-kind", "payload-schema", "--source", source)
 end
 
 expect_import_fail("importer rejects duplicate contract without replace", "contract already exists") do |root|
