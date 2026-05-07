@@ -12,22 +12,33 @@ end
 
 options = {
   root: StrictModeFixtures.project_root,
-  provider: "all"
+  provider: "all",
+  provider_versions: {}
 }
 
 begin
   OptionParser.new do |opts|
     opts.on("--root PATH") { |value| options[:root] = Pathname.new(value) }
     opts.on("--provider PROVIDER") { |value| options[:provider] = value }
+    opts.on("--provider-version PROVIDER=VERSION") do |value|
+      provider, version = StrictModeFixtureReadiness.parse_provider_version_assignment(value)
+      options[:provider_versions][provider] = version
+    end
   end.parse!(ARGV)
-rescue OptionParser::ParseError => e
+rescue OptionParser::ParseError, ArgumentError => e
   usage_error(e.message)
 end
 usage_error("unexpected arguments: #{ARGV.join(" ")}") unless ARGV.empty?
 
 begin
   providers = StrictModeFixtures.provider_list(options[:provider])
-  errors = StrictModeFixtureReadiness.enforcing_errors(options[:root], providers)
+  StrictModeFixtureReadiness.validate_provider_versions!(options[:provider_versions], providers)
+rescue ArgumentError => e
+  usage_error(e.message)
+end
+
+begin
+  errors = StrictModeFixtureReadiness.enforcing_errors(options[:root], providers, options[:provider_versions])
 rescue RuntimeError, ArgumentError => e
   warn "fixture readiness failed: #{e.message}"
   exit 1

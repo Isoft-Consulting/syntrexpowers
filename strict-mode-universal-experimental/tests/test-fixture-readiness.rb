@@ -256,6 +256,16 @@ with_root do |root|
   end
   write_manifest(root, "codex", payload_records + records)
 
+  status, output = run_cmd(CHECKER, "--root", root, "--provider", "codex")
+  assert_no_stacktrace("#{name} checker unknown", output)
+  record_failure(name, "expected checker exit 1 without exact provider version, got #{status}", output) unless status == 1
+  record_failure(name, "missing version-gated readiness diagnostic", output) unless output.include?("missing codex stop decision-output fixture")
+
+  status, output = run_cmd(CHECKER, "--root", root, "--provider", "codex", "--provider-version", "codex=1.0.0")
+  assert_no_stacktrace("#{name} checker exact", output)
+  record_failure(name, "expected checker exit 0 with exact provider version, got #{status}", output) unless status.zero?
+  record_failure(name, "missing checker success diagnostic", output) unless output.include?("fixture readiness passed")
+
   status, output = run_cmd(REPORTER, "--root", root, "--provider", "codex", "--provider-version", "codex=1.0.0", "--format", "json")
   assert_no_stacktrace(name, output)
   record_failure(name, "expected reporter exit 0, got #{status}", output) unless status.zero?
@@ -269,6 +279,11 @@ with_root do |root|
   assert_no_stacktrace("#{name} invalid selector", output)
   record_failure(name, "expected invalid selector exit 2, got #{status}", output) unless status == 2
   record_failure(name, "missing invalid selector diagnostic", output) unless output.include?("outside --provider selection")
+
+  status, output = run_cmd(CHECKER, "--root", root, "--provider", "codex", "--provider-version", "claude=1.0.0")
+  assert_no_stacktrace("#{name} checker invalid selector", output)
+  record_failure(name, "expected checker invalid selector exit 2, got #{status}", output) unless status == 2
+  record_failure(name, "missing checker invalid selector diagnostic", output) unless output.include?("outside --provider selection")
 end
 
 with_root do |root|

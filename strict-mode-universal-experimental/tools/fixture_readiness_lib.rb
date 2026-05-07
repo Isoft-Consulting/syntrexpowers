@@ -22,6 +22,22 @@ module StrictModeFixtureReadiness
   EARLY_BASELINE_EVENTS = %w[session-start user-prompt-submit].freeze
   REPORT_SCHEMA_VERSION = 1
 
+  def parse_provider_version_assignment(value)
+    provider, version = value.to_s.split("=", 2)
+    raise ArgumentError, "--provider-version must be PROVIDER=VERSION" if provider.nil? || provider.empty? || version.nil? || version.empty?
+
+    [provider, version]
+  end
+
+  def validate_provider_versions!(provider_versions, providers)
+    unknown_version_providers = provider_versions.keys - providers
+    unless unknown_version_providers.empty?
+      raise ArgumentError, "--provider-version includes provider outside --provider selection: #{unknown_version_providers.join(", ")}"
+    end
+
+    provider_versions
+  end
+
   def fixture_manifest_records(root, providers)
     root = Pathname.new(root)
     providers.flat_map do |provider|

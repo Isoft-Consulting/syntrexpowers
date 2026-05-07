@@ -640,8 +640,14 @@ def provider_config_plan_paths(providers, home)
   end.map(&:to_s).sort
 end
 
-def build_install_plan(home, install_root, state_root, providers, enforce:)
-  selected_output_contracts = enforce ? StrictModeFixtureReadiness.selected_output_contracts(StrictModeMetadata.project_root, providers) : []
+def provider_version_plan(providers, provider_versions)
+  providers.each_with_object({}) do |provider, result|
+    result[provider] = provider_versions.fetch(provider, "unknown")
+  end
+end
+
+def build_install_plan(home, install_root, state_root, providers, enforce:, provider_versions: {})
+  selected_output_contracts = enforce ? StrictModeFixtureReadiness.selected_output_contracts(StrictModeMetadata.project_root, providers, provider_versions) : []
   provider_entries = providers.flat_map do |provider|
     managed_entries(
       provider,
@@ -658,6 +664,7 @@ def build_install_plan(home, install_root, state_root, providers, enforce:)
     "plan_only" => true,
     "enforce" => enforce,
     "providers" => providers,
+    "provider_versions" => provider_version_plan(providers, provider_versions),
     "install_root" => install_root.to_s,
     "state_root" => state_root.to_s,
     "active_runtime_link" => install_root.join("active").to_s,
@@ -675,17 +682,26 @@ options = {
   install_root: ENV["STRICT_INSTALL_ROOT"],
   state_root: ENV["STRICT_STATE_ROOT"],
   enforce: false,
-  plan_only: false
+  plan_only: false,
+  provider_versions: {}
 }
 
-OptionParser.new do |opts|
-  opts.on("--provider PROVIDER") { |value| options[:provider] = value }
-  opts.on("--install-root PATH") { |value| options[:install_root] = value }
-  opts.on("--state-root PATH") { |value| options[:state_root] = value }
-  opts.on("--enforce") { options[:enforce] = true }
-  opts.on("--plan-only") { options[:plan_only] = true }
-  opts.on("--dry-run") { options[:plan_only] = true }
-end.parse!(ARGV)
+begin
+  OptionParser.new do |opts|
+    opts.on("--provider PROVIDER") { |value| options[:provider] = value }
+    opts.on("--install-root PATH") { |value| options[:install_root] = value }
+    opts.on("--state-root PATH") { |value| options[:state_root] = value }
+    opts.on("--enforce") { options[:enforce] = true }
+    opts.on("--plan-only") { options[:plan_only] = true }
+    opts.on("--dry-run") { options[:plan_only] = true }
+    opts.on("--provider-version PROVIDER=VERSION") do |value|
+      provider, version = StrictModeFixtureReadiness.parse_provider_version_assignment(value)
+      options[:provider_versions][provider] = version
+    end
+  end.parse!(ARGV)
+rescue OptionParser::ParseError, ArgumentError => e
+  usage_error(e.message)
+end
 usage_error("unexpected arguments: #{ARGV.join(" ")}") unless ARGV.empty?
 
 home = expand_path(ENV.fetch("HOME"))
@@ -694,19 +710,24 @@ state_root = expand_path(options[:state_root] || install_root.join("state"))
 fail_install("install root must not contain NUL, newline, or carriage return") if install_root.to_s.match?(/[\0\n\r]/)
 fail_install("state root must not contain NUL, newline, or carriage return") if state_root.to_s.match?(/[\0\n\r]/)
 providers = provider_list(options[:provider])
+begin
+  StrictModeFixtureReadiness.validate_provider_versions!(options[:provider_versions], providers)
+rescue ArgumentError => e
+  usage_error(e.message)
+end
 if options[:enforce]
-  readiness_errors = StrictModeFixtureReadiness.enforcing_errors(StrictModeMetadata.project_root, providers)
+  readiness_errors = StrictModeFixtureReadiness.enforcing_errors(StrictModeMetadata.project_root, providers, options[:provider_versions])
   unless readiness_errors.empty?
     fail_install("enforcing activation fixture readiness failed:\n#{readiness_errors.map { |error| "- #{error}" }.join("\n")}")
   end
   if options[:plan_only]
-    puts JSON.pretty_generate(build_install_plan(home, install_root, state_root, providers, enforce: true))
+    puts JSON.pretty_generate(build_install_plan(home, install_root, state_root, providers, enforce: true, provider_versions: options[:provider_versions]))
     exit 0
   end
   fail_install("enforcing activation requires implemented shared-core enforcement and is not available in the discovery skeleton")
 end
 if options[:plan_only]
-  puts JSON.pretty_generate(build_install_plan(home, install_root, state_root, providers, enforce: false))
+  puts JSON.pretty_generate(build_install_plan(home, install_root, state_root, providers, enforce: false, provider_versions: options[:provider_versions]))
   exit 0
 end
 transaction_id = "#{Time.now.utc.strftime("%Y%m%d%H%M%S")}-#{$$}-#{SecureRandom.hex(4)}"
