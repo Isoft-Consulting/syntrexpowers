@@ -45,11 +45,27 @@ DEFAULT_CONFIG: dict[str, Any] = {
         ".agents",
         ".rag-index",
         "node_modules",
+        "bower_components",
         "vendor",
         "dist",
         "build",
+        "out",
+        "target",
         "coverage",
         "evals",
+        ".idea",
+        ".vscode",
+        ".next",
+        ".nuxt",
+        ".vite",
+        ".turbo",
+        ".yarn",
+        ".pnpm-store",
+        ".cache",
+        "cache",
+        "tmp",
+        "temp",
+        "logs",
         "__pycache__",
         ".pytest_cache",
         ".ruff_cache",
@@ -459,7 +475,11 @@ def extract_symbols(text: str, source: str) -> list[dict[str, Any]]:
         for match in re.finditer(r"export\s+(?:default\s+)?(?:class|function|const|interface|type)\s+([A-Za-z_][\w]*)", text):
             add(match.group(1), "ts_export", line_for_offset(text, match.start()))
     if suffix == ".php":
-        for match in re.finditer(r"^\s*(?:class|trait|interface)\s+([A-Za-z_][\w]*)", text, re.MULTILINE):
+        for match in re.finditer(
+            r"^\s*(?:(?:abstract|final|readonly)\s+)*(?:class|trait|interface|enum)\s+([A-Za-z_][\w]*)",
+            text,
+            re.MULTILINE,
+        ):
             add(match.group(1), "php_symbol", line_for_offset(text, match.start()))
     return symbols
 

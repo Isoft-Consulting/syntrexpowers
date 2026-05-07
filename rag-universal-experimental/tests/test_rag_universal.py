@@ -29,6 +29,10 @@ class RagUniversalTest(unittest.TestCase):
             "import json\n\nclass StrictGuard:\n    def stop_guard(self):\n        return json.dumps({'ok': True})\n",
             encoding="utf-8",
         )
+        (root / "src" / "Sql.php").write_text(
+            "<?php\n\nnamespace App\\Support;\n\nfinal class Sql\n{\n}\n",
+            encoding="utf-8",
+        )
         (root / "schemas").mkdir()
         (root / "schemas" / "demo.schema.json").write_text(
             json.dumps({"$id": "demo.schema.v1", "title": "Demo Schema"}),
@@ -43,12 +47,13 @@ class RagUniversalTest(unittest.TestCase):
     def test_index_excludes_secret_paths_and_generates_artifacts(self) -> None:
         root = self.make_project()
         manifest = build_index(root)
-        self.assertEqual(manifest["num_files"], 3)
+        self.assertEqual(manifest["num_files"], 4)
         self.assertGreaterEqual(manifest["num_chunks"], 3)
         chunks = load_chunks(root / ".rag-index")
         sources = {chunk["source"] for chunk in chunks}
         self.assertIn("README.md", sources)
         self.assertIn("src/service.py", sources)
+        self.assertIn("src/Sql.php", sources)
         self.assertNotIn(".env", sources)
         self.assertNotIn(".mcp.json", sources)
         self.assertFalse(any("should-not-be-indexed" in chunk["text"] for chunk in chunks))
@@ -67,6 +72,10 @@ class RagUniversalTest(unittest.TestCase):
 
         schema_symbols = lookup_symbol(root, None, "demo.schema.v1")
         self.assertEqual(schema_symbols[0]["kind"], "json_schema_id")
+
+        php_symbols = lookup_symbol(root, None, "Sql")
+        self.assertEqual(php_symbols[0]["source"], "src/Sql.php")
+        self.assertEqual(php_symbols[0]["kind"], "php_symbol")
 
         deps = lookup_deps(root, None, "json", direction="reverse")
         self.assertEqual(deps[0]["source"], "src/service.py")
@@ -120,7 +129,7 @@ class RagUniversalTest(unittest.TestCase):
             capture_output=True,
         )
         manifest = json.loads(index.stdout)
-        self.assertEqual(manifest["num_files"], 3)
+        self.assertEqual(manifest["num_files"], 4)
 
         search = subprocess.run(
             [sys.executable, str(tool), "search", "--root", str(root), "strict stop guard", "--top-k", "1"],
@@ -142,7 +151,7 @@ class RagUniversalTest(unittest.TestCase):
             capture_output=True,
         )
         manifest = json.loads(index.stdout)
-        self.assertEqual(manifest["num_files"], 3)
+        self.assertEqual(manifest["num_files"], 4)
 
     def test_search_uses_path_tokens_and_source_diversity(self) -> None:
         temp = tempfile.TemporaryDirectory()
