@@ -37,6 +37,8 @@ tests/run-tests.sh
 
 `install.sh --enforce --plan-only` runs fixture readiness and emits a JSON hook plan with selected output contracts, but does not acquire install locks, copy releases, create transaction markers, or mutate provider configs. `install.sh --enforce` performs a real install only after the same readiness gate passes; with the current checked-in required fixture gaps it fails closed. Pass exact installed versions and exact build hashes when validating exact-version/build fixture proofs; the checked-in Codex proof set currently uses `--provider-version codex=0.128.0` and `--provider-build-hash codex=baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9`. `--dry-run` is an alias for non-enforcing plan-only mode.
 
+After installing or refreshing Codex hooks, start a new Codex CLI session before expecting native lifecycle hooks to fire. Existing sessions may keep the hook configuration loaded at process start even though direct `strict-hook` smoke tests already exercise the installed runtime.
+
 To inspect the current enforcing blockers as a structured report, run:
 
 ```bash
