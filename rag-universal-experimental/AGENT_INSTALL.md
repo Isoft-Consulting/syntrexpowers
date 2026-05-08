@@ -37,6 +37,7 @@ cd /path/to/project
 
 python3 .mcp/rag-server/tools/rag.py status --root .
 python3 .mcp/rag-server/tools/rag.py search --root . "project overview" --with-plan --auto-reindex --top-k 5
+python3 .mcp/rag-server/tools/rag.py quality-check --root . --auto-reindex --summary-only
 ```
 
 Expected result:
@@ -45,6 +46,7 @@ Expected result:
 - The first `search --auto-reindex` may rebuild the index.
 - After rebuild, diagnostics should include `"index_stale_after_search": false`.
 - Search should return project files or docs.
+- `quality-check` returns comparative RAG vs keyword-baseline metrics and a `verdict.status`.
 
 For large projects, the first rebuild can take minutes. If it is unexpectedly slow, run:
 
@@ -135,8 +137,9 @@ Project-local RAG server is installed at `.mcp/rag-server`.
 Before design, FDR, large implementation, or unfamiliar code exploration:
 1. Call `rag_status`.
 2. If stale, use `rag_search` with `auto_reindex=true`, or call `rag_reindex`.
-3. Prefer `with_plan=true` for review/design work.
-4. Use task modes:
+3. Run `rag_quality_check` when installing/updating RAG or when search quality is suspect.
+4. Prefer `with_plan=true` for review/design work.
+5. Use task modes:
    - `fdr` for code review/FDR
    - `architecture` for module/spec design
    - `implementation` for coding tasks
@@ -159,6 +162,9 @@ python3 .mcp/rag-server/tools/rag.py status --root .
 
 # Search and rebuild only when stale
 python3 .mcp/rag-server/tools/rag.py search --root . "query" --mode fdr --with-plan --auto-reindex
+
+# Verify server health and comparative retrieval quality
+python3 .mcp/rag-server/tools/rag.py quality-check --root . --auto-reindex --summary-only
 
 # Watch and rebuild when files change
 python3 .mcp/rag-server/tools/rag.py watch --root .

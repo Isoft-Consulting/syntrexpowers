@@ -27,6 +27,7 @@ from rag_universal.core import (
     watch_index,
 )
 from rag_universal.eval_quality import evaluate_quality
+from rag_universal.eval_quality import quality_check
 from rag_universal.knowledge import build_project_knowledge
 from rag_universal.knowledge import generate_project_profile
 from rag_universal.knowledge import knowledge_pack_status
@@ -143,6 +144,7 @@ class RagUniversalTest(unittest.TestCase):
                 "rag_coverage",
                 "rag_symbol",
                 "rag_deps",
+                "rag_quality_check",
                 "rag_knowledge_build",
                 "rag_knowledge_profile",
                 "rag_knowledge_status",
@@ -163,6 +165,24 @@ class RagUniversalTest(unittest.TestCase):
         payload = json.loads(called["result"]["content"][0]["text"])
         self.assertEqual(payload[0]["source"], "README.md")
         self.assertEqual(payload[0]["fdr_role"], "docs")
+
+        quality_called = handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "rag_quality_check",
+                    "arguments": {"case_limit": 3, "top_k": 3, "auto_reindex": True, "include_cases": False, "min_cases": 3},
+                },
+            },
+            str(root),
+            None,
+        )
+        quality_payload = json.loads(quality_called["result"]["content"][0]["text"])
+        self.assertEqual(quality_payload["schema_version"], "rag.quality-check.v1")
+        self.assertEqual(quality_payload["health"]["baseline"], "keyword")
+        self.assertIn("delta", quality_payload["summary"])
 
     def test_auto_reindex_and_watch_refresh_changed_sources(self) -> None:
         root = self.make_project()
@@ -519,6 +539,42 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(rag_only["summary"]["rag"]["top1"], 1)
         self.assertIsNone(rag_only["summary"]["baseline"])
         self.assertEqual(rag_only["cases"], [])
+
+    def test_quality_check_generates_comparative_metrics(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        report = quality_check(root, None, case_limit=4, top_k=5, mode="default", include_cases=True, min_cases=4)
+        self.assertEqual(report["schema_version"], "rag.quality-check.v1")
+        self.assertEqual(report["case_source"], "generated-from-index")
+        self.assertEqual(report["health"]["cases"], 4)
+        self.assertFalse(report["health"]["index_stale_after_check"])
+        self.assertEqual(report["summary"]["rag"]["total"], 4)
+        self.assertIsNotNone(report["summary"]["baseline"])
+        self.assertIn("delta", report["summary"])
+        self.assertIn(report["verdict"]["status"], {"pass", "fail"})
+        self.assertTrue(report["cases"])
+
+        tool = ROOT / "tools" / "rag.py"
+        cli = subprocess.run(
+            [
+                sys.executable,
+                str(tool),
+                "quality-check",
+                "--root",
+                str(root),
+                "--case-limit",
+                "3",
+                "--min-cases",
+                "3",
+                "--summary-only",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        payload = json.loads(cli.stdout)
+        self.assertEqual(payload["health"]["cases"], 3)
+        self.assertEqual(payload["cases"], [])
 
     def test_cyrillic_query_expansion(self) -> None:
         temp = tempfile.TemporaryDirectory()

@@ -5,6 +5,7 @@ import sys
 from typing import Any
 
 from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan
+from .eval_quality import quality_check
 from .knowledge import build_project_knowledge, generate_project_profile, knowledge_pack_status
 
 
@@ -97,6 +98,28 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "rag_quality_check",
+            "description": "Run RAG health and comparative quality metrics against a keyword baseline.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "cases": {"type": ["string", "null"], "default": None},
+                    "case_limit": {"type": "integer", "default": 25, "minimum": 1, "maximum": 200},
+                    "top_k": {"type": "integer", "default": 10, "minimum": 1, "maximum": 50},
+                    "mode": {
+                        "type": "string",
+                        "enum": ["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"],
+                        "default": "default",
+                    },
+                    "auto_reindex": {"type": "boolean", "default": False},
+                    "include_cases": {"type": "boolean", "default": True},
+                    "min_cases": {"type": "integer", "default": 5, "minimum": 1},
+                    "min_top3_ratio": {"type": "number", "default": 0.6},
+                    "min_mrr": {"type": "number", "default": 0.4},
+                },
+            },
+        },
+        {
             "name": "rag_knowledge_profile",
             "description": "Generate a starter project-specific knowledge rules profile from repository layout.",
             "inputSchema": {
@@ -183,6 +206,22 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
                 str(arguments.get("output", "Docs/knowledge/rag")),
                 str(arguments.get("project", "project")),
                 arguments.get("rules"),
+            )
+        )
+    if name == "rag_quality_check":
+        return text_content(
+            quality_check(
+                root,
+                config,
+                arguments.get("cases"),
+                int(arguments.get("case_limit", 25)),
+                int(arguments.get("top_k", 10)),
+                str(arguments.get("mode", "default")),
+                bool(arguments.get("auto_reindex", False)),
+                bool(arguments.get("include_cases", True)),
+                int(arguments.get("min_cases", 5)),
+                float(arguments.get("min_top3_ratio", 0.6)),
+                float(arguments.get("min_mrr", 0.4)),
             )
         )
     if name == "rag_knowledge_profile":

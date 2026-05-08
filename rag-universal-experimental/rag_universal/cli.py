@@ -6,7 +6,7 @@ import sys
 from typing import Any
 
 from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan, watch_index
-from .eval_quality import evaluate_quality
+from .eval_quality import evaluate_quality, quality_check
 from .knowledge import build_project_knowledge, generate_project_profile
 from .mcp_server import run_stdio
 
@@ -56,6 +56,17 @@ def build_parser() -> argparse.ArgumentParser:
     eval_quality.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"], default="default")
     eval_quality.add_argument("--skip-baseline", action="store_true", help="Skip keyword baseline; useful for large path-focused gold sets.")
     eval_quality.add_argument("--summary-only", action="store_true", help="Omit per-case details from output.")
+
+    quality = subparsers.add_parser("quality-check", help="Run RAG health and comparative quality metrics")
+    quality.add_argument("--cases", default=None, help="Optional gold query JSON file. If omitted, cases are generated from the current index.")
+    quality.add_argument("--case-limit", type=int, default=25, help="Maximum generated cases when --cases is omitted.")
+    quality.add_argument("--top-k", type=int, default=10)
+    quality.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"], default="default")
+    quality.add_argument("--auto-reindex", action="store_true", help="Rebuild first when rag_status reports stale source files.")
+    quality.add_argument("--summary-only", action="store_true", help="Omit per-case details from output.")
+    quality.add_argument("--min-cases", type=int, default=5)
+    quality.add_argument("--min-top3-ratio", type=float, default=0.6)
+    quality.add_argument("--min-mrr", type=float, default=0.4)
 
     knowledge = subparsers.add_parser("knowledge-build", help="Build normalized RAG knowledge pack from review/eval cases")
     knowledge.add_argument("--cases", required=True, help="Gold/review cases JSON file.")
@@ -125,6 +136,23 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "eval-quality":
         emit(evaluate_quality(args.root, args.config, args.cases, args.top_k, args.mode, not args.skip_baseline, not args.summary_only))
+        return 0
+    if args.command == "quality-check":
+        emit(
+            quality_check(
+                args.root,
+                args.config,
+                args.cases,
+                args.case_limit,
+                args.top_k,
+                args.mode,
+                args.auto_reindex,
+                not args.summary_only,
+                args.min_cases,
+                args.min_top3_ratio,
+                args.min_mrr,
+            )
+        )
         return 0
     if args.command == "knowledge-build":
         emit(build_project_knowledge(args.root, args.cases, args.output, args.project, args.rules))

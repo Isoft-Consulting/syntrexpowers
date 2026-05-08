@@ -19,6 +19,7 @@ python3 tools/rag.py search --root .. "Visual Studio owner boundaries" --mode ar
 python3 tools/rag.py watch --root ..
 python3 tools/rag.py symbol --root .. strict-hook
 python3 tools/rag.py deps --root .. json --direction reverse
+python3 tools/rag.py quality-check --root .. --auto-reindex --summary-only
 python3 tools/rag.py eval-quality --root .. --cases evals/syntrexpowers-gold.json
 ```
 
@@ -91,6 +92,7 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
 | `watch` | CLI | Poll the project and rebuild when indexed files are added, changed, or deleted. |
 | `symbol` / `rag_symbol` | CLI, MCP | Exact symbol lookup. |
 | `deps` / `rag_deps` | CLI, MCP | Forward or reverse dependency edge lookup. |
+| `quality-check` / `rag_quality_check` | CLI, MCP | Health check plus comparative RAG vs keyword-baseline metrics. |
 | `knowledge-build` / `rag_knowledge_build` | CLI, MCP | Build normalized lessons, pattern registry, owner map, failure taxonomy, and query templates from review/eval cases. |
 | `knowledge-status` / `rag_knowledge_status` | CLI, MCP | Check whether a knowledge pack is stale against its source cases/rules. |
 
@@ -119,6 +121,26 @@ python3 tools/rag.py watch --root /path/to/project
 `--auto-reindex` checks `rag_status` before a search and performs a full rebuild only when the manifest is missing or stale. `--with-plan` diagnostics report whether the index was stale before search, whether it was rebuilt, and whether it is still stale after search. `watch` is a simple polling loop for long-lived local sessions.
 
 `force_include_globs` can include narrow review-critical files from otherwise excluded directories, for example `tests/Unit/*ContractTest.php` while keeping the rest of `tests/` out of the index. Runtime/generated directories such as `node_modules`, `vendor`, `dist`, `storage`, `_tmp_storage`, `payload`, and `.git` are excluded by default. `Dockerfile`, `Dockerfile.*`, and `.dockerignore` are included by default because build contracts are common FDR evidence.
+
+## Quality Check
+
+`quality-check` verifies that the server can read the index, retrieve expected sources, compare RAG retrieval against a keyword baseline, and produce a pass/fail verdict:
+
+```bash
+python3 tools/rag.py quality-check --root /path/to/project --auto-reindex --summary-only
+```
+
+Without `--cases`, the command generates deterministic smoke cases from the current index and reports Top-1, Top-3, Top-5, Top-10, MRR, baseline metrics, deltas, index health, and verdict thresholds. For stronger project-specific validation, pass a gold case file:
+
+```bash
+python3 tools/rag.py quality-check \
+  --root /path/to/project \
+  --cases evals/project-gold.json \
+  --mode fdr \
+  --auto-reindex
+```
+
+Use `eval-quality` when you only need raw retrieval metrics for a known cases file. Use `quality-check` as the operational RAG gate before relying on the server in a project.
 
 Search applies configurable `source_penalties` to downrank high-noise generated artifacts such as `.snapshots/` and demo seeds. It also detects document trust status from Markdown content: `Canonical` / implementation-ready docs are boosted, while `SUPERSEDED` and `DO NOT IMPLEMENT` documents are strongly downranked and shown as deprioritized read-plan items.
 
