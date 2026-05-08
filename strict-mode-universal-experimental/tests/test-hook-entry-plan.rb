@@ -22,6 +22,7 @@ def hook_event_for(logical_event)
     "pre-tool-use" => "PreToolUse",
     "post-tool-use" => "PostToolUse",
     "stop" => "Stop",
+    "subagent-stop" => "SubagentStop",
     "permission-request" => "PermissionRequest"
   }.fetch(logical_event)
 end
@@ -129,6 +130,26 @@ run_case do
 end
 
 run_case do
+  name = "enforcing plan binds Claude subagent-stop after selected output proof"
+  entries = [
+    entry_for("claude", "pre-tool-use"),
+    entry_for("claude", "stop"),
+    entry_for("claude", "subagent-stop")
+  ]
+  selected = [
+    selected_output("claude", "pre-tool-use", "claude.pre.block"),
+    selected_output("claude", "stop", "claude.stop.block"),
+    selected_output("claude", "subagent-stop", "claude.subagent-stop.block")
+  ]
+  planned = StrictModeHookEntryPlan.apply(entries, selected_output_contracts: selected, enforce: true)
+  subagent = planned.find { |entry| entry.fetch("logical_event") == "subagent-stop" }
+  assert(name, subagent.fetch("hook_event") == "SubagentStop", "wrong provider hook event", subagent.inspect)
+  assert(name, subagent.fetch("enforcing") == true && subagent.fetch("output_contract_id") == "claude.subagent-stop.block", "subagent-stop output contract not bound", planned.inspect)
+  errors = StrictModeHookEntryPlan.validate(planned, selected_output_contracts: selected, enforce: true)
+  assert(name, errors.empty?, "planned entries failed validation", errors.join("\n"))
+end
+
+run_case do
   name = "selected output contracts reject duplicate provider event tuples"
   selected = [
     selected_output("codex", "pre-tool-use", "codex.pre.block"),
@@ -151,6 +172,13 @@ run_case do
   bad = selected_output("codex", "stop", "codex.stop.deny", provider_action: "deny")
   errors = StrictModeHookEntryPlan.selected_output_contract_errors([bad])
   assert(name, errors.any? { |error| error.include?("provider_action must be block for stop and subagent-stop or block/deny") }, "missing stop provider_action diagnostic", errors.join("\n"))
+end
+
+run_case do
+  name = "selected output contracts reject subagent-stop deny actions"
+  bad = selected_output("claude", "subagent-stop", "claude.subagent-stop.deny", provider_action: "deny")
+  errors = StrictModeHookEntryPlan.selected_output_contract_errors([bad])
+  assert(name, errors.any? { |error| error.include?("provider_action must be block for stop and subagent-stop or block/deny") }, "missing subagent-stop provider_action diagnostic", errors.join("\n"))
 end
 
 run_case do

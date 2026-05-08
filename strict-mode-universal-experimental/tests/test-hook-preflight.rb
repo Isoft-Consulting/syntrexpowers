@@ -339,6 +339,80 @@ with_install do |_root, home, install_root, state_root, project|
 end
 
 with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing stop allows provider follow-up when stop_hook_active is true"
+  enable_codex_enforcement!(install_root, state_root)
+  payload = {
+    "event" => "stop",
+    "thread_id" => "t1",
+    "stop_hook_active" => true
+  }
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "follow-up stop should exit cleanly", stdout + stderr)
+  assert(name, stdout.empty?, "follow-up stop should not emit a second block", stdout)
+  assert(name, stderr.empty?, "follow-up stop should not warn", stderr)
+
+  record = last_discovery_record(state_root, "stop")
+  assert(name, record.fetch("mode") == "enforcing", "follow-up stop record did not stay enforcing", record.inspect)
+  enforcement = record.fetch("enforcement")
+  assert(name, enforcement.fetch("active") == true, "follow-up stop enforcement not active", enforcement.inspect)
+  assert(name, enforcement.fetch("emitted") == false, "follow-up stop emitted a recursive block", enforcement.inspect)
+  assert(name, enforcement.fetch("failed_closed") == false, "follow-up stop failed closed", enforcement.inspect)
+  assert(name, enforcement.fetch("stop_hook_active") == true, "follow-up stop was not recorded", enforcement.inspect)
+  assert(name, enforcement.fetch("output_contract_id") == "codex.stop.block", "wrong follow-up stop output contract", enforcement.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing stop ignores stop_hook_active from provider-mismatched payload"
+  enable_codex_enforcement!(install_root, state_root)
+  payload = {
+    "hook_event_name" => "SubagentStop",
+    "transcript_path" => "/tmp/.claude/session.jsonl",
+    "stop_hook_active" => true
+  }
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "provider stop contract should control exit code", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "block", "provider-mismatched stop should still block", stdout)
+  assert(name, emitted.fetch("reason").include?("stop guard"), "provider-mismatched stop reason missing guard reason", stdout)
+  assert(name, stderr.include?("provider mismatch"), "provider mismatch was not surfaced", stderr)
+
+  record = last_discovery_record(state_root, "stop")
+  assert(name, record.fetch("provider_detection_decision") == "mismatch", "payload was not provider-mismatched", record.inspect)
+  enforcement = record.fetch("enforcement")
+  assert(name, enforcement.fetch("active") == true && enforcement.fetch("emitted") == true, "provider-mismatched stop did not enforce", enforcement.inspect)
+  assert(name, enforcement.fetch("stop_hook_active") == false, "provider-mismatched stop_hook_active was trusted", enforcement.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing stop follow-up allows after protected-context fail-closed"
+  enable_codex_enforcement!(install_root, state_root)
+  install_root.join("install-manifest.json").write("{ malformed json\n")
+  state_root.join("protected-install-baseline.json").write("{ malformed json\n")
+
+  payload = {
+    "event" => "stop",
+    "thread_id" => "t1",
+    "stop_hook_active" => true
+  }
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "follow-up stop should exit cleanly", stdout + stderr)
+  assert(name, stdout.empty?, "follow-up stop after fail-closed should not emit a second block", stdout)
+  assert(name, stderr.empty?, "follow-up stop after fail-closed should not warn", stderr)
+
+  record = last_discovery_record(state_root, "stop")
+  assert(name, record.fetch("mode") == "enforcing", "fail-closed follow-up record did not stay enforcing", record.inspect)
+  enforcement = record.fetch("enforcement")
+  assert(name, enforcement.fetch("active") == true, "fail-closed follow-up enforcement not active", enforcement.inspect)
+  assert(name, enforcement.fetch("emitted") == false, "fail-closed follow-up emitted a recursive block", enforcement.inspect)
+  assert(name, enforcement.fetch("failed_closed") == false, "fail-closed follow-up still failed closed", enforcement.inspect)
+  assert(name, enforcement.fetch("stop_hook_active") == true, "fail-closed follow-up stop was not recorded", enforcement.inspect)
+  assert(name, enforcement.fetch("output_contract_id") == "codex.stop.block", "wrong fail-closed follow-up output contract", enforcement.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
   name = "enforcing pre-tool fails closed on protected baseline tamper"
   enable_codex_enforcement!(install_root, state_root)
   manifest_path = install_root.join("install-manifest.json")

@@ -230,7 +230,11 @@ def enforcing_hook_entry(context, provider, logical_event)
 end
 
 def blocking_capable_logical_event?(logical_event)
-  %w[pre-tool-use stop permission-request].include?(logical_event)
+  %w[pre-tool-use stop subagent-stop permission-request].include?(logical_event)
+end
+
+def stop_continuation_logical_event?(logical_event)
+  StrictModeInternalDecision::STOP_LIKE_EVENTS.include?(logical_event)
 end
 
 def enforcing_hook_invocation?
@@ -329,6 +333,21 @@ end
 
 def enforcement_result(context, provider, logical_event, preflight, stop_hook_active: false)
   entry = enforcing_hook_entry(context, provider, logical_event)
+  if stop_hook_active && stop_continuation_logical_event?(logical_event) && enforcing_hook_invocation?
+    contract_id = entry ? entry.fetch("output_contract_id") : ENV["STRICT_OUTPUT_CONTRACT_ID"].to_s
+    contract_id = fallback_output_contract_id_from_fixtures(provider, logical_event) if contract_id.empty?
+    unless contract_id.empty?
+      return {
+        "active" => true,
+        "emitted" => false,
+        "failed_closed" => false,
+        "output_contract_id" => contract_id,
+        "stop_hook_active" => true,
+        "emission" => nil,
+        "error" => ""
+      }
+    end
+  end
   unless entry
     if !context.fetch("trusted", false) && blocking_capable_logical_event?(logical_event) && enforcing_hook_invocation?
       contract_id = ENV["STRICT_OUTPUT_CONTRACT_ID"].to_s
@@ -340,6 +359,7 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
           "emitted" => true,
           "failed_closed" => true,
           "output_contract_id" => "",
+          "stop_hook_active" => stop_hook_active,
           "emission" => { "stdout" => "", "stderr" => "strict-hook enforcement failed closed: #{message}\n", "exit_code" => 1 },
           "error" => message
         }
@@ -353,12 +373,13 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
         "emitted" => true,
         "failed_closed" => true,
         "output_contract_id" => contract_id,
+        "stop_hook_active" => stop_hook_active,
         "emission" => emission,
         "error" => message
       }
     end
 
-    return { "active" => false, "emitted" => false, "failed_closed" => false, "output_contract_id" => "", "emission" => nil, "error" => "" }
+    return { "active" => false, "emitted" => false, "failed_closed" => false, "output_contract_id" => "", "stop_hook_active" => stop_hook_active, "emission" => nil, "error" => "" }
   end
 
   unless context.fetch("trusted", false)
@@ -371,6 +392,7 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
       "emitted" => true,
       "failed_closed" => true,
       "output_contract_id" => entry.fetch("output_contract_id"),
+      "stop_hook_active" => stop_hook_active,
       "emission" => emission,
       "error" => message
     }
@@ -380,7 +402,7 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
   raise "selected output contract missing for #{provider} #{logical_event} #{entry.fetch("output_contract_id")}" unless contract
 
   decision = internal_decision_from_preflight(preflight, stop_hook_active: stop_hook_active)
-  return { "active" => true, "emitted" => false, "failed_closed" => false, "output_contract_id" => contract.fetch("contract_id"), "emission" => nil, "error" => "" } unless decision.fetch("action") == "block"
+  return { "active" => true, "emitted" => false, "failed_closed" => false, "output_contract_id" => contract.fetch("contract_id"), "stop_hook_active" => stop_hook_active, "emission" => nil, "error" => "" } unless decision.fetch("action") == "block"
 
   metadata = provider_output_metadata(contract)
   emission = StrictModeDecisionContract.emit_provider_output(metadata, decision)
@@ -389,6 +411,7 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
     "emitted" => true,
     "failed_closed" => false,
     "output_contract_id" => contract.fetch("contract_id"),
+    "stop_hook_active" => stop_hook_active,
     "emission" => emission,
     "error" => ""
   }
@@ -398,6 +421,7 @@ rescue RuntimeError, ArgumentError, KeyError => e
     "emitted" => false,
     "failed_closed" => true,
     "output_contract_id" => entry ? entry.fetch("output_contract_id", "") : "",
+    "stop_hook_active" => stop_hook_active,
     "emission" => { "stdout" => "", "stderr" => "strict-hook enforcement failed closed: #{e.message}\n", "exit_code" => 1 },
     "error" => e.message
   }
@@ -473,15 +497,21 @@ preflight = if provider_detection_decision == "match" && !payload_truncated
             end
 preflight = validate_preflight_or_error(logical_event, preflight)
 context = protected_context(state_root)
-# Извлекаем stop_hook_active из распарсенного payload, чтобы recursion-guard
-# мог пропустить follow-up Stop при provider-continuation на блок.
-stop_hook_active = parsed_payload.is_a?(Hash) && parsed_payload["stop_hook_active"] == true
+stop_hook_active = provider_detection_decision == "match" &&
+                   !payload_truncated &&
+                   parsed_payload.is_a?(Hash) &&
+                   stop_continuation_logical_event?(logical_event) &&
+                   parsed_payload["stop_hook_active"] == true
 enforcement = enforcement_result(context, provider, logical_event, preflight, stop_hook_active: stop_hook_active)
 if preflight.fetch("would_block") && !enforcement.fetch("active")
   warn "strict-hook preflight would block in enforcement: #{preflight.fetch("reason_code")} (discovery log-only)"
 end
 
-runtime_settings = enforcement.fetch("failed_closed") ? {} : protected_runtime_settings(state_root)
+runtime_settings = if enforcement.fetch("failed_closed") || (enforcement.fetch("active") && enforcement.fetch("stop_hook_active", false))
+                     {}
+                   else
+                     protected_runtime_settings(state_root)
+                   end
 if runtime_settings["STRICT_CAPTURE_RAW_PAYLOADS"] == "1" && !payload_truncated && %w[claude codex].include?(provider) && provider_detection_decision == "match"
   begin
     raw_dir = log_dir.join("raw", provider, event_component)

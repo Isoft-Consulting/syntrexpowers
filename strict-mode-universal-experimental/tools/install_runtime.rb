@@ -462,8 +462,12 @@ def preflight_existing_config_files(config_root, install_root, state_root)
   end
 end
 
-def hook_specs(provider, include_permission_request: false)
-  StrictModeInstallHookPlan.hook_specs(provider, include_permission_request: include_permission_request)
+def hook_specs(provider, include_permission_request: false, include_subagent_stop: false)
+  StrictModeInstallHookPlan.hook_specs(
+    provider,
+    include_permission_request: include_permission_request,
+    include_subagent_stop: include_subagent_stop
+  )
 end
 
 def managed_entries(provider, config_path, install_root, state_root, selected_output_contracts: [], enforce: false)

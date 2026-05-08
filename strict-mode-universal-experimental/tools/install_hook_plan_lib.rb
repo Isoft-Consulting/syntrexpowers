@@ -33,7 +33,7 @@ module StrictModeInstallHookPlan
       ["PostToolUse", "post-tool-use", ".*", 3_000, provider == "claude" ? 4_000 : 0, timeout_field],
       ["Stop", "stop", "", 60_000, provider == "claude" ? 61_000 : 0, timeout_field]
     ]
-    if include_subagent_stop
+    if provider == "claude" && include_subagent_stop
       specs << ["SubagentStop", "subagent-stop", "", 30_000, provider == "claude" ? 31_000 : 0, timeout_field]
     end
     if include_permission_request
