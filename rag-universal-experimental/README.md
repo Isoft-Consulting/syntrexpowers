@@ -4,7 +4,7 @@ Reusable local RAG toolkit for project-aware agents. It builds a JSON index unde
 
 It is model-neutral. Codex, DeepSeek, Claude, or any other client can use the same server if it can launch a stdio MCP process. Non-MCP clients can still call the JSON CLI commands directly.
 
-The v0 implementation is intentionally lightweight: Python standard library only, lexical vector scoring plus BM25, no model downloads. A future embedding backend can be added without changing the index safety rules or MCP tool contracts.
+The v0 implementation is intentionally lightweight: Python 3.8+ standard library only, lexical vector scoring plus BM25, no model downloads. A future embedding backend can be added without changing the index safety rules or MCP tool contracts.
 
 For agent-driven installation into another repository, use [`AGENT_INSTALL.md`](AGENT_INSTALL.md).
 
