@@ -97,7 +97,8 @@ module StrictModeFixtureReadiness
     providers.flat_map do |provider|
       installed_version = provider_versions.fetch(provider, "unknown")
       installed_build_hash = provider_build_hashes.fetch(provider, "")
-      enforceable = records_by_provider.fetch(provider, []).select { |record| enforceable_record?(record, installed_version, installed_build_hash) }
+      provider_records = records_by_provider.fetch(provider, [])
+      enforceable = provider_records.select { |record| enforceable_record?(record, installed_version, installed_build_hash, provider_records) }
       selected_events = REQUIRED_BLOCKING_EVENTS + optional_blocking_events_for(provider).select { |event| optional_blocking_ready?(enforceable, event) }
       selected_events.map do |event|
         selected_blocking_decision_output(root, enforceable, provider, event)
@@ -139,7 +140,7 @@ module StrictModeFixtureReadiness
       records = records_by_provider.fetch(provider, [])
       installed_version = provider_versions.fetch(provider, "unknown")
       installed_build_hash = provider_build_hashes.fetch(provider, "")
-      enforceable = records.select { |record| enforceable_record?(record, installed_version, installed_build_hash) }
+      enforceable = records.select { |record| enforceable_record?(record, installed_version, installed_build_hash, records) }
       EARLY_BASELINE_EVENTS.any? { |event| record_exists?(enforceable, event, "event-order") } ||
         errors << "missing #{provider} event-order fixture for early baseline before tool execution"
       GENERATED_HOOK_EVENTS.each do |event|
@@ -193,7 +194,7 @@ module StrictModeFixtureReadiness
     end
 
     records = StrictModeFixtures.load_json(StrictModeFixtures.manifest_path(root, provider)).fetch("records")
-    enforceable = records.select { |record| enforceable_record?(record, installed_version, installed_build_hash) }
+    enforceable = records.select { |record| enforceable_record?(record, installed_version, installed_build_hash, records) }
     required_checks = required_checks_for(root, provider, enforceable)
     optional_checks = optional_checks_for(root, provider, enforceable)
     errors = required_checks.reject { |check| check.fetch("ready") }.map { |check| check.fetch("message") }
@@ -306,7 +307,7 @@ module StrictModeFixtureReadiness
     }
   end
 
-  def enforceable_record?(record, installed_version, installed_build_hash = "")
+  def enforceable_record?(record, installed_version, installed_build_hash = "", manifest_records = [record])
     return false unless record.is_a?(Hash) && record["provider_version"].is_a?(String)
 
     mode = record.dig("compatibility_range", "mode")
@@ -316,18 +317,52 @@ module StrictModeFixtureReadiness
     when "exact"
       installed_version != "unknown" &&
         record["provider_version"] == installed_version &&
-        build_hash_compatible?(record, installed_build_hash)
+        build_hash_compatible?(record, installed_build_hash, fallback_to_record: true)
     when "range"
-      false
+      range_compatible?(record, installed_version, installed_build_hash, manifest_records)
     else
       false
     end
   end
 
-  def build_hash_compatible?(record, installed_build_hash)
+  def range_compatible?(record, installed_version, installed_build_hash, manifest_records)
+    compatibility = record.fetch("compatibility_range", {})
+    comparator_id = compatibility.fetch("version_comparator", "")
+    return false if installed_version == "unknown" || comparator_id.empty?
+    return false unless semver_like?(installed_version) &&
+                        semver_like?(compatibility["min_version"]) &&
+                        semver_like?(compatibility["max_version"])
+    return false unless version_compare(compatibility.fetch("min_version"), installed_version) <= 0 &&
+                        version_compare(installed_version, compatibility.fetch("max_version")) <= 0
+
+    comparator = Array(manifest_records).find do |candidate|
+      candidate.is_a?(Hash) &&
+        candidate["provider"] == record["provider"] &&
+        candidate["contract_id"] == comparator_id &&
+        candidate["contract_kind"] == "version-comparator"
+    end
+    return false unless comparator
+
+    build_hash_compatible?(record, installed_build_hash, fallback_to_record: false)
+  end
+
+  def semver_like?(value)
+    value.is_a?(String) && value.match?(/\A\d+(?:\.\d+){1,3}\z/)
+  end
+
+  def version_compare(left, right)
+    left_parts = left.split(".").map(&:to_i)
+    right_parts = right.split(".").map(&:to_i)
+    width = [left_parts.length, right_parts.length].max
+    left_parts += [0] * (width - left_parts.length)
+    right_parts += [0] * (width - right_parts.length)
+    left_parts <=> right_parts
+  end
+
+  def build_hash_compatible?(record, installed_build_hash, fallback_to_record:)
     allowed_hashes = record.dig("compatibility_range", "provider_build_hashes")
     allowed_hashes = [] unless allowed_hashes.is_a?(Array)
-    if allowed_hashes.empty? && record["provider_build_hash"].is_a?(String) && !record["provider_build_hash"].empty?
+    if fallback_to_record && allowed_hashes.empty? && record["provider_build_hash"].is_a?(String) && !record["provider_build_hash"].empty?
       allowed_hashes = [record["provider_build_hash"]]
     end
     return true if allowed_hashes.empty?

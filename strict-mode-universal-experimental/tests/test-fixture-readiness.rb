@@ -346,15 +346,26 @@ def range_compatible(record)
   copy = JSON.parse(JSON.generate(record))
   copy["provider_version"] = "1.0.0"
   copy["provider_build_hash"] = ""
+  comparator_id = "#{copy.fetch("provider")}.semver-range"
   copy["compatibility_range"] = {
     "mode" => "range",
     "min_version" => "1.0.0",
     "max_version" => "2.0.0",
-    "version_comparator" => "provider.semver-range",
+    "version_comparator" => comparator_id,
     "provider_build_hashes" => []
   }
   copy["fixture_record_hash"] = StrictModeFixtures.hash_record(copy, "fixture_record_hash")
   copy
+end
+
+def version_comparator_record(root, provider)
+  record_for(
+    root,
+    provider: provider,
+    contract_id: "#{provider}.semver-range",
+    contract_kind: "version-comparator",
+    event: "provider-version"
+  )
 end
 
 def import_codex_payload(root, event, provider_version: "unknown", provider_build_hash: "")
@@ -774,6 +785,7 @@ with_root do |root|
   build_exact = record_for(root, provider: "claude", contract_id: "claude.stop.build.command", contract_kind: "command-execution", event: "stop", provider_build_hash: "a" * 64)
   unknown = unknown_only(exact)
   range = range_compatible(exact)
+  comparator = version_comparator_record(root, "claude")
   record_failure(name, "exact record should match known installed version") unless StrictModeFixtureReadiness.enforceable_record?(exact, "1.0.0")
   record_failure(name, "exact record should not match unknown installed version") if StrictModeFixtureReadiness.enforceable_record?(exact, "unknown")
   record_failure(name, "build-bound exact record should require build hash") if StrictModeFixtureReadiness.enforceable_record?(build_exact, "1.0.0")
@@ -781,7 +793,10 @@ with_root do |root|
   record_failure(name, "build-bound exact record should match known build hash") unless StrictModeFixtureReadiness.enforceable_record?(build_exact, "1.0.0", "a" * 64)
   record_failure(name, "unknown-only record should match unknown installed version") unless StrictModeFixtureReadiness.enforceable_record?(unknown, "unknown")
   record_failure(name, "unknown-only record should not match known installed version") if StrictModeFixtureReadiness.enforceable_record?(unknown, "1.0.0")
-  record_failure(name, "range record must not be enforceable before comparator implementation") if StrictModeFixtureReadiness.enforceable_record?(range, "1.5.0")
+  record_failure(name, "range record must not be enforceable without comparator proof") if StrictModeFixtureReadiness.enforceable_record?(range, "1.5.0")
+  record_failure(name, "range record should match in-range version with comparator proof") unless StrictModeFixtureReadiness.enforceable_record?(range, "1.5.0", "", [range, comparator])
+  record_failure(name, "range record should reject versions below min") if StrictModeFixtureReadiness.enforceable_record?(range, "0.9.9", "", [range, comparator])
+  record_failure(name, "range record should reject versions above max") if StrictModeFixtureReadiness.enforceable_record?(range, "2.0.1", "", [range, comparator])
 end
 
 with_root do |root|
@@ -825,6 +840,47 @@ with_root do |root|
   provider = report.fetch("providers").first
   record_failure(name, "report selected output mismatch", provider.fetch("selected_output_contracts").inspect) unless provider.fetch("selected_output_contracts").map { |record| record.fetch("contract_id") } == ["codex.pre-tool-use.decision", "codex.stop.decision"]
   record_failure(name, "required checks should be ready", JSON.pretty_generate(report)) unless provider.fetch("required_checks").all? { |check| check.fetch("ready") }
+end
+
+with_root do |root|
+  name = "range readiness accepts compatible provider versions only with comparator proof"
+  payload_records = []
+  %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
+    status, output = import_codex_payload(root, event, provider_version: "1.0.0")
+    assert_no_stacktrace("#{name} import #{event}", output)
+    if status.zero?
+      payload_records = StrictModeFixtures.load_json(StrictModeFixtures.manifest_path(root, "codex")).fetch("records")
+    else
+      record_failure(name, "payload import failed for #{event}", output)
+    end
+  end
+  exact_records = [
+    record_for(root, provider: "codex", contract_id: "codex.order", contract_kind: "event-order", event: "session-start"),
+    record_for(root, provider: "codex", contract_id: "codex.pre.matcher", contract_kind: "matcher", event: "pre-tool-use")
+  ]
+  %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
+    exact_records << record_for(root, provider: "codex", contract_id: "codex.#{event}.command", contract_kind: "command-execution", event: event)
+  end
+  %w[pre-tool-use stop].each do |event|
+    exact_records << record_for(root, provider: "codex", contract_id: "codex.#{event}.decision", contract_kind: "decision-output", event: event)
+  end
+  range_records = (payload_records + exact_records).map { |record| range_compatible(record) }
+  comparator = version_comparator_record(root, "codex")
+  write_manifest(root, "codex", range_records + [comparator])
+
+  status, output = run_cmd(CHECKER, "--root", root, "--provider", "codex", "--provider-version", "codex=1.5.0")
+  assert_no_stacktrace("#{name} checker in range", output)
+  record_failure(name, "expected in-range readiness to pass, got #{status}", output) unless status.zero?
+
+  status, output = run_cmd(CHECKER, "--root", root, "--provider", "codex", "--provider-version", "codex=2.0.1")
+  assert_no_stacktrace("#{name} checker out of range", output)
+  record_failure(name, "expected out-of-range readiness to fail, got #{status}", output) unless status == 1
+  record_failure(name, "missing out-of-range readiness diagnostic", output) unless output.include?("missing codex stop decision-output fixture")
+
+  write_manifest(root, "codex", range_records)
+  status, output = run_cmd(CHECKER, "--root", root, "--provider", "codex", "--provider-version", "codex=1.5.0")
+  assert_no_stacktrace("#{name} checker without comparator", output)
+  record_failure(name, "expected missing-comparator readiness to fail, got #{status}", output) unless status == 1
 end
 
 with_root do |root|
