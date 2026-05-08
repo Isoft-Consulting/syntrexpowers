@@ -1,0 +1,494 @@
+[
+  {
+    "category": "frontend_runtime_contract",
+    "count": 829,
+    "example_ids": [
+      "pr3-path-1",
+      "pr3-path-2",
+      "pr4-path-4",
+      "pr4-path-5",
+      "pr4-path-6"
+    ],
+    "owners": [
+      "UIer SPA",
+      "Core Domain",
+      "Core HTTP Controllers",
+      "Control Plane Dispatcher",
+      "Documentation",
+      "Core Tests"
+    ],
+    "severities": {
+      "BLOCKER": 67,
+      "HIGH": 556,
+      "LOW": 14,
+      "MEDIUM": 80,
+      "UNKNOWN": 112
+    },
+    "top_paths": [
+      "bin/control_plane_job_dispatcher.php",
+      "uier-spa/src/stores/sandboxProvisioning.ts",
+      "Docs/specs/2026-04-20-sandbox-provisioning-wizard-spec-v1.md",
+      "uier-spa/src/views/admin/ControlPlaneView.vue",
+      "app/Domain/Tenancy/Provisioning/SandboxProvisioningService.php",
+      "uier-spa/src/components/admin/provisioning/SandboxProvisionStepResult.vue",
+      "tests/run.php",
+      "uier/routes/web.php"
+    ]
+  },
+  {
+    "category": "transaction_atomicity",
+    "count": 744,
+    "example_ids": [
+      "pr6-path-11",
+      "pr6-path-12",
+      "pr9-path-14",
+      "pr16-path-32",
+      "pr16-path-33"
+    ],
+    "owners": [
+      "UIer SPA",
+      "Core Domain",
+      "Documentation",
+      "Core HTTP Controllers",
+      "Control Plane Dispatcher",
+      "Sandbox Provisioning"
+    ],
+    "severities": {
+      "BLOCKER": 69,
+      "HIGH": 518,
+      "LOW": 6,
+      "MEDIUM": 72,
+      "UNKNOWN": 79
+    },
+    "top_paths": [
+      "app/Domain/Tenancy/Provisioning/SandboxProvisioningService.php",
+      "bin/control_plane_job_dispatcher.php",
+      "Docs/specs/2026-04-20-sandbox-provisioning-wizard-spec-v1.md",
+      "uier-spa/src/views/admin/ControlPlaneView.vue",
+      "uier-spa/src/stores/sandboxProvisioning.ts",
+      "uier/app/Http/Controllers/AdminSandboxProxyController.php",
+      "uier-spa/src/components/admin/provisioning/SandboxProvisionStepResult.vue",
+      "tests/run.php"
+    ]
+  },
+  {
+    "category": "test_contract",
+    "count": 560,
+    "example_ids": [
+      "pr4-path-3",
+      "pr12-path-20",
+      "pr12-path-21",
+      "pr16-path-27",
+      "pr16-path-28"
+    ],
+    "owners": [
+      "Core Tests",
+      "UIer SPA",
+      "Core Domain",
+      "Core CLI/Workers",
+      "Application Source",
+      "Core HTTP Controllers"
+    ],
+    "severities": {
+      "BLOCKER": 82,
+      "HIGH": 370,
+      "LOW": 8,
+      "MEDIUM": 30,
+      "UNKNOWN": 70
+    },
+    "top_paths": [
+      "tests/run.php",
+      "uier/routes/web.php",
+      "tests/Unit/SandboxProvisioningServiceTest.php",
+      "app/Domain/Tenancy/Provisioning/SandboxProvisioningService.php",
+      "tests/Unit/DataTables3ValueObjectsTest.php",
+      "tests/Unit/DataTables3RepositoriesTest.php",
+      "tests/Unit/DataTables3ServicesTest.php",
+      "bin/validate_plugin_quality.php"
+    ]
+  },
+  {
+    "category": "route_contract",
+    "count": 463,
+    "example_ids": [
+      "pr4-path-4",
+      "pr4-path-6",
+      "pr5-path-8",
+      "pr5-path-9",
+      "pr5-path-10"
+    ],
+    "owners": [
+      "UIer SPA",
+      "Core HTTP Controllers",
+      "Plugin Platform",
+      "UIer router",
+      "Core Domain",
+      "Core Routes"
+    ],
+    "severities": {
+      "BLOCKER": 52,
+      "HIGH": 302,
+      "LOW": 7,
+      "MEDIUM": 40,
+      "UNKNOWN": 62
+    },
+    "top_paths": [
+      "uier/routes/web.php",
+      "routes/admin.php",
+      "tests/Feature/DataTables3RoutesFeatureTest.php",
+      "routes/modules/dt3-spreadsheet-internal.php",
+      "app/Http/Controllers/DataTables3Controller.php",
+      "plugins/data-tables-3/plugin.yaml",
+      "tests/run.php",
+      "uier/app/Http/Controllers/AdminSandboxProxyController.php"
+    ]
+  },
+  {
+    "category": "workflow_contract",
+    "count": 447,
+    "example_ids": [
+      "pr12-path-19",
+      "pr12-path-20",
+      "pr16-path-27",
+      "pr16-path-32",
+      "pr16-path-33"
+    ],
+    "owners": [
+      "UIer SPA",
+      "Documentation",
+      "Core HTTP Controllers",
+      "Unknown",
+      "Core CLI/Workers",
+      "Core Domain"
+    ],
+    "severities": {
+      "BLOCKER": 40,
+      "HIGH": 267,
+      "LOW": 7,
+      "MEDIUM": 53,
+      "UNKNOWN": 80
+    },
+    "top_paths": [
+      "uier-spa/src/components/admin/provisioning/SandboxProvisionStepResult.vue",
+      "bin/control_plane_job_dispatcher.php",
+      "Docs/specs/2026-04-20-sandbox-provisioning-wizard-spec-v1.md",
+      "uier-spa/src/stores/sandboxProvisioning.ts",
+      "app/Domain/Tenancy/Provisioning/SandboxProvisioningService.php",
+      "uier-spa/src/views/admin/ControlPlaneView.vue",
+      "uier/routes/web.php",
+      "uier-spa/src/components/admin/provisioning/SandboxProvisionStepDetails.vue"
+    ]
+  },
+  {
+    "category": "resource_lifecycle",
+    "count": 435,
+    "example_ids": [
+      "pr5-path-7",
+      "pr5-path-9",
+      "pr5-path-10",
+      "pr6-path-11",
+      "pr6-path-12"
+    ],
+    "owners": [
+      "Core Domain",
+      "UIer SPA",
+      "Core CLI/Workers",
+      "Core HTTP Controllers",
+      "Plugin Platform",
+      "Core Tests"
+    ],
+    "severities": {
+      "BLOCKER": 64,
+      "HIGH": 294,
+      "LOW": 3,
+      "MEDIUM": 20,
+      "UNKNOWN": 54
+    },
+    "top_paths": [
+      "app/Domain/Tenancy/Provisioning/SandboxProvisioningService.php",
+      "tests/run.php",
+      "app/Http/Controllers/DataTables3Controller.php",
+      "bin/control_plane_job_dispatcher.php",
+      "app/Http/Controllers/DataTables3/WorkbookController.php",
+      "bin/validate_plugin_quality.php",
+      "bin/migrate.php",
+      "routes/admin.php"
+    ]
+  },
+  {
+    "category": "schema_form_contract",
+    "count": 400,
+    "example_ids": [
+      "pr3-path-1",
+      "pr3-path-2",
+      "pr4-path-3",
+      "pr4-path-4",
+      "pr4-path-5"
+    ],
+    "owners": [
+      "Plugin Platform",
+      "UIer SPA",
+      "Core HTTP Controllers",
+      "Core Domain",
+      "Core CLI/Workers",
+      "Documentation"
+    ],
+    "severities": {
+      "BLOCKER": 51,
+      "HIGH": 251,
+      "LOW": 5,
+      "MEDIUM": 24,
+      "UNKNOWN": 69
+    },
+    "top_paths": [
+      "plugins/data-tables-3/plugin.yaml",
+      "uier/routes/web.php",
+      "app/Http/Controllers/DataTables3Controller.php",
+      "tests/run.php",
+      "routes/admin.php",
+      "app/Http/Controllers/DataTables3/WorkbookController.php",
+      "app/Domain/DataTables3/Service/SpreadsheetRuntime.php",
+      "Docs/plans/2026-04-24-data-tables-3-core-plugin-shell-packet-v1.md"
+    ]
+  },
+  {
+    "category": "rollout_control_plane",
+    "count": 393,
+    "example_ids": [
+      "pr5-path-7",
+      "pr5-path-9",
+      "pr5-path-10",
+      "pr16-path-36",
+      "pr16-path-37"
+    ],
+    "owners": [
+      "Control Plane Dispatcher",
+      "UIer SPA",
+      "Documentation",
+      "Sandbox Provisioning",
+      "Control Plane",
+      "Core Domain"
+    ],
+    "severities": {
+      "BLOCKER": 12,
+      "HIGH": 281,
+      "LOW": 7,
+      "MEDIUM": 43,
+      "UNKNOWN": 50
+    },
+    "top_paths": [
+      "bin/control_plane_job_dispatcher.php",
+      "app/Domain/Tenancy/Provisioning/SandboxProvisioningService.php",
+      "Docs/specs/2026-04-20-sandbox-provisioning-wizard-spec-v1.md",
+      "uier-spa/src/components/admin/provisioning/SandboxProvisionStepResult.vue",
+      "uier-spa/src/stores/sandboxProvisioning.ts",
+      "uier-spa/src/views/admin/ControlPlaneView.vue",
+      "uier/app/Http/Controllers/AdminSandboxProxyController.php",
+      "tests/Unit/SandboxProvisioningServiceTest.php"
+    ]
+  },
+  {
+    "category": "api_shape_contract",
+    "count": 334,
+    "example_ids": [
+      "pr12-path-16",
+      "pr12-path-17",
+      "pr12-path-18",
+      "pr12-path-21",
+      "pr12-path-22"
+    ],
+    "owners": [
+      "Core Domain",
+      "UIer SPA",
+      "Core HTTP Controllers",
+      "Control Plane Dispatcher",
+      "Documentation",
+      "Core CLI/Workers"
+    ],
+    "severities": {
+      "BLOCKER": 44,
+      "HIGH": 208,
+      "LOW": 7,
+      "MEDIUM": 32,
+      "UNKNOWN": 43
+    },
+    "top_paths": [
+      "bin/control_plane_job_dispatcher.php",
+      "app/Domain/Tenancy/Provisioning/SandboxProvisioningService.php",
+      "Docs/specs/2026-04-20-sandbox-provisioning-wizard-spec-v1.md",
+      "uier-spa/src/stores/sandboxProvisioning.ts",
+      "routes/admin.php",
+      "app/Domain/Tenancy/BrandedEmailService.php",
+      "tests/run.php",
+      "uier-spa/src/components/admin/provisioning/SandboxProvisionStepResult.vue"
+    ]
+  },
+  {
+    "category": "security_guard",
+    "count": 248,
+    "example_ids": [
+      "pr3-path-1",
+      "pr3-path-2",
+      "pr4-path-3",
+      "pr5-path-7",
+      "pr5-path-9"
+    ],
+    "owners": [
+      "UIer SPA",
+      "Core HTTP Controllers",
+      "Plugin Platform",
+      "Documentation",
+      "UIer backend",
+      "Core Domain"
+    ],
+    "severities": {
+      "BLOCKER": 7,
+      "HIGH": 175,
+      "LOW": 6,
+      "MEDIUM": 34,
+      "UNKNOWN": 26
+    },
+    "top_paths": [
+      "uier/routes/web.php",
+      "bin/control_plane_job_dispatcher.php",
+      "uier-spa/src/stores/sandboxProvisioning.ts",
+      "Docs/specs/2026-04-20-sandbox-provisioning-wizard-spec-v1.md",
+      "uier/app/Http/Controllers/AdminSandboxProxyController.php",
+      "app/Domain/Tenancy/Provisioning/SandboxProvisioningService.php",
+      "tests/run.php",
+      "app/Http/Controllers/DataTables3Controller.php"
+    ]
+  },
+  {
+    "category": "owner_boundary",
+    "count": 226,
+    "example_ids": [
+      "pr4-path-5",
+      "pr4-path-6",
+      "pr14-path-23",
+      "pr23-path-50",
+      "pr38-path-56"
+    ],
+    "owners": [
+      "Core HTTP Controllers",
+      "Core Domain",
+      "Core Tests",
+      "Plugin Platform",
+      "UIer SPA",
+      "UIer router"
+    ],
+    "severities": {
+      "BLOCKER": 31,
+      "HIGH": 153,
+      "LOW": 4,
+      "MEDIUM": 17,
+      "UNKNOWN": 21
+    },
+    "top_paths": [
+      "uier/routes/web.php",
+      "bin/control_plane_job_dispatcher.php",
+      "Docs/specs/2026-04-20-sandbox-provisioning-wizard-spec-v1.md",
+      "uier-spa/src/stores/sandboxProvisioning.ts",
+      "plugins/infraops-bff-adapter/Actions/Http/ControlPlaneProxySupport.php",
+      "app/Domain/EntityModels/AclResolver.php",
+      "app/Http/Controllers/DataTables3Controller.php",
+      "app/Domain/Tenancy/Provisioning/SandboxProvisioningService.php"
+    ]
+  },
+  {
+    "category": "audit_contract",
+    "count": 158,
+    "example_ids": [
+      "pr5-path-8",
+      "pr5-path-9",
+      "pr5-path-10",
+      "pr6-path-11",
+      "pr6-path-12"
+    ],
+    "owners": [
+      "UIer SPA",
+      "Core CLI/Workers",
+      "Documentation",
+      "Core Tests",
+      "Application Source",
+      "Core Domain"
+    ],
+    "severities": {
+      "BLOCKER": 41,
+      "HIGH": 79,
+      "LOW": 4,
+      "MEDIUM": 15,
+      "UNKNOWN": 19
+    },
+    "top_paths": [
+      "routes/admin.php",
+      "Docs/specs/2026-04-20-sandbox-provisioning-wizard-spec-v1.md",
+      "bin/control_plane_job_dispatcher.php",
+      "uier-spa/src/components/reports/ScheduleDialog.vue",
+      "uier/routes/web.php",
+      "bin/worker_outbound_http.php",
+      "app/SystemTests/BigDataSubsystemVerifier.php",
+      "tests/Unit/AutoTriggerSelectionPlannerTest.php"
+    ]
+  },
+  {
+    "category": "general_review",
+    "count": 15,
+    "example_ids": [
+      "pr32-path-53",
+      "pr40-path-58",
+      "pr52-path-89",
+      "pr62-path-106",
+      "pr62-path-124"
+    ],
+    "owners": [
+      "Core CLI/Workers",
+      "Control Plane",
+      "Application Source",
+      "Documentation",
+      "Core HTTP Controllers",
+      "Plugin Platform"
+    ],
+    "severities": {
+      "BLOCKER": 2,
+      "HIGH": 5,
+      "UNKNOWN": 8
+    },
+    "top_paths": [
+      "app/Domain/ControlPlane/NodeProvisioner.php",
+      "config/plugin_quality_policy.php",
+      "uier/plugins/devtools/backend/DevToolsController.php",
+      "uier/app/Http/Controllers/ApiEntityController.php",
+      "app/Domain/Insights/InsightFeedbackRepository.php",
+      "bin/migrate.php",
+      "app/Support/TenantMigration.php",
+      "bin/bootstrap_anvalt.php"
+    ]
+  },
+  {
+    "category": "build_portability",
+    "count": 4,
+    "example_ids": [
+      "pr70-path-254",
+      "pr70-path-255",
+      "pr80-path-1325",
+      "pr80-path-1335"
+    ],
+    "owners": [
+      "Core Bootstrap",
+      "UIer SPA",
+      "Application Source",
+      "Unknown"
+    ],
+    "severities": {
+      "BLOCKER": 2,
+      "UNKNOWN": 2
+    },
+    "top_paths": [
+      "bootstrap/autoload.php",
+      "uier/bin/preflight_core_integration.php",
+      "uier-spa/src/tests/views/admin/SettingsView.test.ts",
+      "uier-spa/src/stores/admin/admin-settings.ts"
+    ]
+  }
+]

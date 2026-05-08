@@ -1,0 +1,505 @@
+[
+  {
+    "count": 304,
+    "owner": "UIer SPA",
+    "scope": "frontend views, stores, components, frontend tests",
+    "top_categories": [
+      "frontend_runtime_contract",
+      "transaction_atomicity",
+      "workflow_contract",
+      "route_contract",
+      "rollout_control_plane",
+      "schema_form_contract",
+      "test_contract",
+      "resource_lifecycle"
+    ],
+    "top_paths": [
+      "uier-spa/src/stores/sandboxProvisioning.ts",
+      "uier-spa/src/views/admin/ControlPlaneView.vue",
+      "uier-spa/src/components/admin/provisioning/SandboxProvisionStepResult.vue",
+      "uier-spa/src/features/data-tables-3/components/Dt3SidePanel.vue",
+      "uier-spa/src/stores/admin/admin-sandboxes.ts",
+      "uier-spa/src/components/admin/provisioning/SandboxProvisionStepDetails.vue",
+      "uier-spa/src/components/admin/provisioning/SandboxProvisionStepReview.vue",
+      "uier-spa/src/components/admin/provisioning/SandboxProvisionWizard.vue",
+      "uier-spa/src/features/data-tables-3/components/Dt3Toolbar.vue",
+      "uier-spa/src/types/index.ts"
+    ]
+  },
+  {
+    "count": 167,
+    "owner": "Core Tests",
+    "scope": "PHP tests and contract fixtures",
+    "top_categories": [
+      "test_contract",
+      "frontend_runtime_contract",
+      "transaction_atomicity",
+      "resource_lifecycle",
+      "rollout_control_plane",
+      "route_contract",
+      "workflow_contract",
+      "owner_boundary"
+    ],
+    "top_paths": [
+      "tests/run.php",
+      "tests/Unit/SandboxProvisioningServiceTest.php",
+      "tests/Unit/DataTables3ValueObjectsTest.php",
+      "tests/Unit/DataTables3RepositoriesTest.php",
+      "tests/Unit/DataTables3ServicesTest.php",
+      "tests/Feature/DataTables3RoutesFeatureTest.php",
+      "tests/Unit/DataTables3FormulaEvaluatorTest.php",
+      "tests/Unit/DockerComposeGeneratorTest.php",
+      "tests/Unit/EntityModelAclResolverTest.php",
+      "tests/Unit/SqlWrapperTest.php"
+    ]
+  },
+  {
+    "count": 145,
+    "owner": "Core Domain",
+    "scope": "Core domain services and repositories",
+    "top_categories": [
+      "transaction_atomicity",
+      "resource_lifecycle",
+      "schema_form_contract",
+      "frontend_runtime_contract",
+      "route_contract",
+      "api_shape_contract",
+      "workflow_contract",
+      "test_contract"
+    ],
+    "top_paths": [
+      "app/Domain/Tenancy/SandboxRepository.php",
+      "app/Domain/DataTables3/Service/WorkbookAccessValidator.php",
+      "app/Domain/DataTables3/Service/SpreadsheetRuntime.php",
+      "app/Domain/DataTables3/Op/OpType.php",
+      "app/Domain/Tenancy/BrandedEmailService.php",
+      "app/Domain/EntityModels/AclResolver.php",
+      "app/Domain/EntityModels/EntityModelRecordService.php",
+      "app/Domain/DataTables3/Op/SheetOp.php",
+      "app/Domain/Staging/StagingPromoteService.php",
+      "app/Domain/DataTables3/Repository/JobRepository.php"
+    ]
+  },
+  {
+    "count": 128,
+    "owner": "Documentation",
+    "scope": "specs, plans, guides, knowledge",
+    "top_categories": [
+      "transaction_atomicity",
+      "frontend_runtime_contract",
+      "workflow_contract",
+      "test_contract",
+      "rollout_control_plane",
+      "api_shape_contract",
+      "route_contract",
+      "schema_form_contract"
+    ],
+    "top_paths": [
+      "Docs/specs/2026-04-20-sandbox-provisioning-wizard-spec-v1.md",
+      "Docs/plans/2026-04-24-data-tables-3-core-plugin-shell-packet-v1.md",
+      "Docs/specs/2026-04-27-pr72-visual-studio-review-plan-spec-v1.md",
+      "Docs/ops/sql/sandbox-provisioning-bootstrap.sql",
+      "Docs/ops/CONTROL_PLANE_DEPLOY_RUNBOOK.md",
+      "Docs/ops/sandbox-provisioning-bootstrap.md",
+      "Docs/specs/2026-04-24-data-tables-3-master-spec-v2.md",
+      "Docs/specs/plugin-quality-policy-v1.md",
+      "Docs/plans/2026-05-04-node-image-build-and-rollout-plan-v1.md",
+      "Docs/help/concepts/dry_run.md"
+    ]
+  },
+  {
+    "count": 117,
+    "owner": "Core HTTP Controllers",
+    "scope": "Core HTTP controller contracts",
+    "top_categories": [
+      "transaction_atomicity",
+      "frontend_runtime_contract",
+      "resource_lifecycle",
+      "route_contract",
+      "workflow_contract",
+      "schema_form_contract",
+      "api_shape_contract",
+      "security_guard"
+    ],
+    "top_paths": [
+      "app/Http/Controllers/DataTables3Controller.php",
+      "app/Http/Controllers/SandboxController.php",
+      "app/Http/Controllers/DataTables3/WorkbookController.php",
+      "app/Http/Controllers/SandboxProvisioningController.php",
+      "app/Http/Controllers/ControlNodeAgentController.php",
+      "app/Http/Controllers/DataTables3/SheetController.php",
+      "app/Http/Controllers/ControlPlaneNodeController.php",
+      "app/Http/Controllers/StagingSandboxController.php",
+      "app/Http/Controllers/ReportController.php",
+      "app/Http/Controllers/PluginCsvExportController.php"
+    ]
+  },
+  {
+    "count": 89,
+    "owner": "Core CLI/Workers",
+    "scope": "CLI commands, workers, validation scripts",
+    "top_categories": [
+      "test_contract",
+      "workflow_contract",
+      "resource_lifecycle",
+      "transaction_atomicity",
+      "audit_contract",
+      "frontend_runtime_contract",
+      "schema_form_contract",
+      "owner_boundary"
+    ],
+    "top_paths": [
+      "bin/validate_plugin_quality.php",
+      "bin/migrate.php",
+      "bin/migrate_pg.php",
+      "bin/worker_outbound_http.php",
+      "bin/bootstrap_anvalt.php",
+      "bin/report_schedule_worker.php",
+      "bin/perf_entity_registry.php",
+      "bin/rebuild_entity_fulltext.php",
+      "bin/wiki_reindex.php",
+      "bin/worker_notification_webhooks.php"
+    ]
+  },
+  {
+    "count": 58,
+    "owner": "UIer backend",
+    "scope": "UIer PHP controllers/services",
+    "top_categories": [
+      "transaction_atomicity",
+      "frontend_runtime_contract",
+      "route_contract",
+      "security_guard",
+      "rollout_control_plane",
+      "api_shape_contract",
+      "workflow_contract",
+      "schema_form_contract"
+    ],
+    "top_paths": [
+      "uier/app/Http/Controllers/AdminSandboxProxyController.php",
+      "uier/app/Http/Controllers/ApiControllerHelperTrait.php",
+      "uier/app/Http/Controllers/ApiController.php",
+      "uier/app/CoreClient/CoreApiClient.php",
+      "uier/app/Http/Middleware/TokenAuthMiddleware.php",
+      "uier/app/Http/Router.php",
+      "uier/app/Http/Controllers/DashboardLayoutController.php",
+      "uier/app/Http/Repositories/DashboardLayoutRepository.php",
+      "uier/app/Http/Controllers/ApiEntityController.php",
+      "uier/app/Http/Controllers/NavigationController.php"
+    ]
+  },
+  {
+    "count": 49,
+    "owner": "Plugin Platform",
+    "scope": "plugin manifests, schemas, widgets, no-code targets",
+    "top_categories": [
+      "schema_form_contract",
+      "route_contract",
+      "frontend_runtime_contract",
+      "workflow_contract",
+      "test_contract",
+      "resource_lifecycle",
+      "owner_boundary",
+      "transaction_atomicity"
+    ],
+    "top_paths": [
+      "plugins/data-tables-3/plugin.yaml",
+      "plugins/infraops-bff-adapter/Actions/Http/ControlPlaneProxySupport.php",
+      "plugins/personnel/plugin.yaml",
+      "plugins/data-tables-2/schemas/rows/list.yaml",
+      "plugins/data-tables-3/seeds/bridge_endpoints.yaml",
+      "plugins/core-admin/schemas/helpers/form.yaml",
+      "plugins/core-admin/schemas/playgrounds/list.yaml",
+      "plugins/core-entity-builder/i18n/ru.json",
+      "plugins/automation/plugin.yaml",
+      "plugins/cases-admin/plugin.yaml"
+    ]
+  },
+  {
+    "count": 49,
+    "owner": "UIer Plugins",
+    "scope": "UIer plugin backends, widgets, plugin-local schemas",
+    "top_categories": [
+      "route_contract",
+      "test_contract",
+      "schema_form_contract",
+      "transaction_atomicity",
+      "frontend_runtime_contract",
+      "security_guard",
+      "api_shape_contract",
+      "owner_boundary"
+    ],
+    "top_paths": [
+      "uier/plugins/devtools/backend/Mcp/McpToolRegistry.php",
+      "uier/plugins/devtools/backend/CorePluginController.php",
+      "uier/plugins/devtools/backend/AgentApiController.php",
+      "uier/plugins/devtools/backend/Traits/AccessControlTrait.php",
+      "uier/plugins/devtools/backend/ScaffolderController.php",
+      "uier/plugins/devtools/backend/ApiExplorerController.php",
+      "uier/plugins/devtools/backend/PluginPublishController.php",
+      "uier/plugins/devtools/backend/Mcp/McpResourceRegistry.php",
+      "uier/plugins/devtools/backend/Services/PluginOpsService.php",
+      "uier/plugins/devtools/backend/Mcp/DocsContentBuilder.php"
+    ]
+  },
+  {
+    "count": 44,
+    "owner": "Control Plane",
+    "scope": "node rollout/provision/update orchestration",
+    "top_categories": [
+      "transaction_atomicity",
+      "rollout_control_plane",
+      "resource_lifecycle",
+      "frontend_runtime_contract",
+      "api_shape_contract",
+      "workflow_contract",
+      "schema_form_contract",
+      "test_contract"
+    ],
+    "top_paths": [
+      "app/Domain/ControlPlane/SandboxProvisioner.php",
+      "app/Domain/ControlPlane/DockerComposeGenerator.php",
+      "app/Domain/ControlPlane/NodeProvisioner.php",
+      "app/Domain/ControlPlane/SshExecutor.php",
+      "app/Domain/ControlPlane/EnvFileGenerator.php",
+      "app/Domain/ControlPlane/NodeUpdater.php",
+      "app/Domain/ControlPlane/NodeBackupManager.php",
+      "app/Domain/ControlPlane/ControlPlaneService.php",
+      "app/Domain/ControlPlane/Nginx/SandboxSiteParams.php",
+      "app/Domain/ControlPlane/Nginx/SandboxSiteNginxGenerator.php"
+    ]
+  },
+  {
+    "count": 44,
+    "owner": "Control Plane Dispatcher",
+    "scope": "control-plane job dispatchers and scripts",
+    "top_categories": [
+      "rollout_control_plane",
+      "frontend_runtime_contract",
+      "transaction_atomicity",
+      "api_shape_contract",
+      "workflow_contract",
+      "test_contract",
+      "resource_lifecycle",
+      "security_guard"
+    ],
+    "top_paths": [
+      "bin/control_plane_job_dispatcher.php",
+      "bin/control_plane_health_poll.php"
+    ]
+  },
+  {
+    "count": 43,
+    "owner": "Sandbox Provisioning",
+    "scope": "sandbox provisioning domain services",
+    "top_categories": [
+      "transaction_atomicity",
+      "rollout_control_plane",
+      "frontend_runtime_contract",
+      "resource_lifecycle",
+      "workflow_contract",
+      "test_contract",
+      "api_shape_contract",
+      "security_guard"
+    ],
+    "top_paths": [
+      "app/Domain/Tenancy/Provisioning/SandboxProvisioningService.php",
+      "app/Domain/Tenancy/Provisioning/SandboxEnvParams.php"
+    ]
+  },
+  {
+    "count": 38,
+    "owner": "UIer router",
+    "scope": "UIer HTTP route ownership",
+    "top_categories": [
+      "route_contract",
+      "frontend_runtime_contract",
+      "test_contract",
+      "transaction_atomicity",
+      "security_guard",
+      "schema_form_contract",
+      "workflow_contract",
+      "owner_boundary"
+    ],
+    "top_paths": [
+      "uier/routes/web.php"
+    ]
+  },
+  {
+    "count": 36,
+    "owner": "Application Source",
+    "scope": "main application source code",
+    "top_categories": [
+      "transaction_atomicity",
+      "test_contract",
+      "resource_lifecycle",
+      "frontend_runtime_contract",
+      "workflow_contract",
+      "rollout_control_plane",
+      "schema_form_contract",
+      "audit_contract"
+    ],
+    "top_paths": [
+      "app/Support/AccessPolicy.php",
+      "app/Core/Container.php",
+      "app/SystemTests/BigDataSubsystemVerifier.php",
+      "app/Support/Sql.php",
+      "app/Core/InboundProcessor.php",
+      "app/Support/YamlHelper.php",
+      "app/Support/DateTimeHelper.php",
+      "app/Support/DomainException.php",
+      "app/Support/MigrationFileDiscovery.php",
+      "app/Support/TenantMigration.php"
+    ]
+  },
+  {
+    "count": 31,
+    "owner": "Core Routes",
+    "scope": "Core route declarations",
+    "top_categories": [
+      "route_contract",
+      "schema_form_contract",
+      "resource_lifecycle",
+      "transaction_atomicity",
+      "frontend_runtime_contract",
+      "workflow_contract",
+      "api_shape_contract",
+      "audit_contract"
+    ],
+    "top_paths": [
+      "routes/admin.php",
+      "routes/modules/dt3-spreadsheet-internal.php",
+      "routes/api.php",
+      "routes/modules/automation-core.php"
+    ]
+  },
+  {
+    "count": 28,
+    "owner": "UIer Tests",
+    "scope": "UIer backend/unit/feature tests",
+    "top_categories": [
+      "test_contract",
+      "transaction_atomicity",
+      "frontend_runtime_contract",
+      "rollout_control_plane",
+      "resource_lifecycle",
+      "route_contract",
+      "workflow_contract",
+      "api_shape_contract"
+    ],
+    "top_paths": [
+      "uier/tests/Feature/AdminSandboxProxyControllerTest.php",
+      "uier/tests/Feature/DashboardLayoutControllerTest.php",
+      "uier/tests/run.php",
+      "uier/tests/Feature/PluginApiControllerTest.php",
+      "uier/tests/E2E/DevToolsTemplateScaffolderSmokeTest.php",
+      "uier/tests/Feature/ImpersonationProxyControllerTest.php",
+      "uier/tests/Unit/Plugins/DevTools/SandboxProvisionMcpToolTest.php",
+      "uier/tests/Unit/DevTools/SpecSynthesisAdapterServiceTest.php",
+      "uier/tests/Unit/DevTools/Composition/CompositionB2FdrRegressionTest.php",
+      "uier/tests/Feature/AttachmentBridgeControllerTest.php"
+    ]
+  },
+  {
+    "count": 16,
+    "owner": "Core Config",
+    "scope": "runtime configuration",
+    "top_categories": [
+      "transaction_atomicity",
+      "resource_lifecycle",
+      "frontend_runtime_contract",
+      "test_contract",
+      "route_contract",
+      "schema_form_contract",
+      "rollout_control_plane",
+      "owner_boundary"
+    ],
+    "top_paths": [
+      "config/ops.php",
+      "config/plugin_lifecycle_defaults.php",
+      "config/plugin_quality_policy.php",
+      "config/intelligence.php",
+      "config/db.php",
+      "config/pg.php",
+      "config/log.php",
+      "config/rabbitmq.php"
+    ]
+  },
+  {
+    "count": 7,
+    "owner": "UIer E2E",
+    "scope": "browser coverage and end-to-end tests",
+    "top_categories": [
+      "frontend_runtime_contract",
+      "test_contract",
+      "route_contract",
+      "workflow_contract",
+      "schema_form_contract",
+      "transaction_atomicity",
+      "api_shape_contract",
+      "security_guard"
+    ],
+    "top_paths": [
+      "uier-spa/e2e/plugin-coverage.manifest.json",
+      "uier-spa/e2e/admin.spec.ts",
+      "uier-spa/e2e/projects-composer-smoke.spec.ts",
+      "uier-spa/e2e/visual-studio-epic2/capability-gaps-coverage.spec.ts",
+      "uier-spa/e2e/data-tables-3.spec.ts"
+    ]
+  },
+  {
+    "count": 7,
+    "owner": "Unknown",
+    "scope": "unmapped path prefix",
+    "top_categories": [
+      "frontend_runtime_contract",
+      "transaction_atomicity",
+      "workflow_contract",
+      "resource_lifecycle",
+      "rollout_control_plane",
+      "schema_form_contract",
+      "security_guard",
+      "build_portability"
+    ],
+    "top_paths": [
+      "uier/config/core.php",
+      "uier/bin/migrate.php",
+      "uier/config/dashboard.php",
+      "uier/config/session.php",
+      "uier/bin/preflight_core_integration.php"
+    ]
+  },
+  {
+    "count": 4,
+    "owner": "Core Bootstrap",
+    "scope": "application bootstrap and shared runtime loading",
+    "top_categories": [
+      "test_contract",
+      "frontend_runtime_contract",
+      "transaction_atomicity",
+      "audit_contract",
+      "build_portability",
+      "workflow_contract",
+      "api_shape_contract",
+      "resource_lifecycle"
+    ],
+    "top_paths": [
+      "bootstrap/autoload.php",
+      "bootstrap/db.php",
+      "bootstrap/env.php"
+    ]
+  },
+  {
+    "count": 1,
+    "owner": "UIer legacy public assets",
+    "scope": "server-rendered/legacy browser assets",
+    "top_categories": [
+      "frontend_runtime_contract",
+      "owner_boundary",
+      "schema_form_contract"
+    ],
+    "top_paths": [
+      "uier/public/js/app.js"
+    ]
+  }
+]

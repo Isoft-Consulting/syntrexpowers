@@ -1,0 +1,18 @@
+{
+  "artifacts": [
+    "lessons.jsonl",
+    "patterns.json",
+    "owner-map.json",
+    "patterns.md",
+    "failure-taxonomy.md",
+    "owner-map.md",
+    "query-templates.md"
+  ],
+  "cases": 1405,
+  "lessons": 1405,
+  "out_dir": "/var/www/syntrexpowers/rag-universal-experimental/knowledge/core-review",
+  "owners": 21,
+  "patterns": 14,
+  "project": "core",
+  "rules_path": "/var/www/syntrexpowers/rag-universal-experimental/examples/knowledge.core.json"
+}

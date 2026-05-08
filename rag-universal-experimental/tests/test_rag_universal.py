@@ -25,6 +25,7 @@ from rag_universal.core import (
     trim_query_counts,
 )
 from rag_universal.eval_quality import evaluate_quality
+from rag_universal.knowledge import build_project_knowledge
 from rag_universal.mcp_server import handle_message
 
 
@@ -130,7 +131,7 @@ class RagUniversalTest(unittest.TestCase):
 
         listed = handle_message({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, str(root), None)
         names = {tool["name"] for tool in listed["result"]["tools"]}
-        self.assertEqual({"rag_search", "rag_reindex", "rag_status", "rag_coverage", "rag_symbol", "rag_deps"}, names)
+        self.assertEqual({"rag_search", "rag_reindex", "rag_status", "rag_coverage", "rag_symbol", "rag_deps", "rag_knowledge_build"}, names)
 
         called = handle_message(
             {
@@ -484,6 +485,61 @@ class RagUniversalTest(unittest.TestCase):
         build_index(root)
         results = search_index(root, None, "захист небезпечних команд", top_k=1)
         self.assertEqual(results[0]["source"], "README.md")
+
+    def test_knowledge_build_generates_lessons_patterns_and_owner_map(self) -> None:
+        root = self.make_project()
+        cases = root / "review-cases.json"
+        cases.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "case-1",
+                        "pr": 12,
+                        "author": "leonextra",
+                        "kind": "review",
+                        "query": (
+                            "PR #12 review evidence. Target file: uier-spa/src/components/schema/SchemaForm.vue. "
+                            "Cited files: uier-spa/src/components/schema/SchemaForm.vue, "
+                            "plugins/core-admin/schemas/helpers/form.yaml. Context: HIGH SchemaForm ignores "
+                            "options.params and breaks schema dynamic select endpoint contract."
+                        ),
+                        "expected_sources": ["uier-spa/src/components/schema/SchemaForm.vue"],
+                    },
+                    {
+                        "id": "case-2",
+                        "pr": 5,
+                        "author": "leonextra",
+                        "kind": "review",
+                        "query": (
+                            "MEDIUM MonitoringController restartWorker has command injection risk. "
+                            "Target file: uier/app/Http/Controllers/MonitoringController.php."
+                        ),
+                        "expected_sources": ["uier/app/Http/Controllers/MonitoringController.php"],
+                    },
+                ]
+            ),
+            encoding="utf-8",
+        )
+        rules = root / "knowledge.rules.json"
+        rules.write_text(
+            json.dumps({"owner_rules": [{"prefix": "uier-spa/", "owner": "UIer SPA", "scope": "frontend"}]}),
+            encoding="utf-8",
+        )
+        summary = build_project_knowledge(root, cases, "Docs/knowledge/rag", "demo", rules)
+        out_dir = root / "Docs" / "knowledge" / "rag"
+        self.assertEqual(summary["lessons"], 2)
+        self.assertEqual(summary["rules_path"], str(rules))
+        self.assertTrue((out_dir / "lessons.jsonl").exists())
+        self.assertTrue((out_dir / "patterns.md").exists())
+        self.assertTrue((out_dir / "failure-taxonomy.md").exists())
+        self.assertTrue((out_dir / "owner-map.md").exists())
+        lesson = json.loads((out_dir / "lessons.jsonl").read_text(encoding="utf-8").splitlines()[0])
+        self.assertIn("schema_form_contract", lesson["categories"])
+        self.assertIn("UIer SPA", [owner["owner"] for owner in lesson["owners"]])
+        patterns = json.loads((out_dir / "patterns.json").read_text(encoding="utf-8"))
+        categories = {row["category"] for row in patterns}
+        self.assertIn("schema_form_contract", categories)
+        self.assertIn("security_guard", categories)
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ Included in v0:
 - Canonical/superseded document status detection for Markdown specs, plans, and reports.
 - Section-level read plans that tell clients which exact file sections to inspect before opening whole files.
 - Markdown path-reference edges so plans/specs/reviews can be mapped to referenced code and tests.
+- Knowledge-pack generation from review/eval cases with universal default owner rules and optional project-specific rules profiles.
 - Symbol extraction for common docs and languages.
 - Dependency edge extraction for Python, Ruby, JavaScript/TypeScript, shell, and PHP import forms.
 - CLI commands: `index`, `status`, `coverage`, `search`, `symbol`, `deps`, `eval-quality`, `serve-mcp`.
@@ -99,5 +100,7 @@ Projects can loosen the rules explicitly in their own `rag.config.json`, but the
 - `python3 tools/rag.py symbol --root <repo> --config <config> Name` returns exact symbol matches.
 - `python3 tools/rag.py deps --root <repo> --config <config> target` returns dependency edges, including Markdown `path_reference` edges when docs cite repo paths.
 - `python3 tools/rag.py eval-quality --root <repo> --config <config> --cases <cases.json>` reports Top-1, Top-3, Top-5, Top-10, and MRR.
+- `python3 tools/rag.py knowledge-build --root <repo> --cases <cases.json> --output Docs/knowledge/rag --project <name>` writes normalized lessons, pattern registry, failure taxonomy, owner map, query templates, and summary.
+- `knowledge-build --rules <rules.json>` may add project-specific owner mappings while keeping the generator itself project-neutral.
 - `python3 tools/rag.py serve-mcp --root <repo> --config <config>` speaks MCP stdio.
 - Tests prove secret path exclusion, index artifact generation, search ranking, symbol lookup, dependency lookup, provider-neutral initialize handling, and MCP tool dispatch.

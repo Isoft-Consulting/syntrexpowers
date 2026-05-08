@@ -5,6 +5,7 @@ import sys
 from typing import Any
 
 from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan
+from .knowledge import build_project_knowledge
 
 
 def tool_definitions() -> list[dict[str, Any]]:
@@ -80,6 +81,20 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "required": ["target"],
             },
         },
+        {
+            "name": "rag_knowledge_build",
+            "description": "Build a normalized lessons/patterns/owner-map knowledge pack from review or eval cases.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "cases": {"type": "string"},
+                    "output": {"type": "string", "default": "Docs/knowledge/rag"},
+                    "project": {"type": "string", "default": "project"},
+                    "rules": {"type": ["string", "null"], "default": None},
+                },
+                "required": ["cases"],
+            },
+        },
     ]
 
 
@@ -135,6 +150,16 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
                 str(arguments.get("target", "")),
                 str(arguments.get("direction", "reverse")),
                 int(arguments.get("limit", 20)),
+            )
+        )
+    if name == "rag_knowledge_build":
+        return text_content(
+            build_project_knowledge(
+                root,
+                str(arguments.get("cases", "")),
+                str(arguments.get("output", "Docs/knowledge/rag")),
+                str(arguments.get("project", "project")),
+                arguments.get("rules"),
             )
         )
     raise ValueError(f"unknown tool: {name}")

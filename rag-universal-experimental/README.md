@@ -87,6 +87,7 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
 | `search` / `rag_search` | CLI, MCP | Ranked chunk retrieval with source/type filters, task modes, and optional read-plan output. |
 | `symbol` / `rag_symbol` | CLI, MCP | Exact symbol lookup. |
 | `deps` / `rag_deps` | CLI, MCP | Forward or reverse dependency edge lookup. |
+| `knowledge-build` / `rag_knowledge_build` | CLI, MCP | Build normalized lessons, pattern registry, owner map, failure taxonomy, and query templates from review/eval cases. |
 
 ## Generated Artifacts
 
@@ -120,6 +121,45 @@ Task modes tune retrieval for common agent workflows:
 `--with-plan` returns `{ results, read_plan, diagnostics }`. The read plan gives section-level `read_hint` values and a token-budget guard so clients can inspect specific sections first instead of opening whole files. Diagnostics also surface explicit paths from the query and suggested next steps when retrieval returns no results.
 
 Markdown documents that cite repository paths now create `path_reference` dependency edges. This gives agents a lightweight cross-artifact map from plans/specs/reviews to the code and tests they mention, available through `rag_deps`.
+
+## Knowledge Packs
+
+`knowledge-build` turns review/eval cases into a project-memory pack:
+
+```bash
+python3 tools/rag.py knowledge-build \
+  --root /path/to/project \
+  --cases /path/to/review-cases.json \
+  --output Docs/knowledge/rag \
+  --project my-project
+```
+
+Generated artifacts:
+
+```text
+Docs/knowledge/rag/
+  lessons.jsonl
+  patterns.json
+  owner-map.json
+  patterns.md
+  failure-taxonomy.md
+  owner-map.md
+  query-templates.md
+  summary.json
+```
+
+The generator is universal by default. It uses generic path ownership rules such as `src/`, `app/`, `routes/`, `tests/`, `docs/`, `plugins/`, `migrations/`, `Dockerfile`, and `.dockerignore`. Projects can pass an optional rules profile to improve owner names without changing the universal engine:
+
+```bash
+python3 tools/rag.py knowledge-build \
+  --root /path/to/project \
+  --cases /path/to/review-cases.json \
+  --output Docs/knowledge/rag \
+  --project core \
+  --rules rag-universal-experimental/examples/knowledge.core.json
+```
+
+The checked-in `knowledge/core-review/` pack is a Core-specific example built from the `leonextra` review gold set using `examples/knowledge.core.json`. It demonstrates the format; other projects should generate their own pack from their own review/FDR cases.
 
 ## Tests
 

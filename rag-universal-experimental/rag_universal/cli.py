@@ -7,6 +7,7 @@ from typing import Any
 
 from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan
 from .eval_quality import evaluate_quality
+from .knowledge import build_project_knowledge
 from .mcp_server import run_stdio
 
 
@@ -49,6 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
     eval_quality.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration"], default="default")
     eval_quality.add_argument("--skip-baseline", action="store_true", help="Skip keyword baseline; useful for large path-focused gold sets.")
     eval_quality.add_argument("--summary-only", action="store_true", help="Omit per-case details from output.")
+
+    knowledge = subparsers.add_parser("knowledge-build", help="Build normalized RAG knowledge pack from review/eval cases")
+    knowledge.add_argument("--cases", required=True, help="Gold/review cases JSON file.")
+    knowledge.add_argument("--output", default="Docs/knowledge/rag", help="Output directory relative to root unless absolute.")
+    knowledge.add_argument("--project", default="project", help="Project name used in summary metadata.")
+    knowledge.add_argument("--rules", default=None, help="Optional project-specific knowledge rules JSON.")
 
     subparsers.add_parser("serve-mcp", help="Run MCP stdio server")
     return parser
@@ -99,6 +106,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "eval-quality":
         emit(evaluate_quality(args.root, args.config, args.cases, args.top_k, args.mode, not args.skip_baseline, not args.summary_only))
+        return 0
+    if args.command == "knowledge-build":
+        emit(build_project_knowledge(args.root, args.cases, args.output, args.project, args.rules))
         return 0
     if args.command == "serve-mcp":
         return run_stdio(args.root, args.config)
