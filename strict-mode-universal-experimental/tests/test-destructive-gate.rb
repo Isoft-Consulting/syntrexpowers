@@ -250,11 +250,10 @@ with_project do |_root, project, cwd, home, install, protected_roots|
 end
 
 with_project do |_root, project, cwd, home, install, protected_roots|
-  name = "exact strict-fdr import allows trusted project source"
-  source = write_file(project.join("review.md"), "# review\n")
+  name = "exact strict-fdr import is unavailable until artifact importer is ready"
+  write_file(project.join("review.md"), "# review\n")
   result = shell_result("\"#{install.join('active/bin/strict-fdr')}\" import -- ../review.md", project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
-  expect_result(name, result, "allow", "trusted-fdr-import")
-  record_failure(name, "trusted source metadata mismatch", result.inspect) unless result.fetch("metadata").fetch("trusted_import_source") == source.to_s
+  expect_result(name, result, "block", "trusted-import-unavailable")
 end
 
 with_project do |_root, project, cwd, home, install, protected_roots|

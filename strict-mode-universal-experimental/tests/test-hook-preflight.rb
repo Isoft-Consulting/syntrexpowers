@@ -646,6 +646,35 @@ with_install do |_root, home, install_root, state_root, project|
 end
 
 with_install do |_root, home, install_root, state_root, project|
+  name = "pre-tool preflight blocks strict-fdr import while importer is unavailable"
+  project.join("review.md").write("# review\n")
+  command = "\"#{install_root.join('active/bin/strict-fdr')}\" import -- review.md"
+  payload = {
+    "event" => "pre-tool-use",
+    "thread_id" => "t1",
+    "tool_name" => "exec_command",
+    "tool_input" => {
+      "command" => command
+    }
+  }
+  status, output = run_hook(home, install_root, state_root, project, payload)
+  assert_no_stacktrace(name, output)
+  assert(name, status.zero?, "strict-hook must stay discovery/log-only", output)
+  assert(name, output.include?("preflight would block"), "missing would-block warning", output)
+
+  record = last_discovery_record(state_root)
+  preflight = record.fetch("preflight")
+  assert_valid_preflight(name, preflight)
+  assert(name, preflight.fetch("trusted") == true, "preflight was not trusted", preflight.inspect)
+  assert(name, preflight.fetch("decision") == "block", "preflight did not classify block", preflight.inspect)
+  assert(name, preflight.fetch("would_block") == true, "preflight would_block mismatch", preflight.inspect)
+  assert(name, preflight.fetch("reason_code") == "trusted-import-unavailable", "wrong reason_code", preflight.inspect)
+  assert(name, preflight.fetch("command_hash") == Digest::SHA256.hexdigest(command), "command hash mismatch", preflight.inspect)
+  assert(name, !state_root.join("discovery/codex-pre-tool-use.jsonl").read.include?(command), "raw shell command leaked into discovery log")
+  assert(name, record.fetch("trusted_state_written") == false, "preflight wrote trusted state")
+end
+
+with_install do |_root, home, install_root, state_root, project|
   name = "pre-tool preflight blocks patch move into protected root"
   destination = install_root.join("config/runtime.env")
   patch = "*** Begin Patch\n*** Update File: lib/safe.rb\n*** Move to: #{destination}\n@@\n-old\n+new\n*** End Patch\n"

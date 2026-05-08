@@ -3,33 +3,66 @@
 
 require "json"
 require "optparse"
+require_relative "../tools/metadata_lib"
+
+ZERO_HASH = "0" * 64
+HASH_PATTERN = /\A[a-f0-9]{64}\z/
+PROVIDER_ROUTES = {
+  "claude" => {
+    "backend" => "claude",
+    "model" => "claude-haiku-4-5-20251001"
+  },
+  "codex" => {
+    "backend" => "codex",
+    "model" => "gpt-5.3-codex-spark"
+  }
+}.freeze
 
 provider = nil
+reviewed_scope_digest = ZERO_HASH
+reviewed_artifact_hash = ZERO_HASH
 begin
   OptionParser.new do |opts|
     opts.on("--provider PROVIDER") { |value| provider = value }
+    opts.on("--reviewed-scope-digest SHA256") { |value| reviewed_scope_digest = value }
+    opts.on("--reviewed-artifact-hash SHA256") { |value| reviewed_artifact_hash = value }
   end.parse!(ARGV)
 rescue OptionParser::ParseError => e
   warn "strict-judge usage error: #{e.message}"
   exit 2
 end
 
-backend = case provider
-          when "claude"
-            "haiku"
-          when "codex"
-            "gpt-5.3-codex-spark"
-          else
-            "unknown"
-          end
+unless ARGV.empty?
+  warn "strict-judge usage error: unexpected positional arguments"
+  exit 2
+end
 
-puts JSON.pretty_generate({
+unless reviewed_scope_digest.match?(HASH_PATTERN)
+  warn "strict-judge usage error: --reviewed-scope-digest must be a lowercase SHA-256 hash"
+  exit 2
+end
+
+unless reviewed_artifact_hash.match?(HASH_PATTERN)
+  warn "strict-judge usage error: --reviewed-artifact-hash must be a lowercase SHA-256 hash"
+  exit 2
+end
+
+route = PROVIDER_ROUTES.fetch(provider, { "backend" => "unknown", "model" => "unknown" })
+
+response = {
   "schema_version" => 1,
-  "verdict" => "invalid",
-  "reason" => "judge invocation is fixture-gated in the discovery skeleton",
-  "confidence" => "0.00",
-  "backend" => backend,
-  "findings" => []
-})
+  "verdict" => "unknown",
+  "reason" => "judge-invocation-unverified",
+  "findings" => [],
+  "reviewed_scope_digest" => reviewed_scope_digest,
+  "reviewed_artifact_hash" => reviewed_artifact_hash,
+  "confidence" => "0.000",
+  "model" => route.fetch("model"),
+  "backend" => route.fetch("backend"),
+  "response_hash" => ""
+}
+response["response_hash"] = StrictModeMetadata.hash_record(response, "response_hash")
 
-exit(provider ? 0 : 1)
+puts StrictModeMetadata.canonical_json(response)
+
+exit(PROVIDER_ROUTES.key?(provider) ? 0 : 1)

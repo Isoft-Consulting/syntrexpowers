@@ -1,7 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require "digest"
 require "json"
 
 command = ARGV.shift
@@ -20,7 +19,10 @@ end
 
 puts JSON.pretty_generate({
   "schema_version" => 1,
-  "mode" => "discovery-import",
+  "mode" => "discovery-import-unavailable",
   "source_path" => File.expand_path(path),
-  "imported_artifact_hash" => Digest::SHA256.file(path).hexdigest
+  "decision" => "block",
+  "reason_code" => "trusted-import-unavailable",
+  "reason" => "strict-fdr import requires the artifact importer before it can create trusted state"
 })
+exit 1
