@@ -202,7 +202,7 @@ def selected_output_contract_id_from(record, provider, logical_event)
 end
 
 def fallback_enforcing_hook_entry(context, provider, logical_event)
-  return nil unless %w[pre-tool-use stop permission-request].include?(logical_event)
+  return nil unless blocking_capable_logical_event?(logical_event)
 
   [context.fetch("manifest", {}), context.fetch("baseline", {})].each do |record|
     contract_id = selected_output_contract_id_from(record, provider, logical_event)
@@ -226,6 +226,31 @@ def enforcing_hook_entry(context, provider, logical_event)
   return entry if entry
 
   fallback_enforcing_hook_entry(context, provider, logical_event)
+end
+
+def blocking_capable_logical_event?(logical_event)
+  %w[pre-tool-use stop permission-request].include?(logical_event)
+end
+
+def enforcing_hook_invocation?
+  ENV["STRICT_ENFORCING_HOOK"] == "1"
+end
+
+def fallback_output_contract_id_from_fixtures(provider, logical_event)
+  return "" unless blocking_capable_logical_event?(logical_event)
+  return "" unless %w[claude codex].include?(provider)
+
+  selected = StrictModeFixtureReadiness.selected_output_contracts(StrictModeMetadata.project_root, [provider])
+  contract = selected.find do |candidate|
+    candidate["provider"] == provider &&
+      candidate["logical_event"] == logical_event &&
+      candidate["contract_kind"] == "decision-output" &&
+      candidate["contract_id"].is_a?(String) &&
+      !candidate["contract_id"].empty?
+  end
+  contract ? contract.fetch("contract_id") : ""
+rescue RuntimeError, ArgumentError, KeyError
+  ""
 end
 
 def selected_output_contract(context, entry)
@@ -323,7 +348,37 @@ end
 
 def enforcement_result(context, provider, logical_event, preflight)
   entry = enforcing_hook_entry(context, provider, logical_event)
-  return { "active" => false, "emitted" => false, "failed_closed" => false, "output_contract_id" => "", "emission" => nil, "error" => "" } unless entry
+  unless entry
+    if !context.fetch("trusted", false) && blocking_capable_logical_event?(logical_event) && enforcing_hook_invocation?
+      contract_id = ENV["STRICT_OUTPUT_CONTRACT_ID"].to_s
+      contract_id = fallback_output_contract_id_from_fixtures(provider, logical_event) if contract_id.empty?
+      message = "strict-mode protected context is untrusted: #{(context.fetch("errors") + context.fetch("config_errors")).join("; ")}"
+      if contract_id.empty?
+        return {
+          "active" => true,
+          "emitted" => true,
+          "failed_closed" => true,
+          "output_contract_id" => "",
+          "emission" => { "stdout" => "", "stderr" => "strict-hook enforcement failed closed: #{message}\n", "exit_code" => 1 },
+          "error" => message
+        }
+      end
+
+      metadata = provider_output_metadata_from_contract_id(provider, logical_event, contract_id)
+      decision = fail_closed_decision(logical_event, "protected-baseline-untrusted", message)
+      emission = StrictModeDecisionContract.emit_provider_output(metadata, decision)
+      return {
+        "active" => true,
+        "emitted" => true,
+        "failed_closed" => true,
+        "output_contract_id" => contract_id,
+        "emission" => emission,
+        "error" => message
+      }
+    end
+
+    return { "active" => false, "emitted" => false, "failed_closed" => false, "output_contract_id" => "", "emission" => nil, "error" => "" }
+  end
 
   unless context.fetch("trusted", false)
     metadata = provider_output_metadata_from_contract_id(provider, logical_event, entry.fetch("output_contract_id"))

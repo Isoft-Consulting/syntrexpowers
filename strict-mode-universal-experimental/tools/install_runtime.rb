@@ -706,6 +706,8 @@ def build_install_plan(home, install_root, state_root, providers, enforce:, prov
     "generated_hook_commands" => provider_entries.map { |entry| entry.slice("provider", "hook_event", "logical_event", "command") },
     "generated_hook_env" => {
       "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix",
+      "STRICT_ENFORCING_HOOK" => "per-enforcing hook command prefix",
+      "STRICT_OUTPUT_CONTRACT_ID" => "per-enforcing hook command prefix",
       "STRICT_STATE_ROOT" => "per-install command prefix"
     },
     "fixture_manifest_records" => StrictModeFixtureReadiness.fixture_manifest_records(StrictModeMetadata.project_root, providers),
@@ -955,6 +957,8 @@ begin
     "generated_hook_commands" => provider_entries.map { |entry| entry.slice("provider", "hook_event", "logical_event", "command") },
     "generated_hook_env" => {
       "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix",
+      "STRICT_ENFORCING_HOOK" => "per-enforcing hook command prefix",
+      "STRICT_OUTPUT_CONTRACT_ID" => "per-enforcing hook command prefix",
       "STRICT_STATE_ROOT" => "per-install command prefix"
     },
     "package_version" => PACKAGE_VERSION,

@@ -23,6 +23,8 @@ module StrictModeProtectedBaseline
   }.freeze
   EXPECTED_GENERATED_HOOK_ENV = {
     "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix",
+    "STRICT_ENFORCING_HOOK" => "per-enforcing hook command prefix",
+    "STRICT_OUTPUT_CONTRACT_ID" => "per-enforcing hook command prefix",
     "STRICT_STATE_ROOT" => "per-install command prefix"
   }.freeze
   FILE_RECORD_KINDS = %w[

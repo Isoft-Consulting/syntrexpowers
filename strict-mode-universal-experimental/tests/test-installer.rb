@@ -730,6 +730,8 @@ with_fixture do |_root, home, install_root|
   assert(name, runtime.fetch("STRICT_NO_CLAUDE_WORKER") == "1", "installed runtime.env enables Claude worker before fixture proof")
   assert(name, baseline.fetch("generated_hook_env") == {
     "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix",
+    "STRICT_ENFORCING_HOOK" => "per-enforcing hook command prefix",
+    "STRICT_OUTPUT_CONTRACT_ID" => "per-enforcing hook command prefix",
     "STRICT_STATE_ROOT" => "per-install command prefix"
   }, "baseline generated hook env mismatch")
   assert(name, runtime.fetch("STRICT_NO_CODEX_WORKER") == "1", "installed runtime.env enables Codex worker before fixture proof")

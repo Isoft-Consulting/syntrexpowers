@@ -10,10 +10,18 @@ module StrictModeInstallHookPlan
     %("#{path.to_s.gsub(/["\\$`]/) { |char| "\\#{char}" }}")
   end
 
-  def command_for(install_root, state_root, provider, logical_event, timeout_ms)
+  def command_for(install_root, state_root, provider, logical_event, timeout_ms, output_contract_id: "")
     hook_path = install_root.join("active/bin/strict-hook")
     state_root_path = Pathname.new(state_root)
-    "STRICT_HOOK_TIMEOUT_MS=#{timeout_ms} STRICT_STATE_ROOT=#{double_quote_shell(state_root_path)} #{double_quote_shell(hook_path)} --provider #{provider} #{logical_event}"
+    assignments = [
+      "STRICT_HOOK_TIMEOUT_MS=#{timeout_ms}",
+      "STRICT_STATE_ROOT=#{double_quote_shell(state_root_path)}"
+    ]
+    unless output_contract_id.to_s.empty?
+      assignments << "STRICT_ENFORCING_HOOK=1"
+      assignments << "STRICT_OUTPUT_CONTRACT_ID=#{double_quote_shell(output_contract_id)}"
+    end
+    "#{assignments.join(" ")} #{double_quote_shell(hook_path)} --provider #{provider} #{logical_event}"
   end
 
   def hook_specs(provider, include_permission_request: false)
@@ -66,7 +74,19 @@ module StrictModeInstallHookPlan
         "removal_selector" => {}
       }
     end
-    StrictModeHookEntryPlan.apply(entries, selected_output_contracts: selected, enforce: enforce, install_root: install_root, state_root: state_root_path)
+    planned = StrictModeHookEntryPlan.apply(entries, selected_output_contracts: selected, enforce: enforce, install_root: install_root, state_root: state_root_path)
+    planned.each do |entry|
+      output_contract_id = entry.fetch("enforcing") ? entry.fetch("output_contract_id") : ""
+      entry["command"] = command_for(
+        install_root,
+        state_root_path,
+        provider,
+        entry.fetch("logical_event"),
+        entry.fetch("self_timeout_ms"),
+        output_contract_id: output_contract_id
+      )
+    end
+    StrictModeHookEntryPlan.apply(planned, selected_output_contracts: selected, enforce: enforce, install_root: install_root, state_root: state_root_path)
   end
 
   def hook_config_entry(entry)

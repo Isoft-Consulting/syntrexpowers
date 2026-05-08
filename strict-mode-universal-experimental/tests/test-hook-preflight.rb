@@ -256,6 +256,31 @@ def run_hook_event_capture(home, install_root, state_root, project, event, paylo
   [status.exitstatus, stdout, stderr]
 end
 
+def codex_output_contract_id_for(event)
+  {
+    "pre-tool-use" => "codex.pre-tool-use.block",
+    "stop" => "codex.stop.block"
+  }.fetch(event)
+end
+
+def run_enforcing_hook_event_capture(home, install_root, state_root, project, event, payload)
+  hook = install_root.join("active/bin/strict-hook")
+  env = hook_env(home, install_root, state_root, project).merge(
+    "STRICT_ENFORCING_HOOK" => "1",
+    "STRICT_OUTPUT_CONTRACT_ID" => codex_output_contract_id_for(event)
+  )
+  stdout, stderr, status = Open3.capture3(
+    env,
+    hook.to_s,
+    "--provider",
+    "codex",
+    event,
+    stdin_data: JSON.generate(payload) + "\n",
+    chdir: project.to_s
+  )
+  [status.exitstatus, stdout, stderr]
+end
+
 def last_discovery_record(state_root, event = "pre-tool-use")
   log = state_root.join("discovery/codex-#{event}.jsonl")
   raise "#{log}: missing discovery log" unless log.file?
@@ -275,7 +300,7 @@ with_install do |_root, home, install_root, state_root, project|
       "command" => command
     }
   }
-  status, stdout, stderr = run_hook_capture(home, install_root, state_root, project, payload)
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", payload)
   assert_no_stacktrace(name, stdout + stderr)
   assert(name, status.zero?, "provider block contract should control exit code", stdout + stderr)
   emitted = JSON.parse(stdout)
@@ -298,7 +323,7 @@ with_install do |_root, home, install_root, state_root, project|
     "event" => "stop",
     "thread_id" => "t1"
   }
-  status, stdout, stderr = run_hook_event_capture(home, install_root, state_root, project, "stop", payload)
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", payload)
   assert_no_stacktrace(name, stdout + stderr)
   assert(name, status.zero?, "provider stop contract should control exit code", stdout + stderr)
   emitted = JSON.parse(stdout)
@@ -329,7 +354,7 @@ with_install do |_root, home, install_root, state_root, project|
       "command" => "touch \"#{install_root.join('config/runtime.env')}\""
     }
   }
-  status, stdout, stderr = run_hook_capture(home, install_root, state_root, project, payload)
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", payload)
   assert_no_stacktrace(name, stdout + stderr)
   assert(name, status.zero?, "provider block contract should control exit code", stdout + stderr)
   emitted = JSON.parse(stdout)
@@ -429,6 +454,60 @@ with_install do |_root, home, install_root, state_root, project|
   enforcement = record.fetch("enforcement")
   assert(name, enforcement.fetch("active") == true && enforcement.fetch("failed_closed") == true, "fail-closed enforcement not recorded", enforcement.inspect)
   assert(name, enforcement.fetch("output_contract_id") == "codex.pre-tool-use.block", "wrong fail-closed output contract", enforcement.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing pre-tool fails closed when manifest and protected baseline are both malformed"
+  enable_codex_enforcement!(install_root, state_root)
+  install_root.join("install-manifest.json").write("{ malformed json\n")
+  state_root.join("protected-install-baseline.json").write("{ malformed json\n")
+
+  payload = {
+    "event" => "pre-tool-use",
+    "thread_id" => "t1",
+    "tool_name" => "exec_command",
+    "tool_input" => {
+      "command" => "echo ok"
+    }
+  }
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "provider block contract should control exit code", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "block", "malformed manifest/baseline did not block", stdout)
+  assert(name, emitted.fetch("reason").include?("protected context is untrusted"), "missing protected-context reason", stdout)
+  assert(name, stderr.empty?, "provider block contract should keep stderr empty", stderr)
+
+  record = last_discovery_record(state_root)
+  assert(name, record.fetch("mode") == "enforcing", "malformed manifest/baseline record did not stay enforcing", record.inspect)
+  enforcement = record.fetch("enforcement")
+  assert(name, enforcement.fetch("active") == true && enforcement.fetch("failed_closed") == true, "fail-closed enforcement not recorded", enforcement.inspect)
+  assert(name, enforcement.fetch("output_contract_id") == "codex.pre-tool-use.block", "wrong fail-closed output contract", enforcement.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing stop fails closed when manifest and protected baseline are both malformed"
+  enable_codex_enforcement!(install_root, state_root)
+  install_root.join("install-manifest.json").write("{ malformed json\n")
+  state_root.join("protected-install-baseline.json").write("{ malformed json\n")
+
+  payload = {
+    "event" => "stop",
+    "thread_id" => "t1"
+  }
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "provider stop contract should control exit code", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "block", "malformed manifest/baseline stop did not block", stdout)
+  assert(name, emitted.fetch("reason").include?("protected context is untrusted"), "missing protected-context reason", stdout)
+  assert(name, stderr.empty?, "provider stop contract should keep stderr empty", stderr)
+
+  record = last_discovery_record(state_root, "stop")
+  assert(name, record.fetch("mode") == "enforcing", "malformed manifest/baseline stop record did not stay enforcing", record.inspect)
+  enforcement = record.fetch("enforcement")
+  assert(name, enforcement.fetch("active") == true && enforcement.fetch("failed_closed") == true, "fail-closed stop enforcement not recorded", enforcement.inspect)
+  assert(name, enforcement.fetch("output_contract_id") == "codex.stop.block", "wrong stop fail-closed output contract", enforcement.inspect)
 end
 
 with_install do |_root, home, install_root, state_root, project|
