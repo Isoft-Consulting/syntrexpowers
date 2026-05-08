@@ -16,8 +16,24 @@
       "command_execution_contract_hash": "23c4ce7fddcd891f24cf6672b1ac5bd968cc045bf0b7175eefd5d54cb4d6a03b",
       "fixture_file_hashes": [
         {
+          "path": "providers/codex/fixtures/command-execution/post-tool-use/codex.post-tool-use.command.discovery-record.json",
+          "content_sha256": "4fbb7214832a0fe42eb57d2717662350dbdbc7ad6226bccb3a9fb9d6f4cd9f40"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/post-tool-use/codex.post-tool-use.command.exit-code",
+          "content_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        {
           "path": "providers/codex/fixtures/command-execution/post-tool-use/codex.post-tool-use.command.post-tool-use.command-execution.json",
           "content_sha256": "079c8a60bee90d364e3f3a3cf38738eddd1b92719aac662011b2c25525242064"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/post-tool-use/codex.post-tool-use.command.stderr",
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/post-tool-use/codex.post-tool-use.command.stdout",
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       ],
       "captured_at": "2026-05-07T15:28:17Z",
@@ -30,7 +46,7 @@
           "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
         ]
       },
-      "fixture_record_hash": "420c2e19277aebb92ddb68290d474efbd36465cb4079462fa98a1b24758c8800"
+      "fixture_record_hash": "95f34096d11f3ffe6c346ec5786343897c0c2f78e6bf6223cb7b9d7fd03ee520"
     },
     {
       "schema_version": 1,
@@ -126,8 +142,24 @@
       "command_execution_contract_hash": "e0f8bc5d8f27313eaf11aa9c4f209b8bd21492b6423bb7158779abddf656f419",
       "fixture_file_hashes": [
         {
+          "path": "providers/codex/fixtures/command-execution/pre-tool-use/codex.pre-tool-use.command.discovery-record.json",
+          "content_sha256": "d6ea0be65c22c21bab0278c5625ecc97a811c661bd53fc9092fbb7e0540b24c2"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/pre-tool-use/codex.pre-tool-use.command.exit-code",
+          "content_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        {
           "path": "providers/codex/fixtures/command-execution/pre-tool-use/codex.pre-tool-use.command.pre-tool-use.command-execution.json",
           "content_sha256": "e0a7a68004fecb47b02375cfca85a63e3611d3af5619c8838b5f72475e71e187"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/pre-tool-use/codex.pre-tool-use.command.stderr",
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/pre-tool-use/codex.pre-tool-use.command.stdout",
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       ],
       "captured_at": "2026-05-07T15:28:12Z",
@@ -140,7 +172,7 @@
           "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
         ]
       },
-      "fixture_record_hash": "c758dc7a3366f84b8407b652807fbea5c2323624109acd2f6a436d321472cf60"
+      "fixture_record_hash": "027095ca9d8c7781f9390e60ea228cfdf7cdad3185e1a02b864d37e3c88e5530"
     },
     {
       "schema_version": 1,
@@ -156,6 +188,10 @@
       "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "fixture_file_hashes": [
         {
+          "path": "providers/codex/fixtures/matcher/pre-tool-use/codex.pre-tool-use.matcher.discovery-record.json",
+          "content_sha256": "d6ea0be65c22c21bab0278c5625ecc97a811c661bd53fc9092fbb7e0540b24c2"
+        },
+        {
           "path": "providers/codex/fixtures/matcher/pre-tool-use/codex.pre-tool-use.matcher.pre-tool-use.matcher.json",
           "content_sha256": "e64b03a8c35e7c577b65cbb77c5ba6eb77a1a065bdb68662a063d982ab548827"
         }
@@ -170,7 +206,7 @@
           "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
         ]
       },
-      "fixture_record_hash": "f916790dc9529270f4291be6c5264b891153b6bc3852a8a16a108b3d7749551f"
+      "fixture_record_hash": "f9feda42a8d8531c1467ab5be60b0b3c30bbb5267b0140bc916a1aa090304dd8"
     },
     {
       "schema_version": 1,
@@ -224,8 +260,24 @@
       "command_execution_contract_hash": "9d44f4d70f222517372918c45a5318faf9b0de6353f9a801302e4adb158fe5a9",
       "fixture_file_hashes": [
         {
+          "path": "providers/codex/fixtures/command-execution/session-start/codex.session-start.command.discovery-record.json",
+          "content_sha256": "6b94e5b0ca223456d7b34c1ea46eff9286ae30a8cb30a972992f3624ce605afb"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/session-start/codex.session-start.command.exit-code",
+          "content_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        {
           "path": "providers/codex/fixtures/command-execution/session-start/codex.session-start.command.session-start.command-execution.json",
           "content_sha256": "3e6721bc5f60d606c2d2d09616d2b4a46a68204b28d9b5cb18bf16464aa6dc6c"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/session-start/codex.session-start.command.stderr",
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/session-start/codex.session-start.command.stdout",
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       ],
       "captured_at": "2026-05-07T15:28:02Z",
@@ -238,7 +290,7 @@
           "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
         ]
       },
-      "fixture_record_hash": "9acbf29e3a5697c7e849327275504c2a80fb74472c4eda7d898442bc3351626c"
+      "fixture_record_hash": "1bfafcb2575152c51822b8bae832ddb265c32b06eafa71060e63c6924edf463f"
     },
     {
       "schema_version": 1,
@@ -254,6 +306,18 @@
       "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "fixture_file_hashes": [
         {
+          "path": "providers/codex/fixtures/event-order/session-start/codex.session-start.order.1-session-start.discovery-record.json",
+          "content_sha256": "6b94e5b0ca223456d7b34c1ea46eff9286ae30a8cb30a972992f3624ce605afb"
+        },
+        {
+          "path": "providers/codex/fixtures/event-order/session-start/codex.session-start.order.2-user-prompt-submit.discovery-record.json",
+          "content_sha256": "93ac1444bb001a5d7c6dab7cc30dcdbfd90c9e82bc8e6bac9e4d7f1aa8267e7a"
+        },
+        {
+          "path": "providers/codex/fixtures/event-order/session-start/codex.session-start.order.3-pre-tool-use.discovery-record.json",
+          "content_sha256": "d6ea0be65c22c21bab0278c5625ecc97a811c661bd53fc9092fbb7e0540b24c2"
+        },
+        {
           "path": "providers/codex/fixtures/event-order/session-start/codex.session-start.order.session-start.event-order.json",
           "content_sha256": "b53d889f2cc459e67b1bab657ddd0e5ebcec4bbf5f845cf302fd626e09899e3b"
         }
@@ -268,7 +332,7 @@
           "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
         ]
       },
-      "fixture_record_hash": "223f15da4f71ed998d8ba895b5268a56064847a741decafd7ee8de8483e7b0fc"
+      "fixture_record_hash": "b6fecf58677b4686418be8f4b8484aaf6259c0a4893e7c7c96031c9e9a38bf0a"
     },
     {
       "schema_version": 1,
@@ -364,6 +428,22 @@
       "command_execution_contract_hash": "1ae82e464079cfb774295b6a6ab4275def155b88a73b364d90cd60dbb7be45e3",
       "fixture_file_hashes": [
         {
+          "path": "providers/codex/fixtures/command-execution/stop/codex.stop.command.discovery-record.json",
+          "content_sha256": "ea2c9c287da427ffa1eaa94929b68fc9a1a4ae06d814a5aba7fafceeb7f6c3db"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/stop/codex.stop.command.exit-code",
+          "content_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/stop/codex.stop.command.stderr",
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/stop/codex.stop.command.stdout",
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
           "path": "providers/codex/fixtures/command-execution/stop/codex.stop.command.stop.command-execution.json",
           "content_sha256": "dd157debe5de7b374899adcdcc353432c109cc8549e79a1c7ff09b11eb557436"
         }
@@ -378,7 +458,7 @@
           "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
         ]
       },
-      "fixture_record_hash": "652112c59e65acbc61d420daa6476e2bff8fa973f6c0f50bc84841bac01eb407"
+      "fixture_record_hash": "6bd8347c73274c231e44219d5f3e9eb3dfcc84e8507bf4c7667b5764c1ff8f79"
     },
     {
       "schema_version": 1,
@@ -432,6 +512,22 @@
       "command_execution_contract_hash": "1883e9447ee0a6ee27c65dca3c074578fb781f5ac1c7a6941be96552a9bd6678",
       "fixture_file_hashes": [
         {
+          "path": "providers/codex/fixtures/command-execution/user-prompt-submit/codex.user-prompt-submit.command.discovery-record.json",
+          "content_sha256": "93ac1444bb001a5d7c6dab7cc30dcdbfd90c9e82bc8e6bac9e4d7f1aa8267e7a"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/user-prompt-submit/codex.user-prompt-submit.command.exit-code",
+          "content_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/user-prompt-submit/codex.user-prompt-submit.command.stderr",
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "providers/codex/fixtures/command-execution/user-prompt-submit/codex.user-prompt-submit.command.stdout",
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
           "path": "providers/codex/fixtures/command-execution/user-prompt-submit/codex.user-prompt-submit.command.user-prompt-submit.command-execution.json",
           "content_sha256": "eaf8db5af8393533f5e8efc857fdabd9a44ae4bc0f3ad711575fdb4a2fa9b65c"
         }
@@ -446,7 +542,7 @@
           "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
         ]
       },
-      "fixture_record_hash": "7f4e1968be4df35839650d842e9607fa13427ac7c26b7a249af388e022070189"
+      "fixture_record_hash": "4910cf1a5b72854ec699916ede84af970ff7e56df2ea527734b6ea8b43019500"
     },
     {
       "schema_version": 1,
@@ -487,5 +583,5 @@
       "fixture_record_hash": "fb9b3907ec2a6ff862d2b9717e4c2fefea69180ab74b1d2179d63187185303f2"
     }
   ],
-  "manifest_hash": "7b052d0a2521d7640eaa9d0041393127b8d5a4ec35c124b523e5cb108f646c7a"
+  "manifest_hash": "1fd295ab7c223cb7a313e43d0ab0643730d1c85c08a730fa72c05db191adf489"
 }

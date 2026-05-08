@@ -376,6 +376,62 @@ with_install do |_root, home, install_root, state_root, project|
 end
 
 with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing pre-tool fails closed on malformed install manifest"
+  enable_codex_enforcement!(install_root, state_root)
+  install_root.join("install-manifest.json").write("{ malformed json\n")
+
+  payload = {
+    "event" => "pre-tool-use",
+    "thread_id" => "t1",
+    "tool_name" => "exec_command",
+    "tool_input" => {
+      "command" => "echo ok"
+    }
+  }
+  status, stdout, stderr = run_hook_capture(home, install_root, state_root, project, payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "provider block contract should control exit code", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "block", "malformed manifest did not block", stdout)
+  assert(name, emitted.fetch("reason").include?("protected context is untrusted"), "missing protected-context reason", stdout)
+  assert(name, stderr.empty?, "provider block contract should keep stderr empty", stderr)
+
+  record = last_discovery_record(state_root)
+  assert(name, record.fetch("mode") == "enforcing", "malformed manifest record did not stay enforcing", record.inspect)
+  enforcement = record.fetch("enforcement")
+  assert(name, enforcement.fetch("active") == true && enforcement.fetch("failed_closed") == true, "fail-closed enforcement not recorded", enforcement.inspect)
+  assert(name, enforcement.fetch("output_contract_id") == "codex.pre-tool-use.block", "wrong fail-closed output contract", enforcement.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing pre-tool fails closed on malformed protected baseline"
+  enable_codex_enforcement!(install_root, state_root)
+  state_root.join("protected-install-baseline.json").write("{ malformed json\n")
+
+  payload = {
+    "event" => "pre-tool-use",
+    "thread_id" => "t1",
+    "tool_name" => "exec_command",
+    "tool_input" => {
+      "command" => "echo ok"
+    }
+  }
+  status, stdout, stderr = run_hook_capture(home, install_root, state_root, project, payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "provider block contract should control exit code", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "block", "malformed baseline did not block", stdout)
+  assert(name, emitted.fetch("reason").include?("protected context is untrusted"), "missing protected-context reason", stdout)
+  assert(name, stderr.empty?, "provider block contract should keep stderr empty", stderr)
+
+  record = last_discovery_record(state_root)
+  assert(name, record.fetch("mode") == "enforcing", "malformed baseline record did not stay enforcing", record.inspect)
+  enforcement = record.fetch("enforcement")
+  assert(name, enforcement.fetch("active") == true && enforcement.fetch("failed_closed") == true, "fail-closed enforcement not recorded", enforcement.inspect)
+  assert(name, enforcement.fetch("output_contract_id") == "codex.pre-tool-use.block", "wrong fail-closed output contract", enforcement.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
   name = "pre-tool preflight logs protected shell block without enforcing"
   command = "touch \"#{install_root.join('config/runtime.env')}\""
   payload = {

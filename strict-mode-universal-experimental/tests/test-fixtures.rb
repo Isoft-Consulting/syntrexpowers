@@ -150,6 +150,74 @@ def typed_fixture_file(root, provider:, contract_kind:, event:, contract_id:, pr
   )
 end
 
+def raw_payload_fixture(root, provider, event, body = nil)
+  body ||= JSON.generate({ "event" => event, "thread_id" => "t1" }) + "\n"
+  hash = Digest::SHA256.hexdigest(body)
+  path = fixture_file(root, provider, "payloads/#{event}/#{hash[0, 16]}.json", body)
+  proof = {
+    "schema_version" => 1,
+    "provider_arg" => provider,
+    "provider_arg_source" => "fixture-import",
+    "payload_sha256" => hash,
+    "detected_provider" => provider,
+    "decision" => "match",
+    "claude_indicators" => [],
+    "codex_indicators" => [],
+    "conflict_indicators" => [],
+    "fixture_usable" => true,
+    "enforcement_usable" => false,
+    "diagnostic" => "test provider proof",
+    "provider_proof_hash" => ""
+  }
+  proof["provider_proof_hash"] = StrictModeMetadata.hash_record(proof, "provider_proof_hash")
+  fixture_file(root, provider, "provider-proof/#{event}/#{hash[0, 16]}.provider-detection.json", JSON.pretty_generate(proof) + "\n")
+  [path, hash, proof.fetch("provider_proof_hash")]
+end
+
+def bound_typed_proof(provider:, contract_kind:, event:, contract_id:, payload_hash:, provider_version: "1.0.0", provider_build_hash: "")
+  proof = typed_contract_proof(
+    provider: provider,
+    contract_kind: contract_kind,
+    event: event,
+    contract_id: contract_id,
+    provider_version: provider_version,
+    provider_build_hash: provider_build_hash
+  )
+  case contract_kind
+  when "command-execution", "matcher"
+    proof["payload_sha256"] = payload_hash
+    proof["raw_payload_path"] = "/captures/#{payload_hash[0, 12]}.payload"
+  when "event-order"
+    proof["observed_order"].each do |item|
+      item["payload_sha256"] = payload_hash if item["event"] == event
+    end
+  end
+  proof
+end
+
+def discovery_record_for(proof, event, provider_proof_hash: "0" * 64)
+  {
+    "schema_version" => 1,
+    "recorded_at" => proof["discovery_recorded_at"] || "2026-05-06T00:00:00Z",
+    "provider" => proof.fetch("provider"),
+    "event" => event,
+    "mode" => proof["hook_mode"] || "discovery-log-only",
+    "provider_detection_decision" => proof.fetch("provider_detection_decision", "match"),
+    "provider_proof_hash" => provider_proof_hash,
+    "payload_sha256" => proof.fetch("payload_sha256"),
+    "raw_payload_captured" => proof.fetch("raw_payload_captured", true),
+    "raw_payload_path" => proof.fetch("raw_payload_path", "/captures/#{proof.fetch("payload_sha256")[0, 12]}.payload")
+  }
+end
+
+def bound_matcher_fixture_paths(root, provider:, event:, contract_id:, provider_version: "1.0.0")
+  _raw, payload_hash, provider_proof_hash = raw_payload_fixture(root, provider, event)
+  proof = bound_typed_proof(provider: provider, contract_kind: "matcher", event: event, contract_id: contract_id, payload_hash: payload_hash, provider_version: provider_version)
+  proof_path = fixture_file(root, provider, "matcher/#{event}/#{contract_id}.matcher.json", JSON.pretty_generate(proof) + "\n")
+  discovery_path = fixture_file(root, provider, "matcher/#{event}/#{contract_id}.discovery-record.json", JSON.pretty_generate(discovery_record_for(proof, event, provider_proof_hash: provider_proof_hash)) + "\n")
+  [proof_path, discovery_path]
+end
+
 def record_for(root, provider:, contract_id:, contract_kind:, event:, fixture_paths:, provider_version: "1.0.0", compatibility: nil)
   hashes = fixture_paths.map { |path| fixture_hash_entry(root, path) }.sort_by { |item| item.fetch("path") }
   surface_hash = Digest::SHA256.hexdigest(JSON.generate(hashes))
@@ -252,8 +320,8 @@ expect_pass("checked-in fixture manifests validate") do |_root|
 end
 
 expect_pass("valid matcher fixture record validates") do |root|
-  path = typed_fixture_file(root, provider: "claude", contract_kind: "matcher", event: "stop", contract_id: "claude.stop.matcher")
-  record = record_for(root, provider: "claude", contract_id: "claude.stop.matcher", contract_kind: "matcher", event: "stop", fixture_paths: [path])
+  paths = bound_matcher_fixture_paths(root, provider: "claude", event: "stop", contract_id: "claude.stop.matcher")
+  record = record_for(root, provider: "claude", contract_id: "claude.stop.matcher", contract_kind: "matcher", event: "stop", fixture_paths: paths)
   write_manifest(root, "claude", [record])
 end
 
@@ -310,9 +378,19 @@ expect_pass("importer creates payload fixture record") do |root|
 end
 
 expect_pass("contract importer creates generic readiness fixture records") do |root|
+  _raw, payload_hash, provider_proof_hash = raw_payload_fixture(root, "codex", "pre-tool-use")
   source = root.join("capture/command-proof.json")
   source.dirname.mkpath
-  source.write(JSON.pretty_generate(typed_contract_proof(provider: "codex", contract_kind: "command-execution", event: "pre-tool-use", contract_id: "codex.pre-tool-use.command", provider_version: "unknown")) + "\n")
+  command_proof = bound_typed_proof(provider: "codex", contract_kind: "command-execution", event: "pre-tool-use", contract_id: "codex.pre-tool-use.command", payload_hash: payload_hash, provider_version: "unknown")
+  source.write(JSON.pretty_generate(command_proof) + "\n")
+  command_discovery = root.join("capture/command-discovery.json")
+  command_stdout = root.join("capture/command.stdout")
+  command_stderr = root.join("capture/command.stderr")
+  command_exit = root.join("capture/command.exit-code")
+  command_discovery.write(JSON.pretty_generate(discovery_record_for(command_proof, "pre-tool-use", provider_proof_hash: provider_proof_hash)) + "\n")
+  command_stdout.write("")
+  command_stderr.write("")
+  command_exit.write("0\n")
   status, output = run_cmd(
     CONTRACT_IMPORTER,
     "--root", root,
@@ -321,6 +399,10 @@ expect_pass("contract importer creates generic readiness fixture records") do |r
     "--contract-kind", "command-execution",
     "--contract-id", "codex.pre-tool-use.command",
     "--source", source,
+    "--discovery-record", command_discovery,
+    "--stdout", command_stdout,
+    "--stderr", command_stderr,
+    "--exit-code", command_exit,
     "--captured-at", "2026-05-06T00:00:00Z"
   )
   assert_no_stacktrace("contract importer creates generic readiness fixture records", output)
@@ -330,7 +412,10 @@ expect_pass("contract importer creates generic readiness fixture records") do |r
   end
 
   matcher = root.join("capture/matcher-proof.json")
-  matcher.write(JSON.pretty_generate(typed_contract_proof(provider: "codex", contract_kind: "matcher", event: "pre-tool-use", contract_id: "codex.pre.matcher", provider_version: "unknown")) + "\n")
+  matcher_proof = bound_typed_proof(provider: "codex", contract_kind: "matcher", event: "pre-tool-use", contract_id: "codex.pre.matcher", payload_hash: payload_hash, provider_version: "unknown")
+  matcher_discovery = root.join("capture/matcher-discovery.json")
+  matcher.write(JSON.pretty_generate(matcher_proof) + "\n")
+  matcher_discovery.write(JSON.pretty_generate(discovery_record_for(matcher_proof, "pre-tool-use", provider_proof_hash: provider_proof_hash)) + "\n")
   status, output = run_cmd(
     CONTRACT_IMPORTER,
     "--root", root,
@@ -339,6 +424,7 @@ expect_pass("contract importer creates generic readiness fixture records") do |r
     "--contract-kind", "matcher",
     "--contract-id", "codex.pre.matcher",
     "--source", matcher,
+    "--discovery-record", matcher_discovery,
     "--captured-at", "2026-05-06T00:00:00Z"
   )
   assert_no_stacktrace("contract importer creates generic readiness fixture records matcher", output)
@@ -567,6 +653,108 @@ expect_import_fail("contract importer rejects untyped command-execution proof", 
   run_cmd(CONTRACT_IMPORTER, "--root", root, "--provider", "codex", "--event", "stop", "--contract-kind", "command-execution", "--contract-id", "codex.stop.command", "--source", source)
 end
 
+expect_import_fail("contract importer rejects self-attested command proof without discovery binding", "command-execution proofs require exactly one --discovery-record") do |root|
+  source = root.join("capture/command-proof.json")
+  source.dirname.mkpath
+  source.write(JSON.pretty_generate(typed_contract_proof(provider: "codex", contract_kind: "command-execution", event: "stop", contract_id: "codex.stop.command", provider_version: "0.128.0", provider_build_hash: "b" * 64)) + "\n")
+  run_cmd(
+    CONTRACT_IMPORTER,
+    "--root", root,
+    "--provider", "codex",
+    "--event", "stop",
+    "--contract-kind", "command-execution",
+    "--contract-id", "codex.stop.command",
+    "--source", source,
+    "--provider-version", "0.128.0",
+    "--provider-build-hash", "b" * 64
+  )
+end
+
+with_root do |root|
+  name = "contract importer rejects command discovery drift before fixture copy"
+  _raw, payload_hash, provider_proof_hash = raw_payload_fixture(root, "codex", "stop")
+  proof = bound_typed_proof(provider: "codex", contract_kind: "command-execution", event: "stop", contract_id: "codex.stop.command", payload_hash: payload_hash, provider_version: "0.128.0", provider_build_hash: "b" * 64)
+  source = root.join("capture/command-proof.json")
+  discovery = root.join("capture/command-discovery.json")
+  stdout = root.join("capture/command.stdout")
+  stderr = root.join("capture/command.stderr")
+  exit_code = root.join("capture/command.exit-code")
+  source.dirname.mkpath
+  source.write(JSON.pretty_generate(proof) + "\n")
+  drifted_discovery = discovery_record_for(proof, "stop", provider_proof_hash: provider_proof_hash)
+  drifted_discovery["payload_sha256"] = "a" * 64
+  discovery.write(JSON.pretty_generate(drifted_discovery) + "\n")
+  stdout.write("")
+  stderr.write("")
+  exit_code.write("0\n")
+
+  exitstatus, output = run_cmd(
+    CONTRACT_IMPORTER,
+    "--root", root,
+    "--provider", "codex",
+    "--event", "stop",
+    "--contract-kind", "command-execution",
+    "--contract-id", "codex.stop.command",
+    "--source", source,
+    "--discovery-record", discovery,
+    "--stdout", stdout,
+    "--stderr", stderr,
+    "--exit-code", exit_code,
+    "--provider-version", "0.128.0",
+    "--provider-build-hash", "b" * 64
+  )
+  assert_no_stacktrace(name, output)
+  record_failure(name, "expected exit 1, got #{exitstatus}", output) unless exitstatus == 1
+  record_failure(name, "missing discovery drift diagnostic", output) unless output.include?("discovery_record payload_sha256 must match proof")
+  manifest = read_json(StrictModeFixtures.manifest_path(root, "codex"))
+  record_failure(name, "failed command import updated manifest", output) unless manifest.fetch("records").empty?
+  imported_files = Dir[root.join("providers/codex/fixtures/**/*")].reject do |path|
+    File.directory?(path) || File.basename(path) == "fixture-manifest.json" || path.include?("/payloads/") || path.include?("/provider-proof/")
+  end
+  record_failure(name, "failed command import left typed fixture files", imported_files.join("\n")) unless imported_files.empty?
+end
+
+with_root do |root|
+  name = "contract importer preflights all command fixture destinations before copy"
+  _raw, payload_hash, provider_proof_hash = raw_payload_fixture(root, "codex", "stop")
+  proof = bound_typed_proof(provider: "codex", contract_kind: "command-execution", event: "stop", contract_id: "codex.stop.command", payload_hash: payload_hash, provider_version: "0.128.0", provider_build_hash: "b" * 64)
+  source = root.join("capture/command-proof.json")
+  discovery = root.join("capture/command-discovery.json")
+  stdout = root.join("capture/command.stdout")
+  stderr = root.join("capture/command.stderr")
+  exit_code = root.join("capture/command.exit-code")
+  source.dirname.mkpath
+  source.write(JSON.pretty_generate(proof) + "\n")
+  discovery.write(JSON.pretty_generate(discovery_record_for(proof, "stop", provider_proof_hash: provider_proof_hash)) + "\n")
+  stdout.write("")
+  stderr.write("")
+  exit_code.write("0\n")
+  fixture_file(root, "codex", "command-execution/stop/codex.stop.command.discovery-record.json", "{\"different\":true}\n")
+
+  exitstatus, output = run_cmd(
+    CONTRACT_IMPORTER,
+    "--root", root,
+    "--provider", "codex",
+    "--event", "stop",
+    "--contract-kind", "command-execution",
+    "--contract-id", "codex.stop.command",
+    "--source", source,
+    "--discovery-record", discovery,
+    "--stdout", stdout,
+    "--stderr", stderr,
+    "--exit-code", exit_code,
+    "--provider-version", "0.128.0",
+    "--provider-build-hash", "b" * 64
+  )
+  assert_no_stacktrace(name, output)
+  record_failure(name, "expected exit 1, got #{exitstatus}", output) unless exitstatus == 1
+  record_failure(name, "missing destination conflict diagnostic", output) unless output.include?("fixture destination already exists with different content")
+  manifest = read_json(StrictModeFixtures.manifest_path(root, "codex"))
+  record_failure(name, "failed conflict import updated manifest", output) unless manifest.fetch("records").empty?
+  proof_destination = root.join("providers/codex/fixtures/command-execution/stop/codex.stop.command.command-execution.json")
+  record_failure(name, "failed conflict import copied proof before sidecar preflight", output) if proof_destination.exist?
+end
+
 expect_import_fail("contract importer rejects custom typed proof fixture name", "fixture-name must be") do |root|
   source = root.join("capture/command-proof.json")
   source.dirname.mkpath
@@ -609,6 +797,15 @@ expect_fail("validator rejects untyped command-execution fixture proof", "must b
     },
     "fixture_record_hash" => ""
   }
+  record["fixture_record_hash"] = StrictModeFixtures.hash_record(record, "fixture_record_hash")
+  write_manifest(root, "codex", [record])
+end
+
+expect_fail("validator rejects self-attested command proof without discovery binding", "must include exactly one external discovery record fixture") do |root|
+  path = typed_fixture_file(root, provider: "codex", contract_kind: "command-execution", event: "stop", contract_id: "codex.stop.command", provider_version: "0.128.0", provider_build_hash: "b" * 64)
+  record = record_for(root, provider: "codex", contract_id: "codex.stop.command", contract_kind: "command-execution", event: "stop", fixture_paths: [path], provider_version: "0.128.0")
+  record["provider_build_hash"] = "b" * 64
+  record["compatibility_range"]["provider_build_hashes"] = ["b" * 64]
   record["fixture_record_hash"] = StrictModeFixtures.hash_record(record, "fixture_record_hash")
   write_manifest(root, "codex", [record])
 end
@@ -769,7 +966,7 @@ expect_fail("range compatibility requires comparator record", "must reference a 
 end
 
 expect_pass("range compatibility accepts comparator record") do |root|
-  path = typed_fixture_file(root, provider: "claude", contract_kind: "matcher", event: "stop", contract_id: "claude.stop.matcher")
+  paths = bound_matcher_fixture_paths(root, provider: "claude", event: "stop", contract_id: "claude.stop.matcher")
   comparator_file = fixture_file(root, "claude", "comparators/version.txt", "semver comparator fixture\n")
   comparator = record_for(root, provider: "claude", contract_id: "claude.version.compare", contract_kind: "version-comparator", event: "provider-version", fixture_paths: [comparator_file])
   compatibility = {
@@ -779,7 +976,7 @@ expect_pass("range compatibility accepts comparator record") do |root|
     "version_comparator" => "claude.version.compare",
     "provider_build_hashes" => []
   }
-  record = record_for(root, provider: "claude", contract_id: "claude.stop.matcher", contract_kind: "matcher", event: "stop", fixture_paths: [path], compatibility: compatibility)
+  record = record_for(root, provider: "claude", contract_id: "claude.stop.matcher", contract_kind: "matcher", event: "stop", fixture_paths: paths, compatibility: compatibility)
   write_manifest(root, "claude", [comparator, record])
 end
 
@@ -799,8 +996,8 @@ expect_pass("generator creates deterministic empty manifests") do |root|
 end
 
 expect_pass("generator rehashes existing fixture records before manifest") do |root|
-  path = typed_fixture_file(root, provider: "claude", contract_kind: "matcher", event: "stop", contract_id: "claude.stop.matcher")
-  record = record_for(root, provider: "claude", contract_id: "claude.stop.matcher", contract_kind: "matcher", event: "stop", fixture_paths: [path])
+  paths = bound_matcher_fixture_paths(root, provider: "claude", event: "stop", contract_id: "claude.stop.matcher")
+  record = record_for(root, provider: "claude", contract_id: "claude.stop.matcher", contract_kind: "matcher", event: "stop", fixture_paths: paths)
   record["fixture_record_hash"] = StrictModeFixtures::ZERO_HASH
   manifest = {
     "schema_version" => 1,

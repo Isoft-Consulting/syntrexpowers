@@ -127,7 +127,16 @@ module StrictModeProtectedBaseline
     baseline_path = state_path.join("protected-install-baseline.json")
     manifest = load_json(manifest_path, errors)
     baseline = load_json(baseline_path, errors)
-    return result(false, errors, config_errors) unless manifest && baseline
+    unless manifest && baseline
+      return result(false, errors, config_errors).merge(
+        "install_root" => install_path.to_s,
+        "state_root" => state_path.to_s,
+        "project_dir" => project_path ? project_path.to_s : "",
+        "home" => home_path.to_s,
+        "manifest" => manifest || {},
+        "baseline" => baseline || {}
+      )
+    end
 
     verify_hash(manifest, "manifest_hash", manifest_path, errors)
     verify_hash(baseline, "baseline_hash", baseline_path, errors)

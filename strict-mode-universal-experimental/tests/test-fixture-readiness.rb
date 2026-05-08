@@ -110,6 +110,79 @@ def typed_contract_proof(provider:, contract_kind:, event:, contract_id:, provid
   end
 end
 
+def raw_payload_hash_for(root, provider, event)
+  event_dir = root.join("providers/#{provider}/fixtures/payloads/#{event}")
+  if event_dir.directory?
+    raw = event_dir.children.select { |path| path.file? && path.extname == ".json" }.sort.first
+    return Digest::SHA256.file(raw).hexdigest if raw
+  end
+  body = JSON.generate({ "event" => event, "thread_id" => "t1" }) + "\n"
+  hash = Digest::SHA256.hexdigest(body)
+  fixture_file(root, provider, "payloads/#{event}/#{hash[0, 16]}.json", body)
+  hash
+end
+
+def provider_proof_hash_for(root, provider, event, payload_hash)
+  proof_dir = root.join("providers/#{provider}/fixtures/provider-proof/#{event}")
+  if proof_dir.directory?
+    proof_dir.children.sort.each do |path|
+      next unless path.file? && path.basename.to_s.end_with?(".provider-detection.json")
+
+      proof = JSON.parse(path.read)
+      return proof.fetch("provider_proof_hash") if proof["payload_sha256"] == payload_hash && proof["decision"] == "match"
+    end
+  end
+  proof = {
+    "schema_version" => 1,
+    "provider_arg" => provider,
+    "provider_arg_source" => "fixture-import",
+    "payload_sha256" => payload_hash,
+    "detected_provider" => provider,
+    "decision" => "match",
+    "claude_indicators" => [],
+    "codex_indicators" => [],
+    "conflict_indicators" => [],
+    "fixture_usable" => true,
+    "enforcement_usable" => false,
+    "diagnostic" => "test provider proof",
+    "provider_proof_hash" => ""
+  }
+  proof["provider_proof_hash"] = StrictModeMetadata.hash_record(proof, "provider_proof_hash")
+  fixture_file(root, provider, "provider-proof/#{event}/#{payload_hash[0, 16]}.provider-detection.json", JSON.pretty_generate(proof) + "\n")
+  proof.fetch("provider_proof_hash")
+end
+
+def bind_proof_to_raw_payload!(root, provider, proof)
+  event = proof.fetch("event")
+  hash = raw_payload_hash_for(root, provider, event)
+  provider_proof_hash = provider_proof_hash_for(root, provider, event, hash)
+  case proof.fetch("proof_kind")
+  when "#{provider}.command-execution.observed", "#{provider}.matcher.observed"
+    proof["payload_sha256"] = hash
+    proof["raw_payload_path"] = "/captures/#{hash[0, 12]}.payload"
+  when "#{provider}.event-order.observed"
+    proof["observed_order"].each do |item|
+      item["payload_sha256"] = raw_payload_hash_for(root, provider, item.fetch("event"))
+    end
+  end
+  proof
+end
+
+def discovery_record_for(proof, event, provider_proof_hash: "0" * 64)
+  {
+    "schema_version" => 1,
+    "recorded_at" => proof["discovery_recorded_at"] || "2026-05-06T00:00:00Z",
+    "provider" => proof.fetch("provider"),
+    "event" => event,
+    "mode" => proof["hook_mode"] || "discovery-log-only",
+    "provider_detection_decision" => proof.fetch("provider_detection_decision", "match"),
+    "provider_proof_hash" => provider_proof_hash,
+    "payload_sha256" => proof.fetch("payload_sha256"),
+    "raw_payload_captured" => proof.fetch("raw_payload_captured", true),
+    "raw_payload_path" => proof.fetch("raw_payload_path", "/captures/#{proof.fetch("payload_sha256")[0, 12]}.payload")
+  }
+end
+
 def compatibility_for(provider_version, provider_build_hash)
   if provider_version == "unknown"
     {
@@ -135,23 +208,48 @@ def record_for(root, provider:, contract_id:, contract_kind:, event:, provider_a
     return decision_output_record_for(root, provider: provider, contract_id: contract_id, event: event, provider_action: provider_action, provider_version: provider_version, provider_build_hash: provider_build_hash)
   end
 
-  fixture = if StrictModeFixtures.typed_generic_contract_kind?(contract_kind)
-              fixture_file(
-                root,
-                provider,
-                "#{contract_kind}/#{event}/#{contract_id}.#{contract_kind}.json",
-                JSON.pretty_generate(typed_contract_proof(
-                  provider: provider,
-                  contract_kind: contract_kind,
-                  event: event,
-                  contract_id: contract_id,
-                  provider_version: provider_version,
-                  provider_build_hash: provider_build_hash
-                )) + "\n"
-              )
-            else
-              fixture_file(root, provider, "#{contract_kind}/#{event}/#{contract_id}.txt", "#{contract_id}\n")
-            end
+  fixture_paths = if StrictModeFixtures.typed_generic_contract_kind?(contract_kind)
+                    proof = typed_contract_proof(
+                      provider: provider,
+                      contract_kind: contract_kind,
+                      event: event,
+                      contract_id: contract_id,
+                      provider_version: provider_version,
+                      provider_build_hash: provider_build_hash
+                    )
+                    bind_proof_to_raw_payload!(root, provider, proof)
+                    proof_path = fixture_file(root, provider, "#{contract_kind}/#{event}/#{contract_id}.#{contract_kind}.json", JSON.pretty_generate(proof) + "\n")
+                    paths = [proof_path]
+                    case contract_kind
+                    when "command-execution"
+                      provider_hash = provider_proof_hash_for(root, provider, event, proof.fetch("payload_sha256"))
+                      discovery_path = fixture_file(root, provider, "command-execution/#{event}/#{contract_id}.discovery-record.json", JSON.pretty_generate(discovery_record_for(proof, event, provider_proof_hash: provider_hash)) + "\n")
+                      stdout_path = fixture_file(root, provider, "command-execution/#{event}/#{contract_id}.stdout", "")
+                      stderr_path = fixture_file(root, provider, "command-execution/#{event}/#{contract_id}.stderr", "")
+                      exit_path = fixture_file(root, provider, "command-execution/#{event}/#{contract_id}.exit-code", "#{proof.fetch("hook_exit_status")}\n")
+                      paths.concat([discovery_path, stdout_path, stderr_path, exit_path])
+                    when "matcher"
+                      provider_hash = provider_proof_hash_for(root, provider, event, proof.fetch("payload_sha256"))
+                      paths << fixture_file(root, provider, "matcher/#{event}/#{contract_id}.discovery-record.json", JSON.pretty_generate(discovery_record_for(proof, event, provider_proof_hash: provider_hash)) + "\n")
+                    when "event-order"
+                      proof.fetch("observed_order").each_with_index do |item, index|
+                        command_like = {
+                          "provider" => provider,
+                          "payload_sha256" => item.fetch("payload_sha256"),
+                          "raw_payload_path" => "/captures/#{item.fetch("payload_sha256")[0, 12]}.payload",
+                          "raw_payload_captured" => true,
+                          "hook_mode" => "discovery-log-only",
+                          "provider_detection_decision" => "match",
+                          "provider_proof_hash" => provider_proof_hash_for(root, provider, item.fetch("event"), item.fetch("payload_sha256")),
+                          "discovery_recorded_at" => item.fetch("recorded_at")
+                        }
+                        paths << fixture_file(root, provider, "event-order/#{event}/#{contract_id}.#{index + 1}-#{item.fetch("event")}.discovery-record.json", JSON.pretty_generate(discovery_record_for(command_like, item.fetch("event"), provider_proof_hash: command_like.fetch("provider_proof_hash"))) + "\n")
+                      end
+                    end
+                    paths
+                  else
+                    [fixture_file(root, provider, "#{contract_kind}/#{event}/#{contract_id}.txt", "#{contract_id}\n")]
+                  end
   record = {
     "schema_version" => 1,
     "contract_id" => contract_id,
@@ -164,7 +262,7 @@ def record_for(root, provider:, contract_id:, contract_kind:, event:, provider_a
     "payload_schema_hash" => StrictModeFixtures::ZERO_HASH,
     "decision_contract_hash" => StrictModeFixtures::ZERO_HASH,
     "command_execution_contract_hash" => StrictModeFixtures::ZERO_HASH,
-    "fixture_file_hashes" => [fixture_hash_entry(root, fixture)],
+    "fixture_file_hashes" => fixture_paths.map { |fixture| fixture_hash_entry(root, fixture) }.sort_by { |item| item.fetch("path") },
     "captured_at" => "2026-05-06T00:00:00Z",
     "compatibility_range" => compatibility_for(provider_version, provider_build_hash),
     "fixture_record_hash" => ""
@@ -172,7 +270,7 @@ def record_for(root, provider:, contract_id:, contract_kind:, event:, provider_a
   surface_hash = Digest::SHA256.hexdigest(JSON.generate(record.fetch("fixture_file_hashes")))
   case contract_kind
   when "command-execution"
-    proof = StrictModeFixtures.load_typed_contract_proof(fixture)
+    proof = StrictModeFixtures.load_typed_contract_proof(fixture_paths.first)
     record["command_execution_contract_hash"] = StrictModeFixtures.typed_contract_proof_hash(record, proof)
   when "decision-output"
     record["decision_contract_hash"] = surface_hash
@@ -279,14 +377,16 @@ end
 def import_codex_contract(root, event, contract_kind, contract_id)
   source = root.join("capture/contracts/#{contract_kind}-#{event}.json")
   source.dirname.mkpath
-  source.write(JSON.pretty_generate(typed_contract_proof(
+  proof = typed_contract_proof(
     provider: "codex",
     contract_kind: contract_kind,
     event: event,
     contract_id: contract_id,
     provider_version: "unknown"
-  )) + "\n")
-  run_cmd(
+  )
+  bind_proof_to_raw_payload!(root, "codex", proof)
+  source.write(JSON.pretty_generate(proof) + "\n")
+  args = [
     CONTRACT_IMPORTER,
     "--root", root,
     "--provider", "codex",
@@ -295,7 +395,42 @@ def import_codex_contract(root, event, contract_kind, contract_id)
     "--contract-id", contract_id,
     "--source", source,
     "--captured-at", "2026-05-06T00:00:00Z"
-  )
+  ]
+  case contract_kind
+  when "command-execution"
+    discovery = root.join("capture/contracts/#{contract_kind}-#{event}.discovery.json")
+    stdout = root.join("capture/contracts/#{contract_kind}-#{event}.stdout")
+    stderr = root.join("capture/contracts/#{contract_kind}-#{event}.stderr")
+    exit_code = root.join("capture/contracts/#{contract_kind}-#{event}.exit-code")
+    provider_hash = provider_proof_hash_for(root, "codex", event, proof.fetch("payload_sha256"))
+    discovery.write(JSON.pretty_generate(discovery_record_for(proof, event, provider_proof_hash: provider_hash)) + "\n")
+    stdout.write("")
+    stderr.write("")
+    exit_code.write("#{proof.fetch("hook_exit_status")}\n")
+    args.concat(["--discovery-record", discovery, "--stdout", stdout, "--stderr", stderr, "--exit-code", exit_code])
+  when "matcher"
+    discovery = root.join("capture/contracts/#{contract_kind}-#{event}.discovery.json")
+    provider_hash = provider_proof_hash_for(root, "codex", event, proof.fetch("payload_sha256"))
+    discovery.write(JSON.pretty_generate(discovery_record_for(proof, event, provider_proof_hash: provider_hash)) + "\n")
+    args.concat(["--discovery-record", discovery])
+  when "event-order"
+    proof.fetch("observed_order").each_with_index do |item, index|
+      discovery = root.join("capture/contracts/#{contract_kind}-#{event}.#{index}.discovery.json")
+      command_like = {
+        "provider" => "codex",
+        "payload_sha256" => item.fetch("payload_sha256"),
+        "raw_payload_path" => "/captures/#{item.fetch("payload_sha256")[0, 12]}.payload",
+        "raw_payload_captured" => true,
+        "hook_mode" => "discovery-log-only",
+        "provider_detection_decision" => "match",
+        "provider_proof_hash" => provider_proof_hash_for(root, "codex", item.fetch("event"), item.fetch("payload_sha256")),
+        "discovery_recorded_at" => item.fetch("recorded_at")
+      }
+      discovery.write(JSON.pretty_generate(discovery_record_for(command_like, item.fetch("event"), provider_proof_hash: command_like.fetch("provider_proof_hash"))) + "\n")
+      args.concat(["--discovery-record", discovery])
+    end
+  end
+  run_cmd(*args)
 end
 
 def import_codex_decision_output(root, event, contract_id)
