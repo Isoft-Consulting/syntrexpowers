@@ -1569,6 +1569,7 @@ def overlap_terms(query_terms: set[str], terms: Any) -> float:
 
 PATH_QUERY_RE = re.compile(
     r"(?<![A-Za-z0-9_./-])(?:\.?[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+"
+    r"|(?<![A-Za-z0-9_./-])[A-Za-z0-9_.-]+\.(?:md|txt|json|ya?ml|rb|py|js|ts|sh|php)(?![A-Za-z0-9_./-])"
     r"|(?<![A-Za-z0-9_./-])(?:Dockerfile(?:\\.[A-Za-z0-9_.-]+)?|docker-compose\\.(?:ya?ml)|\\.dockerignore)(?![A-Za-z0-9_./-])"
     r"|(?<!\\S)\\.[A-Za-z0-9_.-]+"
 )
@@ -1605,13 +1606,13 @@ def fetch_path_candidates(connection: sqlite3.Connection, query_paths: list[str]
             continue
         exact_score = max(0.9, 1.0 - order * 0.01)
         suffix_score = max(0.75, 0.85 - order * 0.01)
-        exact_rows = connection.execute("SELECT id FROM docs WHERE source = ? ORDER BY start_line LIMIT 1", (path,)).fetchall()
+        exact_rows = connection.execute("SELECT id FROM docs WHERE lower(source) = lower(?) ORDER BY start_line LIMIT 1", (path,)).fetchall()
         for row in exact_rows:
             matches[int(row["id"])] = max(matches.get(int(row["id"]), 0.0), exact_score)
         if exact_rows:
             continue
         suffix = "%/" + escape_like(path)
-        for row in connection.execute("SELECT MIN(id) AS id FROM docs WHERE source LIKE ? ESCAPE '\\' GROUP BY source", (suffix,)):
+        for row in connection.execute("SELECT MIN(id) AS id FROM docs WHERE lower(source) LIKE lower(?) ESCAPE '\\' GROUP BY source", (suffix,)):
             matches[int(row["id"])] = max(matches.get(int(row["id"]), 0.0), suffix_score)
     return matches
 

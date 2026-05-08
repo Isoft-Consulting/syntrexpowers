@@ -15,6 +15,7 @@ from rag_universal.core import (
     DEFAULT_CONFIG,
     build_index,
     ensure_fresh_index,
+    extract_query_paths,
     index_coverage,
     index_status,
     load_chunks,
@@ -369,6 +370,21 @@ class RagUniversalTest(unittest.TestCase):
         results = search_index(root, None, "review evidence for Dockerfile strict stop guard", top_k=2)
         self.assertEqual(results[0]["source"], "Dockerfile")
         self.assertEqual(results[0]["path_match"], 1.0)
+
+    def test_standalone_filename_queries_use_explicit_path_priority(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "schemas").mkdir()
+        (root / "schemas" / "rag.chunk.v1.schema.json").write_text('{"title":"Chunk"}', encoding="utf-8")
+        (root / "schemas" / "rag.dep-edge.v1.schema.json").write_text('{"title":"Dependency"}', encoding="utf-8")
+        (root / "SPEC.md").write_text("# Spec\n\nUniversal RAG project contract.", encoding="utf-8")
+        (root / "README.md").write_text("# General\n\nrag type string schema " * 20, encoding="utf-8")
+        build_index(root)
+
+        self.assertEqual(extract_query_paths("inspect rag.chunk.v1.schema.json schema"), ["rag.chunk.v1.schema.json"])
+        self.assertEqual(search_index(root, None, "inspect rag.chunk.v1.schema.json schema", top_k=1)[0]["source"], "schemas/rag.chunk.v1.schema.json")
+        self.assertEqual(search_index(root, None, "inspect spec.md universal rag", top_k=1)[0]["source"], "SPEC.md")
 
     def test_explicit_path_fast_path_returns_multiple_cited_files(self) -> None:
         temp = tempfile.TemporaryDirectory()

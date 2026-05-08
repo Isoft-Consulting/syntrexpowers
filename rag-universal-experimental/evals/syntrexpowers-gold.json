@@ -12,6 +12,7 @@
     "id": "provider_neutral_rag",
     "query": "universal rag mcp claude deepseek codex",
     "expected_sources": [
+      "rag-universal-experimental/AGENT_INSTALL.md",
       "rag-universal-experimental/README.md",
       "rag-universal-experimental/SPEC.md"
     ]
@@ -20,6 +21,7 @@
     "id": "destructive_gate",
     "query": "destructive gate protected path shell command",
     "expected_sources": [
+      "strict-mode-universal-experimental/specs/11-phases/03-destructive-shell-gate.md",
       "strict-mode-universal-experimental/specs/08-shared-core/05-destructive-gate.md",
       "strict-mode-universal-experimental/tools/destructive_gate_lib.rb",
       "strict-mode-universal-experimental/tests/test-destructive-gate.rb"
