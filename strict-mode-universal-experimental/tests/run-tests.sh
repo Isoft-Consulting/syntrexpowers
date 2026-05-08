@@ -5,6 +5,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 . "$ROOT/lib/require-ruby.sh"
 
+bash "$ROOT/tests/test-require-ruby.sh"
 ruby "$ROOT/tools/validate-metadata.rb"
 ruby "$ROOT/tools/check-metadata-generated.rb"
 ruby "$ROOT/tools/test-metadata-validator.rb"
