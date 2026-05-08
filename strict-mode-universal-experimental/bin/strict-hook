@@ -174,11 +174,10 @@ rescue RuntimeError, SystemCallError, ArgumentError => e
   StrictModeProtectedBaseline.result(false, [e.message], [])
 end
 
-def enforcing_hook_entry(context, provider, logical_event)
-  baseline = context.fetch("baseline", {})
-  return nil unless baseline.is_a?(Hash)
+def enforcing_hook_entry_from(record, provider, logical_event)
+  return nil unless record.is_a?(Hash)
 
-  baseline.fetch("managed_hook_entries", []).find do |entry|
+  Array(record["managed_hook_entries"]).find do |entry|
     entry.is_a?(Hash) &&
       entry["provider"] == provider &&
       entry["logical_event"] == logical_event &&
@@ -186,6 +185,47 @@ def enforcing_hook_entry(context, provider, logical_event)
       entry["output_contract_id"].is_a?(String) &&
       !entry["output_contract_id"].empty?
   end
+end
+
+def selected_output_contract_id_from(record, provider, logical_event)
+  return "" unless record.is_a?(Hash)
+
+  contract = Array(record["selected_output_contracts"]).find do |entry|
+    entry.is_a?(Hash) &&
+      entry["provider"] == provider &&
+      entry["logical_event"] == logical_event &&
+      entry["contract_kind"] == "decision-output" &&
+      entry["contract_id"].is_a?(String) &&
+      !entry["contract_id"].empty?
+  end
+  contract ? contract.fetch("contract_id") : ""
+end
+
+def fallback_enforcing_hook_entry(context, provider, logical_event)
+  return nil unless %w[pre-tool-use stop permission-request].include?(logical_event)
+
+  [context.fetch("manifest", {}), context.fetch("baseline", {})].each do |record|
+    contract_id = selected_output_contract_id_from(record, provider, logical_event)
+    next if contract_id.empty?
+
+    return {
+      "provider" => provider,
+      "logical_event" => logical_event,
+      "output_contract_id" => contract_id,
+      "enforcing" => true
+    }
+  end
+  nil
+end
+
+def enforcing_hook_entry(context, provider, logical_event)
+  entry = enforcing_hook_entry_from(context.fetch("baseline", {}), provider, logical_event)
+  return entry if entry
+
+  entry = enforcing_hook_entry_from(context.fetch("manifest", {}), provider, logical_event)
+  return entry if entry
+
+  fallback_enforcing_hook_entry(context, provider, logical_event)
 end
 
 def selected_output_contract(context, entry)
