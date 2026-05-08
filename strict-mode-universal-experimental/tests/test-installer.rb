@@ -290,8 +290,85 @@ def compatibility_range_for(provider_version, provider_build_hash = "")
   end
 end
 
+def typed_contract_proof(provider:, contract_kind:, event:, contract_id:, provider_version: "unknown", provider_build_hash: "")
+  payload_hash = Digest::SHA256.hexdigest("#{provider}:#{event}:payload")
+  case contract_kind
+  when "command-execution"
+    {
+      "schema_version" => 1,
+      "proof_kind" => "#{provider}.command-execution.observed",
+      "provider" => provider,
+      "provider_version" => provider_version,
+      "provider_build_hash" => provider_build_hash,
+      "event" => event,
+      "contract_id" => contract_id,
+      "hook_command_executed" => true,
+      "hook_argv" => ["strict-hook", "--provider", provider, event],
+      "hook_exit_status" => 0,
+      "stdout_sha256" => Digest::SHA256.hexdigest(""),
+      "stderr_sha256" => Digest::SHA256.hexdigest(""),
+      "discovery_recorded_at" => "2026-05-06T00:00:00Z",
+      "provider_detection_decision" => "match",
+      "payload_sha256" => payload_hash,
+      "raw_payload_captured" => true,
+      "raw_payload_path" => "/tmp/#{payload_hash[0, 12]}.payload",
+      "hook_mode" => "discovery-log-only"
+    }
+  when "event-order"
+    {
+      "schema_version" => 1,
+      "proof_kind" => "#{provider}.event-order.observed",
+      "provider" => provider,
+      "provider_version" => provider_version,
+      "provider_build_hash" => provider_build_hash,
+      "event" => event,
+      "contract_id" => contract_id,
+      "early_baseline_events_before_tool" => true,
+      "observed_order" => [
+        { "event" => event, "recorded_at" => "2026-05-06T00:00:00Z", "payload_sha256" => payload_hash },
+        { "event" => "pre-tool-use", "recorded_at" => "2026-05-06T00:00:01Z", "payload_sha256" => Digest::SHA256.hexdigest("#{provider}:pre") }
+      ]
+    }
+  when "matcher"
+    {
+      "schema_version" => 1,
+      "proof_kind" => "#{provider}.matcher.observed",
+      "provider" => provider,
+      "provider_version" => provider_version,
+      "provider_build_hash" => provider_build_hash,
+      "event" => event,
+      "contract_id" => contract_id,
+      "matcher" => ".*",
+      "matched_tool_event" => true,
+      "provider_detection_decision" => "match",
+      "payload_sha256" => payload_hash,
+      "raw_payload_path" => "/tmp/#{payload_hash[0, 12]}.payload",
+      "preflight_trusted" => true,
+      "tool_kind" => "shell"
+    }
+  else
+    { "schema_version" => 1, "contract_id" => contract_id }
+  end
+end
+
 def fixture_record(root, provider:, contract_id:, contract_kind:, event:, provider_version: "unknown", provider_build_hash: "")
-  fixture = fixture_file(root, provider, "#{contract_kind}/#{event}/#{contract_id}.txt", "#{contract_id}\n")
+  fixture = if StrictModeFixtures.typed_generic_contract_kind?(contract_kind)
+              fixture_file(
+                root,
+                provider,
+                "#{contract_kind}/#{event}/#{contract_id}.#{contract_kind}.json",
+                JSON.pretty_generate(typed_contract_proof(
+                  provider: provider,
+                  contract_kind: contract_kind,
+                  event: event,
+                  contract_id: contract_id,
+                  provider_version: provider_version,
+                  provider_build_hash: provider_build_hash
+                )) + "\n"
+              )
+            else
+              fixture_file(root, provider, "#{contract_kind}/#{event}/#{contract_id}.txt", "#{contract_id}\n")
+            end
   record = {
     "schema_version" => 1,
     "contract_id" => contract_id,
@@ -310,7 +387,8 @@ def fixture_record(root, provider:, contract_id:, contract_kind:, event:, provid
     "fixture_record_hash" => ""
   }
   if contract_kind == "command-execution"
-    record["command_execution_contract_hash"] = Digest::SHA256.hexdigest(JSON.generate(record.fetch("fixture_file_hashes")))
+    proof = StrictModeFixtures.load_typed_contract_proof(fixture)
+    record["command_execution_contract_hash"] = StrictModeFixtures.typed_contract_proof_hash(record, proof)
   end
   record["fixture_record_hash"] = StrictModeFixtures.hash_record(record, "fixture_record_hash")
   record

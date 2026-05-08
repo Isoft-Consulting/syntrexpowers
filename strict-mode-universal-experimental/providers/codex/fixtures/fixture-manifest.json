@@ -13,11 +13,11 @@
       "contract_kind": "command-execution",
       "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "573e66902fbe02c62e588e4b819b8913f5e206694b38496d29f3dfc24d096f48",
+      "command_execution_contract_hash": "23c4ce7fddcd891f24cf6672b1ac5bd968cc045bf0b7175eefd5d54cb4d6a03b",
       "fixture_file_hashes": [
         {
           "path": "providers/codex/fixtures/command-execution/post-tool-use/codex.post-tool-use.command.post-tool-use.command-execution.json",
-          "content_sha256": "aa566c45736199c30f6184f5dbb0f5057e5201fe1d229db7cfef14b96968e18b"
+          "content_sha256": "079c8a60bee90d364e3f3a3cf38738eddd1b92719aac662011b2c25525242064"
         }
       ],
       "captured_at": "2026-05-07T15:28:17Z",
@@ -30,7 +30,7 @@
           "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
         ]
       },
-      "fixture_record_hash": "a3c144d0e92a326f9c7b47fc38fd77d6ec98b69e4510c2f049999d9de17c4fdc"
+      "fixture_record_hash": "420c2e19277aebb92ddb68290d474efbd36465cb4079462fa98a1b24758c8800"
     },
     {
       "schema_version": 1,
@@ -123,11 +123,11 @@
       "contract_kind": "command-execution",
       "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0ab2af619628937b5555b91579d43bedebcf72a88cffebba82a7ee562bdee37b",
+      "command_execution_contract_hash": "e0f8bc5d8f27313eaf11aa9c4f209b8bd21492b6423bb7158779abddf656f419",
       "fixture_file_hashes": [
         {
           "path": "providers/codex/fixtures/command-execution/pre-tool-use/codex.pre-tool-use.command.pre-tool-use.command-execution.json",
-          "content_sha256": "568812493f8c1b29c67a24540ce079a02fedf367629c14d74fc41dd74534970c"
+          "content_sha256": "e0a7a68004fecb47b02375cfca85a63e3611d3af5619c8838b5f72475e71e187"
         }
       ],
       "captured_at": "2026-05-07T15:28:12Z",
@@ -140,7 +140,7 @@
           "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
         ]
       },
-      "fixture_record_hash": "b68c3857255f5f8db99c347913c24b318d29089055aca9e48d27c8cb781f2b48"
+      "fixture_record_hash": "c758dc7a3366f84b8407b652807fbea5c2323624109acd2f6a436d321472cf60"
     },
     {
       "schema_version": 1,
@@ -157,7 +157,7 @@
       "fixture_file_hashes": [
         {
           "path": "providers/codex/fixtures/matcher/pre-tool-use/codex.pre-tool-use.matcher.pre-tool-use.matcher.json",
-          "content_sha256": "5768346d58f93bbdffc6f177015816356c078c17e476098d3eced6fd3035378b"
+          "content_sha256": "e64b03a8c35e7c577b65cbb77c5ba6eb77a1a065bdb68662a063d982ab548827"
         }
       ],
       "captured_at": "2026-05-07T15:28:27Z",
@@ -170,7 +170,7 @@
           "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
         ]
       },
-      "fixture_record_hash": "b5c264af13e772a882094319b1bee71b0b704a336250c9a7a6eeefc117441a1c"
+      "fixture_record_hash": "f916790dc9529270f4291be6c5264b891153b6bc3852a8a16a108b3d7749551f"
     },
     {
       "schema_version": 1,
@@ -221,11 +221,11 @@
       "contract_kind": "command-execution",
       "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "1e14eaa6d0ef1e89b22319271c452535d73571f47df20e7abc85a565e23a754b",
+      "command_execution_contract_hash": "9d44f4d70f222517372918c45a5318faf9b0de6353f9a801302e4adb158fe5a9",
       "fixture_file_hashes": [
         {
           "path": "providers/codex/fixtures/command-execution/session-start/codex.session-start.command.session-start.command-execution.json",
-          "content_sha256": "443f2e9ea70e81bb8fe92efde4b5eb1f1b80e68919b330a94ec2b25b57a9ff28"
+          "content_sha256": "3e6721bc5f60d606c2d2d09616d2b4a46a68204b28d9b5cb18bf16464aa6dc6c"
         }
       ],
       "captured_at": "2026-05-07T15:28:02Z",
@@ -238,7 +238,7 @@
           "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
         ]
       },
-      "fixture_record_hash": "cf0731688784d72b21c343cf35c7de771f774a93824d4243a3b6284ea324e9f2"
+      "fixture_record_hash": "9acbf29e3a5697c7e849327275504c2a80fb74472c4eda7d898442bc3351626c"
     },
     {
       "schema_version": 1,
@@ -255,7 +255,7 @@
       "fixture_file_hashes": [
         {
           "path": "providers/codex/fixtures/event-order/session-start/codex.session-start.order.session-start.event-order.json",
-          "content_sha256": "558f5706a0f554ac7f5c64e3693f1b9439353f8fdd0bbcac1a336d6aa0b4ff98"
+          "content_sha256": "b53d889f2cc459e67b1bab657ddd0e5ebcec4bbf5f845cf302fd626e09899e3b"
         }
       ],
       "captured_at": "2026-05-07T15:28:35Z",
@@ -268,7 +268,7 @@
           "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
         ]
       },
-      "fixture_record_hash": "11c98a3cd3d8dee7dcef9531b8d612e8f538e17feab434b6cac84696e58b9bc0"
+      "fixture_record_hash": "223f15da4f71ed998d8ba895b5268a56064847a741decafd7ee8de8483e7b0fc"
     },
     {
       "schema_version": 1,
@@ -361,11 +361,11 @@
       "contract_kind": "command-execution",
       "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "9ae86958fd46f8c858cda6463c3b0f16514d30526f054d04179ee389b9d794d0",
+      "command_execution_contract_hash": "1ae82e464079cfb774295b6a6ab4275def155b88a73b364d90cd60dbb7be45e3",
       "fixture_file_hashes": [
         {
           "path": "providers/codex/fixtures/command-execution/stop/codex.stop.command.stop.command-execution.json",
-          "content_sha256": "6800223ba9e0d3728a00b97ceee03457137bb573774122bd10486092b41b0457"
+          "content_sha256": "dd157debe5de7b374899adcdcc353432c109cc8549e79a1c7ff09b11eb557436"
         }
       ],
       "captured_at": "2026-05-07T15:28:21Z",
@@ -378,7 +378,7 @@
           "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
         ]
       },
-      "fixture_record_hash": "033bfa154a1be9a551233800f74476419d48c7d63249253ec92e920d44b67419"
+      "fixture_record_hash": "652112c59e65acbc61d420daa6476e2bff8fa973f6c0f50bc84841bac01eb407"
     },
     {
       "schema_version": 1,
@@ -429,11 +429,11 @@
       "contract_kind": "command-execution",
       "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "958e5d0619d9fc3b3b31c115a897509581d2536ca63ccf3bd7a580dd0a22a20c",
+      "command_execution_contract_hash": "1883e9447ee0a6ee27c65dca3c074578fb781f5ac1c7a6941be96552a9bd6678",
       "fixture_file_hashes": [
         {
           "path": "providers/codex/fixtures/command-execution/user-prompt-submit/codex.user-prompt-submit.command.user-prompt-submit.command-execution.json",
-          "content_sha256": "2a2462b58bffde1cd87df4e120b57b7155747ebef13872f821291e4ce6c18357"
+          "content_sha256": "eaf8db5af8393533f5e8efc857fdabd9a44ae4bc0f3ad711575fdb4a2fa9b65c"
         }
       ],
       "captured_at": "2026-05-07T15:28:06Z",
@@ -446,7 +446,7 @@
           "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
         ]
       },
-      "fixture_record_hash": "a0e6d5813ea3c7bd304be0d8c7ab6d98d036880c2bca99530f2fd65b907cdb72"
+      "fixture_record_hash": "7f4e1968be4df35839650d842e9607fa13427ac7c26b7a249af388e022070189"
     },
     {
       "schema_version": 1,
@@ -487,5 +487,5 @@
       "fixture_record_hash": "fb9b3907ec2a6ff862d2b9717e4c2fefea69180ab74b1d2179d63187185303f2"
     }
   ],
-  "manifest_hash": "26e16c16976d24b6f426183952cd72b7dc763f92a990f3095440bb2a037a051b"
+  "manifest_hash": "7b052d0a2521d7640eaa9d0041393127b8d5a4ec35c124b523e5cb108f646c7a"
 }

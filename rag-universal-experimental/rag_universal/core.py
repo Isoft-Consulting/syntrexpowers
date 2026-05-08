@@ -22,7 +22,22 @@ SOURCE_STATE_VERSION = "rag.source-state.v1"
 SEARCH_CACHE_VERSION = "rag.search-cache.v1"
 CHUNKER_VERSION = "lexical-chunker.v1"
 TOKENIZER_VERSION = "unicode-tokenizer.v1"
-SEARCH_VERSION = "hash-vector-bm25.v7"
+SEARCH_VERSION = "hash-vector-bm25.v9"
+
+TEST_INTENT_TERMS = {
+    "assert",
+    "assertion",
+    "coverage",
+    "fixture",
+    "fixtures",
+    "phpunit",
+    "pytest",
+    "run-tests",
+    "test",
+    "tests",
+    "testing",
+    "unittest",
+}
 
 _SEARCH_CACHE_CONNECTIONS: dict[tuple[str, float, int], sqlite3.Connection] = {}
 
@@ -199,6 +214,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "source_penalties": [
             {"pattern": "**/.snapshots/**", "multiplier": 0.12},
             {"pattern": "**/seeds/demo.yaml", "multiplier": 0.25},
+            {"pattern": "**/examples/**", "multiplier": 0.92},
         ],
         "status_boosts": {
             "canonical": 1.18,
@@ -553,17 +569,25 @@ def document_status(source: str, heading: str, text: str) -> str:
     lower_source = source.lower()
     lower_heading = heading.lower()
     sample = text[:5000].lower()
-    if "superseded" in sample or "do not implement" in sample or "do not use" in sample:
-        return "superseded"
-    if "historical snapshot" in sample or "historical record" in sample or "frozen" in sample:
-        return "historical"
-    if "status:" in sample:
-        if re.search(r"status:\s*(canonical|master)", sample):
+    status_match = re.search(r"(?im)^\s*status\s*:\s*([^\n]+)", text[:5000])
+    if status_match:
+        status_value = status_match.group(1).strip().lower()
+        if re.search(r"\b(superseded|deprecated|obsolete)\b", status_value):
+            return "superseded"
+        if re.search(r"\b(historical|archived|frozen)\b", status_value):
+            return "historical"
+        if re.search(r"\b(canonical|master)\b", status_value):
             return "canonical"
-        if re.search(r"status:\s*(implementation-ready|implementation ready|ready)", sample):
+        if re.search(r"\b(not ready|not-ready|blocked|failing)\b", status_value):
+            return "normal"
+        if re.search(r"\b(implementation-ready|implementation ready|ready|executable mvp)\b", status_value):
             return "implementation_ready"
-        if re.search(r"status:\s*(active|current)", sample):
+        if re.search(r"\b(active|current)\b", status_value):
             return "active_plan"
+    if re.search(r"\bdo not (implement|use)\b", sample):
+        return "superseded"
+    if "historical snapshot" in sample or "historical record" in sample:
+        return "historical"
     if "canonical / master" in sample or "canonical / implementation-ready" in sample:
         return "canonical"
     if "active plan" in sample or "active epic" in sample:
@@ -1439,6 +1463,16 @@ def fdr_role_boost(source: str, artifact: str, config: dict[str, Any], mode: str
         return 1.0
 
 
+def role_intent_boost(query_terms: set[str], role: str, mode: str) -> float:
+    if normalize_search_mode(mode) != "fdr":
+        return 1.0
+    if role != "test":
+        return 1.0
+    if query_terms & TEST_INTENT_TERMS:
+        return 1.0
+    return 0.88
+
+
 def expand_for_search_mode(query: str, config: dict[str, Any], mode: str) -> str:
     expanded = expand_query(query, config)
     search_mode = normalize_search_mode(mode)
@@ -1786,6 +1820,7 @@ def search_precomputed_cache(
         role = fdr_role(source, chunk_type)
         score *= artifact_boost(source, chunk_type, config)
         score *= fdr_role_boost(source, chunk_type, config, search_mode)
+        score *= role_intent_boost(query_terms, role, search_mode)
         score *= mode_source_boost(source, config, search_mode)
         score *= penalty
         score *= doc_status_boost
@@ -1989,6 +2024,7 @@ def search_index(
         role = fdr_role(source, chunk_type)
         score *= artifact_boost(source, chunk_type, config)
         score *= fdr_role_boost(source, chunk_type, config, search_mode)
+        score *= role_intent_boost(query_terms, role, search_mode)
         score *= mode_source_boost(source, config, search_mode)
         score *= penalty
         score *= doc_status_boost

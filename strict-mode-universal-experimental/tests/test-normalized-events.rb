@@ -355,6 +355,33 @@ with_root do |root, project, cwd|
   record_failure(name, "missing cwd diagnostic", output) unless output.include?("cwd must be equal to or inside project_dir")
 end
 
+with_root do |root, project, cwd|
+  name = "cwd project symlink aliases normalize before containment"
+  source = write_payload(root, "symlink-cwd", { "event" => "stop" })
+  alias_project = root.join("project-alias")
+  File.symlink(project, alias_project)
+  alias_cwd = alias_project.join("src")
+  status, stdout, _stderr, output = run_cmd(NORMALIZER, "--provider", "codex", "--logical-event", "stop", "--source", source, "--cwd", cwd, "--project-dir", alias_project)
+  assert_no_stacktrace(name, output)
+  if status.zero?
+    event = JSON.parse(stdout)
+    record_failure(name, "cwd was not canonicalized", output) unless event.fetch("cwd") == cwd.realpath.to_s
+    record_failure(name, "project_dir was not canonicalized", output) unless event.fetch("project_dir") == project.realpath.to_s
+  else
+    record_failure(name, "expected symlink-alias containment success, got #{status}", output)
+  end
+
+  status, stdout, _stderr, output = run_cmd(NORMALIZER, "--provider", "codex", "--logical-event", "stop", "--source", source, "--cwd", alias_cwd, "--project-dir", project)
+  assert_no_stacktrace("#{name} inverse", output)
+  if status.zero?
+    event = JSON.parse(stdout)
+    record_failure(name, "alias cwd was not canonicalized", output) unless event.fetch("cwd") == cwd.realpath.to_s
+    record_failure(name, "real project_dir mismatch", output) unless event.fetch("project_dir") == project.realpath.to_s
+  else
+    record_failure(name, "expected inverse symlink-alias containment success, got #{status}", output)
+  end
+end
+
 with_root do |root, _project, _cwd|
   name = "normalized validator rejects extra top-level fields"
   event_path = root.join("event.json")

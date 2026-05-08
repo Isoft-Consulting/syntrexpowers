@@ -125,6 +125,10 @@ end
 def default_fixture_name(contract_kind, event, contract_id, source, index, total)
   event_component = StrictModeFixtures.safe_component(event)
   contract_component = StrictModeFixtures.safe_component(contract_id)
+  if StrictModeFixtures.typed_generic_contract_kind?(contract_kind)
+    return "#{contract_kind}/#{event_component}/#{contract_component}.#{contract_kind}.json"
+  end
+
   basename = StrictModeFixtures.safe_component(source.basename.to_s)
   suffix = total == 1 ? basename : "#{index + 1}-#{basename}"
   "#{contract_kind}/#{event_component}/#{contract_component}.#{suffix}"
@@ -219,6 +223,7 @@ begin
   Time.iso8601(captured_at)
   contract_id = options[:contract_id] || default_contract_id(provider, options[:event], contract_kind)
   raise "--contract-id must be a stable lowercase id" unless contract_id.match?(StrictModeFixtures::CONTRACT_ID_PATTERN)
+  typed_contract_proof = nil
 
   fixture_paths = if contract_kind == "decision-output"
                     raise "--source/--fixture-name are not supported for decision-output; use --metadata/--stdout/--stderr/--exit-code" unless options[:sources].empty? && options[:fixture_names].empty?
@@ -260,6 +265,28 @@ begin
                       raise "--fixture-name must be repeated once per --source when used"
                     end
                     sources = options[:sources].map { |source| source_file(source) }
+                    if StrictModeFixtures.typed_generic_contract_kind?(contract_kind)
+                      raise "#{contract_kind} contract proofs must use exactly one --source" unless sources.length == 1
+
+                      typed_contract_proof = StrictModeFixtures.load_typed_contract_proof(sources.first)
+                      proof_errors = StrictModeFixtures.validate_typed_contract_proof(
+                        typed_contract_proof,
+                        provider: provider,
+                        event: options[:event],
+                        contract_kind: contract_kind,
+                        contract_id: contract_id,
+                        provider_version: options[:provider_version],
+                        provider_build_hash: options[:provider_build_hash]
+                      )
+                      raise proof_errors.join("\n") unless proof_errors.empty?
+                      options[:fixture_names].each do |name|
+                        raise "#{contract_kind} fixture-name must end with .json" unless name.to_s.end_with?(".json")
+                      end
+                      expected_fixture_name = default_fixture_name(contract_kind, options[:event], contract_id, sources.first, 0, 1)
+                      if !options[:fixture_names].empty? && options[:fixture_names].fetch(0) != expected_fixture_name
+                        raise "#{contract_kind} fixture-name must be #{expected_fixture_name.inspect} for typed contract proofs"
+                      end
+                    end
                     sources.each_with_index.map do |source, index|
                       fixture_name = options[:fixture_names][index] || default_fixture_name(contract_kind, options[:event], contract_id, source, index, sources.length)
                       copy_fixture!(options[:root], provider, fixture_name, source, options[:replace])
@@ -267,7 +294,19 @@ begin
                   end
 
   fixture_file_hashes = fixture_paths.map { |path| fixture_hash_entry(options[:root], path) }.sort_by { |item| item.fetch("path") }
-  surface_hash = Digest::SHA256.hexdigest(JSON.generate(fixture_file_hashes))
+  surface_hash = if typed_contract_proof && contract_kind == "command-execution"
+                   StrictModeFixtures.typed_contract_proof_hash(
+                     {
+                       "contract_kind" => contract_kind,
+                       "provider" => provider,
+                       "event" => options[:event],
+                       "contract_id" => contract_id
+                     },
+                     typed_contract_proof
+                   )
+                 else
+                   Digest::SHA256.hexdigest(JSON.generate(fixture_file_hashes))
+                 end
   decision_contract_hash = if contract_kind == "decision-output"
                              StrictModeDecisionContract.load_json(fixture_paths.find { |path| path.basename.to_s.end_with?(".provider-output.json") }).fetch("decision_contract_hash")
                            else

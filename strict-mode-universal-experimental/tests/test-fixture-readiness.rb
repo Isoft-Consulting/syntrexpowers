@@ -49,17 +49,114 @@ def fixture_hash_entry(root, path)
   }
 end
 
-def record_for(root, provider:, contract_id:, contract_kind:, event:, provider_action: "block", provider_build_hash: "")
+def typed_contract_proof(provider:, contract_kind:, event:, contract_id:, provider_version: "1.0.0", provider_build_hash: "")
+  payload_hash = Digest::SHA256.hexdigest("#{provider}:#{event}:payload")
+  case contract_kind
+  when "command-execution"
+    {
+      "schema_version" => 1,
+      "proof_kind" => "#{provider}.command-execution.observed",
+      "provider" => provider,
+      "provider_version" => provider_version,
+      "provider_build_hash" => provider_build_hash,
+      "event" => event,
+      "contract_id" => contract_id,
+      "hook_command_executed" => true,
+      "hook_argv" => ["strict-hook", "--provider", provider, event],
+      "hook_exit_status" => 0,
+      "stdout_sha256" => Digest::SHA256.hexdigest(""),
+      "stderr_sha256" => Digest::SHA256.hexdigest(""),
+      "discovery_recorded_at" => "2026-05-06T00:00:00Z",
+      "provider_detection_decision" => "match",
+      "payload_sha256" => payload_hash,
+      "raw_payload_captured" => true,
+      "raw_payload_path" => "/tmp/#{payload_hash[0, 12]}.payload",
+      "hook_mode" => "discovery-log-only"
+    }
+  when "event-order"
+    {
+      "schema_version" => 1,
+      "proof_kind" => "#{provider}.event-order.observed",
+      "provider" => provider,
+      "provider_version" => provider_version,
+      "provider_build_hash" => provider_build_hash,
+      "event" => event,
+      "contract_id" => contract_id,
+      "early_baseline_events_before_tool" => true,
+      "observed_order" => [
+        { "event" => event, "recorded_at" => "2026-05-06T00:00:00Z", "payload_sha256" => payload_hash },
+        { "event" => "pre-tool-use", "recorded_at" => "2026-05-06T00:00:01Z", "payload_sha256" => Digest::SHA256.hexdigest("#{provider}:pre") }
+      ]
+    }
+  when "matcher"
+    {
+      "schema_version" => 1,
+      "proof_kind" => "#{provider}.matcher.observed",
+      "provider" => provider,
+      "provider_version" => provider_version,
+      "provider_build_hash" => provider_build_hash,
+      "event" => event,
+      "contract_id" => contract_id,
+      "matcher" => ".*",
+      "matched_tool_event" => true,
+      "provider_detection_decision" => "match",
+      "payload_sha256" => payload_hash,
+      "raw_payload_path" => "/tmp/#{payload_hash[0, 12]}.payload",
+      "preflight_trusted" => true,
+      "tool_kind" => "shell"
+    }
+  else
+    { "schema_version" => 1, "contract_id" => contract_id }
+  end
+end
+
+def compatibility_for(provider_version, provider_build_hash)
+  if provider_version == "unknown"
+    {
+      "mode" => "unknown-only",
+      "min_version" => "unknown",
+      "max_version" => "unknown",
+      "version_comparator" => "",
+      "provider_build_hashes" => []
+    }
+  else
+    {
+      "mode" => "exact",
+      "min_version" => provider_version,
+      "max_version" => provider_version,
+      "version_comparator" => "",
+      "provider_build_hashes" => provider_build_hash.empty? ? [] : [provider_build_hash]
+    }
+  end
+end
+
+def record_for(root, provider:, contract_id:, contract_kind:, event:, provider_action: "block", provider_version: "1.0.0", provider_build_hash: "")
   if contract_kind == "decision-output"
-    return decision_output_record_for(root, provider: provider, contract_id: contract_id, event: event, provider_action: provider_action, provider_build_hash: provider_build_hash)
+    return decision_output_record_for(root, provider: provider, contract_id: contract_id, event: event, provider_action: provider_action, provider_version: provider_version, provider_build_hash: provider_build_hash)
   end
 
-  fixture = fixture_file(root, provider, "#{contract_kind}/#{event}/#{contract_id}.txt", "#{contract_id}\n")
+  fixture = if StrictModeFixtures.typed_generic_contract_kind?(contract_kind)
+              fixture_file(
+                root,
+                provider,
+                "#{contract_kind}/#{event}/#{contract_id}.#{contract_kind}.json",
+                JSON.pretty_generate(typed_contract_proof(
+                  provider: provider,
+                  contract_kind: contract_kind,
+                  event: event,
+                  contract_id: contract_id,
+                  provider_version: provider_version,
+                  provider_build_hash: provider_build_hash
+                )) + "\n"
+              )
+            else
+              fixture_file(root, provider, "#{contract_kind}/#{event}/#{contract_id}.txt", "#{contract_id}\n")
+            end
   record = {
     "schema_version" => 1,
     "contract_id" => contract_id,
     "provider" => provider,
-    "provider_version" => "1.0.0",
+    "provider_version" => provider_version,
     "provider_build_hash" => provider_build_hash,
     "platform" => RUBY_PLATFORM,
     "event" => event,
@@ -69,19 +166,14 @@ def record_for(root, provider:, contract_id:, contract_kind:, event:, provider_a
     "command_execution_contract_hash" => StrictModeFixtures::ZERO_HASH,
     "fixture_file_hashes" => [fixture_hash_entry(root, fixture)],
     "captured_at" => "2026-05-06T00:00:00Z",
-    "compatibility_range" => {
-      "mode" => "exact",
-      "min_version" => "1.0.0",
-      "max_version" => "1.0.0",
-      "version_comparator" => "",
-      "provider_build_hashes" => provider_build_hash.empty? ? [] : [provider_build_hash]
-    },
+    "compatibility_range" => compatibility_for(provider_version, provider_build_hash),
     "fixture_record_hash" => ""
   }
   surface_hash = Digest::SHA256.hexdigest(JSON.generate(record.fetch("fixture_file_hashes")))
   case contract_kind
   when "command-execution"
-    record["command_execution_contract_hash"] = surface_hash
+    proof = StrictModeFixtures.load_typed_contract_proof(fixture)
+    record["command_execution_contract_hash"] = StrictModeFixtures.typed_contract_proof_hash(record, proof)
   when "decision-output"
     record["decision_contract_hash"] = surface_hash
   when "worker-invocation"
@@ -92,7 +184,7 @@ def record_for(root, provider:, contract_id:, contract_kind:, event:, provider_a
   record
 end
 
-def decision_output_record_for(root, provider:, contract_id:, event:, provider_action: "block", provider_build_hash: "")
+def decision_output_record_for(root, provider:, contract_id:, event:, provider_action: "block", provider_version: "1.0.0", provider_build_hash: "")
   dir = root.join("providers/#{provider}/fixtures/decision-output/#{event}")
   blocks_or_denies = %w[block deny].include?(provider_action) ? 1 : 0
   metadata = {
@@ -120,7 +212,7 @@ def decision_output_record_for(root, provider:, contract_id:, event:, provider_a
     "schema_version" => 1,
     "contract_id" => contract_id,
     "provider" => provider,
-    "provider_version" => "1.0.0",
+    "provider_version" => provider_version,
     "provider_build_hash" => provider_build_hash,
     "platform" => RUBY_PLATFORM,
     "event" => event,
@@ -130,13 +222,7 @@ def decision_output_record_for(root, provider:, contract_id:, event:, provider_a
     "command_execution_contract_hash" => StrictModeFixtures::ZERO_HASH,
     "fixture_file_hashes" => [metadata_path, stdout_path, stderr_path, exit_code_path].map { |path| fixture_hash_entry(root, path) }.sort_by { |item| item.fetch("path") },
     "captured_at" => "2026-05-06T00:00:00Z",
-    "compatibility_range" => {
-      "mode" => "exact",
-      "min_version" => "1.0.0",
-      "max_version" => "1.0.0",
-      "version_comparator" => "",
-      "provider_build_hashes" => provider_build_hash.empty? ? [] : [provider_build_hash]
-    },
+    "compatibility_range" => compatibility_for(provider_version, provider_build_hash),
     "fixture_record_hash" => ""
   }
   record["fixture_record_hash"] = StrictModeFixtures.hash_record(record, "fixture_record_hash")
@@ -191,9 +277,15 @@ def import_codex_payload(root, event, provider_version: "unknown", provider_buil
 end
 
 def import_codex_contract(root, event, contract_kind, contract_id)
-  source = root.join("capture/contracts/#{contract_kind}-#{event}.txt")
+  source = root.join("capture/contracts/#{contract_kind}-#{event}.json")
   source.dirname.mkpath
-  source.write("#{contract_id} proof\n")
+  source.write(JSON.pretty_generate(typed_contract_proof(
+    provider: "codex",
+    contract_kind: contract_kind,
+    event: event,
+    contract_id: contract_id,
+    provider_version: "unknown"
+  )) + "\n")
   run_cmd(
     CONTRACT_IMPORTER,
     "--root", root,
@@ -570,16 +662,16 @@ with_root do |root|
     end
   end
   records = [
-    unknown_only(record_for(root, provider: "codex", contract_id: "codex.order", contract_kind: "event-order", event: "session-start")),
-    unknown_only(record_for(root, provider: "codex", contract_id: "codex.pre.matcher", contract_kind: "matcher", event: "pre-tool-use"))
+    record_for(root, provider: "codex", contract_id: "codex.order", contract_kind: "event-order", event: "session-start", provider_version: "unknown"),
+    record_for(root, provider: "codex", contract_id: "codex.pre.matcher", contract_kind: "matcher", event: "pre-tool-use", provider_version: "unknown")
   ]
   %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
-    records << unknown_only(record_for(root, provider: "codex", contract_id: "codex.#{event}.command", contract_kind: "command-execution", event: event))
+    records << record_for(root, provider: "codex", contract_id: "codex.#{event}.command", contract_kind: "command-execution", event: event, provider_version: "unknown")
   end
   %w[pre-tool-use stop].each do |event|
-    records << unknown_only(record_for(root, provider: "codex", contract_id: "codex.#{event}.decision", contract_kind: "decision-output", event: event))
+    records << record_for(root, provider: "codex", contract_id: "codex.#{event}.decision", contract_kind: "decision-output", event: event, provider_version: "unknown")
   end
-  records << unknown_only(record_for(root, provider: "codex", contract_id: "codex.pre-tool-use.deny", contract_kind: "decision-output", event: "pre-tool-use", provider_action: "deny"))
+  records << record_for(root, provider: "codex", contract_id: "codex.pre-tool-use.deny", contract_kind: "decision-output", event: "pre-tool-use", provider_action: "deny", provider_version: "unknown")
   write_manifest(root, "codex", payload_records + records)
   errors = StrictModeFixtureReadiness.enforcing_errors(root, ["codex"])
   record_failure(name, "expected unknown-only readiness to pass", errors.join("\n")) unless errors.empty?
@@ -610,8 +702,8 @@ with_root do |root|
                       record_failure(name, "payload import failed for permission-request", output)
                       []
                     end
-  permission_command = unknown_only(record_for(root, provider: "codex", contract_id: "codex.permission-request.command", contract_kind: "command-execution", event: "permission-request"))
-  permission_decision = unknown_only(record_for(root, provider: "codex", contract_id: "codex.permission-request.deny", contract_kind: "decision-output", event: "permission-request", provider_action: "deny"))
+  permission_command = record_for(root, provider: "codex", contract_id: "codex.permission-request.command", contract_kind: "command-execution", event: "permission-request", provider_version: "unknown")
+  permission_decision = record_for(root, provider: "codex", contract_id: "codex.permission-request.deny", contract_kind: "decision-output", event: "permission-request", provider_action: "deny", provider_version: "unknown")
   write_manifest(root, "codex", payload_records + [permission_command, permission_decision])
 
   selected = StrictModeFixtureReadiness.selected_output_contracts(root, ["codex"])
@@ -625,7 +717,7 @@ end
 
 with_root do |root|
   name = "optional permission-request decision-output alone is not selected"
-  permission = unknown_only(record_for(root, provider: "codex", contract_id: "codex.permission-request.deny", contract_kind: "decision-output", event: "permission-request", provider_action: "deny"))
+  permission = record_for(root, provider: "codex", contract_id: "codex.permission-request.deny", contract_kind: "decision-output", event: "permission-request", provider_action: "deny", provider_version: "unknown")
   write_manifest(root, "codex", [permission])
 
   selected = StrictModeFixtureReadiness.selected_output_contracts(root, ["codex"])
@@ -645,14 +737,14 @@ with_root do |root|
     end
   end
   records = [
-    unknown_only(record_for(root, provider: "codex", contract_id: "codex.order", contract_kind: "event-order", event: "session-start")),
-    unknown_only(record_for(root, provider: "codex", contract_id: "codex.pre.matcher", contract_kind: "matcher", event: "pre-tool-use"))
+    record_for(root, provider: "codex", contract_id: "codex.order", contract_kind: "event-order", event: "session-start", provider_version: "unknown"),
+    record_for(root, provider: "codex", contract_id: "codex.pre.matcher", contract_kind: "matcher", event: "pre-tool-use", provider_version: "unknown")
   ]
   %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
-    records << unknown_only(record_for(root, provider: "codex", contract_id: "codex.#{event}.command", contract_kind: "command-execution", event: event))
+    records << record_for(root, provider: "codex", contract_id: "codex.#{event}.command", contract_kind: "command-execution", event: event, provider_version: "unknown")
   end
-  records << unknown_only(record_for(root, provider: "codex", contract_id: "codex.pre.warn", contract_kind: "decision-output", event: "pre-tool-use", provider_action: "warn"))
-  records << unknown_only(record_for(root, provider: "codex", contract_id: "codex.stop.block", contract_kind: "decision-output", event: "stop"))
+  records << record_for(root, provider: "codex", contract_id: "codex.pre.warn", contract_kind: "decision-output", event: "pre-tool-use", provider_action: "warn", provider_version: "unknown")
+  records << record_for(root, provider: "codex", contract_id: "codex.stop.block", contract_kind: "decision-output", event: "stop", provider_version: "unknown")
   write_manifest(root, "codex", payload_records + records)
 
   errors = StrictModeFixtureReadiness.enforcing_errors(root, ["codex"])
@@ -674,13 +766,13 @@ with_root do |root|
     end
   end
   records = [
-    unknown_only(record_for(root, provider: "codex", contract_id: "codex.order", contract_kind: "event-order", event: "session-start")),
-    unknown_only(record_for(root, provider: "codex", contract_id: "codex.pre.matcher", contract_kind: "matcher", event: "pre-tool-use")),
-    unknown_only(record_for(root, provider: "codex", contract_id: "codex.pre.block", contract_kind: "decision-output", event: "pre-tool-use")),
-    unknown_only(record_for(root, provider: "codex", contract_id: "codex.stop.deny", contract_kind: "decision-output", event: "stop", provider_action: "deny"))
+    record_for(root, provider: "codex", contract_id: "codex.order", contract_kind: "event-order", event: "session-start", provider_version: "unknown"),
+    record_for(root, provider: "codex", contract_id: "codex.pre.matcher", contract_kind: "matcher", event: "pre-tool-use", provider_version: "unknown"),
+    record_for(root, provider: "codex", contract_id: "codex.pre.block", contract_kind: "decision-output", event: "pre-tool-use", provider_version: "unknown"),
+    record_for(root, provider: "codex", contract_id: "codex.stop.deny", contract_kind: "decision-output", event: "stop", provider_action: "deny", provider_version: "unknown")
   ]
   %w[session-start user-prompt-submit pre-tool-use post-tool-use stop].each do |event|
-    records << unknown_only(record_for(root, provider: "codex", contract_id: "codex.#{event}.command", contract_kind: "command-execution", event: event))
+    records << record_for(root, provider: "codex", contract_id: "codex.#{event}.command", contract_kind: "command-execution", event: event, provider_version: "unknown")
   end
   write_manifest(root, "codex", payload_records + records)
 

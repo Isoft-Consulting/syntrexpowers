@@ -49,6 +49,13 @@ def safe_component(value)
   raw.match?(/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/) && component.match?(/\A[a-z0-9][a-z0-9._-]*\z/) ? component : "unknown"
 end
 
+def canonical_path(value)
+  path = Pathname.new(value.to_s).expand_path
+  path.exist? ? path.realpath : path.cleanpath
+rescue ArgumentError, Errno::ENOENT, SystemCallError
+  Pathname.new(value.to_s).expand_path.cleanpath
+end
+
 def inferred_install_root(state_root = nil)
   return Pathname.new(ENV["STRICT_INSTALL_ROOT"]).expand_path.cleanpath if ENV["STRICT_INSTALL_ROOT"]
 
@@ -65,11 +72,11 @@ def inferred_install_root(state_root = nil)
 end
 
 def hook_cwd
-  Pathname.new(ENV["STRICT_CWD"] || Dir.pwd).expand_path.cleanpath
+  canonical_path(ENV["STRICT_CWD"] || Dir.pwd)
 end
 
 def hook_project_dir(cwd)
-  Pathname.new(ENV["STRICT_PROJECT_DIR"] || cwd.to_s).expand_path.cleanpath
+  canonical_path(ENV["STRICT_PROJECT_DIR"] || cwd.to_s)
 end
 
 def preflight_not_attempted(logical_event)
@@ -168,9 +175,10 @@ rescue RuntimeError, SystemCallError, ArgumentError => e
 end
 
 def enforcing_hook_entry(context, provider, logical_event)
-  return nil unless context.fetch("trusted", false)
+  baseline = context.fetch("baseline", {})
+  return nil unless baseline.is_a?(Hash)
 
-  context.fetch("baseline").fetch("managed_hook_entries", []).find do |entry|
+  baseline.fetch("managed_hook_entries", []).find do |entry|
     entry.is_a?(Hash) &&
       entry["provider"] == provider &&
       entry["logical_event"] == logical_event &&
@@ -216,11 +224,47 @@ def provider_output_metadata(contract)
   metadata
 end
 
+def provider_output_metadata_from_contract_id(provider, logical_event, contract_id)
+  root = StrictModeMetadata.project_root
+  manifest_errors = StrictModeFixtures.validate_provider_manifest(root, provider)
+  raise manifest_errors.join("\n") unless manifest_errors.empty?
+
+  manifest = StrictModeFixtures.load_json(StrictModeFixtures.manifest_path(root, provider))
+  record = manifest.fetch("records").find do |candidate|
+    candidate["provider"] == provider &&
+      candidate["event"] == logical_event &&
+      candidate["contract_kind"] == "decision-output" &&
+      candidate["contract_id"] == contract_id
+  end
+  raise "selected output fixture record missing for #{provider} #{logical_event} #{contract_id}" unless record
+
+  metadata = StrictModeFixtureReadiness.decision_output_metadata(root, record)
+  raise "selected output provider metadata missing or invalid" unless metadata
+  metadata
+end
+
+def fail_closed_decision(logical_event, reason_code, message)
+  {
+    "schema_version" => 1,
+    "action" => "block",
+    "reason" => message,
+    "severity" => "critical",
+    "additional_context" => "",
+    "metadata" => {
+      "logical_event" => logical_event,
+      "reason_code" => reason_code
+    }
+  }
+end
+
 def internal_decision_from_preflight(preflight)
   block_reason = if preflight.fetch("attempted") && !preflight.fetch("trusted")
                    "strict-mode could not trust preflight: #{preflight.fetch("reason_code")}"
                  elsif preflight.fetch("would_block")
                    "strict-mode blocked operation: #{preflight.fetch("reason_code")}"
+                 elsif %w[stop permission-request].include?(preflight.fetch("logical_event")) &&
+                       preflight.fetch("attempted") == false
+                   "strict-mode #{preflight.fetch("logical_event")} guard requires provider continuation"
                  end
   action = block_reason ? "block" : "allow"
   {
@@ -240,6 +284,21 @@ end
 def enforcement_result(context, provider, logical_event, preflight)
   entry = enforcing_hook_entry(context, provider, logical_event)
   return { "active" => false, "emitted" => false, "failed_closed" => false, "output_contract_id" => "", "emission" => nil, "error" => "" } unless entry
+
+  unless context.fetch("trusted", false)
+    metadata = provider_output_metadata_from_contract_id(provider, logical_event, entry.fetch("output_contract_id"))
+    message = "strict-mode protected context is untrusted: #{(context.fetch("errors") + context.fetch("config_errors")).join("; ")}"
+    decision = fail_closed_decision(logical_event, "protected-baseline-untrusted", message)
+    emission = StrictModeDecisionContract.emit_provider_output(metadata, decision)
+    return {
+      "active" => true,
+      "emitted" => true,
+      "failed_closed" => true,
+      "output_contract_id" => entry.fetch("output_contract_id"),
+      "emission" => emission,
+      "error" => message
+    }
+  end
 
   contract = selected_output_contract(context, entry)
   raise "selected output contract missing for #{provider} #{logical_event} #{entry.fetch("output_contract_id")}" unless contract
@@ -343,7 +402,7 @@ if preflight.fetch("would_block") && !enforcement.fetch("active")
   warn "strict-hook preflight would block in enforcement: #{preflight.fetch("reason_code")} (discovery log-only)"
 end
 
-runtime_settings = protected_runtime_settings(state_root)
+runtime_settings = enforcement.fetch("failed_closed") ? {} : protected_runtime_settings(state_root)
 if runtime_settings["STRICT_CAPTURE_RAW_PAYLOADS"] == "1" && !payload_truncated && %w[claude codex].include?(provider) && provider_detection_decision == "match"
   begin
     raw_dir = log_dir.join("raw", provider, event_component)

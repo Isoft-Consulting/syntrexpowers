@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 from rag_universal.core import (
     DEFAULT_CONFIG,
     build_index,
+    document_status,
     ensure_fresh_index,
     extract_query_paths,
     index_coverage,
@@ -434,6 +435,52 @@ class RagUniversalTest(unittest.TestCase):
         results = search_index(root, None, "env storage dist secret build context", top_k=1, filter_source=".snapshots")
         self.assertEqual(results[0]["source"], "plugins/demo/.snapshots/1.0.0/seeds/demo.yaml")
         self.assertLess(results[0]["source_penalty"], 1.0)
+
+    def test_document_status_requires_status_marker_for_superseded_mentions(self) -> None:
+        active_spec = "# Spec\n\nStatus: executable MVP\n\nSupports canonical/superseded status detection."
+        draft_spec = "# Spec\n\nStatus: draft\n\nDecisions are intentionally not frozen yet."
+        not_ready_spec = "# Plan\n\nStatus: not ready\n\nStill blocked by missing proofs."
+        stale_spec = "# Old\n\nStatus: SUPERSEDED\n\nDo not implement from this report."
+        self.assertEqual(document_status("SPEC.md", "Spec", active_spec), "implementation_ready")
+        self.assertEqual(document_status("SPEC.md", "Spec", draft_spec), "normal")
+        self.assertEqual(document_status("Docs/plan.md", "Plan", not_ready_spec), "normal")
+        self.assertEqual(document_status("Docs/old.md", "Old", stale_spec), "superseded")
+
+    def test_fdr_mode_prefers_install_docs_over_provider_example_snippets(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "rag-universal-experimental" / "examples").mkdir(parents=True)
+        (root / "rag-universal-experimental" / "tests").mkdir(parents=True)
+        (root / "rag-universal-experimental" / "AGENT_INSTALL.md").write_text(
+            "# Agent Install Playbook\n\nUniversal RAG MCP for Codex, Claude, DeepSeek, and any stdio client.",
+            encoding="utf-8",
+        )
+        (root / "rag-universal-experimental" / "README.md").write_text(
+            "# Universal RAG\n\nModel-neutral MCP server for Codex, Claude, and DeepSeek.",
+            encoding="utf-8",
+        )
+        (root / "rag-universal-experimental" / "examples" / "mcp.deepseek.json").write_text(
+            '{"mcpServers":{"rag":{"command":"python3","args":["rag.py","serve-mcp"]}}}',
+            encoding="utf-8",
+        )
+        (root / "rag-universal-experimental" / "tests" / "test_rag_universal.py").write_text(
+            "def test_provider_neutral_rag():\n"
+            "    query = 'universal rag mcp claude deepseek codex'\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        results = search_index(root, None, "universal rag mcp claude deepseek codex", top_k=4, mode="fdr")
+        self.assertIn(
+            results[0]["source"],
+            {"rag-universal-experimental/AGENT_INSTALL.md", "rag-universal-experimental/README.md"},
+        )
+        self.assertNotEqual(results[0]["source"], "rag-universal-experimental/tests/test_rag_universal.py")
+        self.assertNotEqual(results[0]["source"], "rag-universal-experimental/examples/mcp.deepseek.json")
+        self.assertLess(
+            next(item for item in results if item["source"].endswith("mcp.deepseek.json"))["source_penalty"],
+            1.0,
+        )
 
     def test_fdr_mode_returns_role_diverse_evidence_bundle(self) -> None:
         temp = tempfile.TemporaryDirectory()

@@ -5,7 +5,17 @@
   "provider_version": "0.128.0",
   "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
   "event": "pre-tool-use",
+  "contract_id": "codex.pre-tool-use.command",
   "hook_command_executed": true,
+  "hook_argv": [
+    "strict-hook",
+    "--provider",
+    "codex",
+    "pre-tool-use"
+  ],
+  "hook_exit_status": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "discovery_recorded_at": "2026-05-07T15:25:20Z",
   "provider_detection_decision": "match",
   "payload_sha256": "72d98e256589b24b8d24fac645d93902dcf84cbd3e70bac5bb8b734b281ff093",

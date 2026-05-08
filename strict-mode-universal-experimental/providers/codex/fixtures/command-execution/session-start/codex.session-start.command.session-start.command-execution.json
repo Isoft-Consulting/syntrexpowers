@@ -5,7 +5,17 @@
   "provider_version": "0.128.0",
   "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
   "event": "session-start",
+  "contract_id": "codex.session-start.command",
   "hook_command_executed": true,
+  "hook_argv": [
+    "strict-hook",
+    "--provider",
+    "codex",
+    "session-start"
+  ],
+  "hook_exit_status": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "discovery_recorded_at": "2026-05-07T15:25:18Z",
   "provider_detection_decision": "match",
   "payload_sha256": "7f47abc95f2d537ff28fd02cb7e2581a1e2101da5e863c4813adc4fcc5567825",

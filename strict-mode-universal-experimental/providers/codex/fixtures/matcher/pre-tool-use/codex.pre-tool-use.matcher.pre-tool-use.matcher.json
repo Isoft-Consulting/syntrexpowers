@@ -5,6 +5,7 @@
   "provider_version": "0.128.0",
   "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
   "event": "pre-tool-use",
+  "contract_id": "codex.pre-tool-use.matcher",
   "matcher": ".*",
   "matched_tool_event": true,
   "provider_detection_decision": "match",

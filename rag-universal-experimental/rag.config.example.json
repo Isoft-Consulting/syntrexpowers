@@ -170,7 +170,8 @@
     ],
     "source_penalties": [
       { "pattern": "**/.snapshots/**", "multiplier": 0.12 },
-      { "pattern": "**/seeds/demo.yaml", "multiplier": 0.25 }
+      { "pattern": "**/seeds/demo.yaml", "multiplier": 0.25 },
+      { "pattern": "**/examples/**", "multiplier": 0.92 }
     ],
     "status_boosts": {
       "canonical": 1.18,

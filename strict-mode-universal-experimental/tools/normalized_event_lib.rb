@@ -617,7 +617,8 @@ module StrictModeNormalized
     raise "#{label} must be an absolute path" unless Pathname.new(value).absolute?
     raise "#{label} must not contain NUL or newline" if value.match?(/[\0\n\r]/)
 
-    Pathname.new(value).cleanpath.to_s
+    path = Pathname.new(value)
+    path.exist? ? path.realpath.to_s : path.cleanpath.to_s
   end
 
   def path_inside?(path, parent)
