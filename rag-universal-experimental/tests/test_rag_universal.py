@@ -26,6 +26,7 @@ from rag_universal.core import (
 )
 from rag_universal.eval_quality import evaluate_quality
 from rag_universal.knowledge import build_project_knowledge
+from rag_universal.knowledge import generate_project_profile
 from rag_universal.mcp_server import handle_message
 
 
@@ -131,7 +132,10 @@ class RagUniversalTest(unittest.TestCase):
 
         listed = handle_message({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, str(root), None)
         names = {tool["name"] for tool in listed["result"]["tools"]}
-        self.assertEqual({"rag_search", "rag_reindex", "rag_status", "rag_coverage", "rag_symbol", "rag_deps", "rag_knowledge_build"}, names)
+        self.assertEqual(
+            {"rag_search", "rag_reindex", "rag_status", "rag_coverage", "rag_symbol", "rag_deps", "rag_knowledge_build", "rag_knowledge_profile"},
+            names,
+        )
 
         called = handle_message(
             {
@@ -540,6 +544,36 @@ class RagUniversalTest(unittest.TestCase):
         categories = {row["category"] for row in patterns}
         self.assertIn("schema_form_contract", categories)
         self.assertIn("security_guard", categories)
+
+    def test_knowledge_mode_prioritizes_knowledge_pack(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "knowledge").mkdir()
+        (root / "Docs").mkdir()
+        (root / "knowledge" / "failure-taxonomy.md").write_text(
+            "# RAG Failure Taxonomy\n\n## route_contract\n\nRoute contract owner boundary lesson.",
+            encoding="utf-8",
+        )
+        (root / "Docs" / "generic.md").write_text(
+            "# Route Notes\n\nRoute contract owner boundary lesson.",
+            encoding="utf-8",
+        )
+        build_index(root)
+        results = search_index(root, None, "route contract owner boundary lesson", top_k=2, mode="knowledge")
+        self.assertEqual(results[0]["source"], "knowledge/failure-taxonomy.md")
+
+    def test_knowledge_profile_generates_generic_rules_from_layout(self) -> None:
+        root = self.make_project()
+        (root / "routes").mkdir()
+        (root / "tests").mkdir(exist_ok=True)
+        summary = generate_project_profile(root, "rag.knowledge.json", "demo")
+        self.assertGreaterEqual(summary["owner_rules"], 3)
+        profile = json.loads((root / "rag.knowledge.json").read_text(encoding="utf-8"))
+        prefixes = {item["prefix"] for item in profile["owner_rules"]}
+        self.assertIn("src/", prefixes)
+        self.assertIn("routes/", prefixes)
+        self.assertIn("tests/", prefixes)
 
 
 if __name__ == "__main__":

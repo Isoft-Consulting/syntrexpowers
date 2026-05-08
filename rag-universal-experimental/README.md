@@ -117,6 +117,7 @@ Task modes tune retrieval for common agent workflows:
 | `implementation` | Controllers, services, routes, stores, tests, and local contracts. |
 | `frontend` | SPA views, components, stores, API clients, routes, i18n, and frontend tests. |
 | `migration` | Schema changes, migrations, repositories, rollback/backfill contracts. |
+| `knowledge` | Project memory first: lessons, pattern registry, failure taxonomy, owner map, query templates. |
 
 `--with-plan` returns `{ results, read_plan, diagnostics }`. The read plan gives section-level `read_hint` values and a token-budget guard so clients can inspect specific sections first instead of opening whole files. Diagnostics also surface explicit paths from the query and suggested next steps when retrieval returns no results.
 
@@ -150,6 +151,15 @@ Docs/knowledge/rag/
 
 The generator is universal by default. It uses generic path ownership rules such as `src/`, `app/`, `routes/`, `tests/`, `docs/`, `plugins/`, `migrations/`, `Dockerfile`, and `.dockerignore`. Projects can pass an optional rules profile to improve owner names without changing the universal engine:
 
+Generate a starter profile from a project layout:
+
+```bash
+python3 tools/rag.py knowledge-profile \
+  --root /path/to/project \
+  --output rag.knowledge.json \
+  --project my-project
+```
+
 ```bash
 python3 tools/rag.py knowledge-build \
   --root /path/to/project \
@@ -160,6 +170,12 @@ python3 tools/rag.py knowledge-build \
 ```
 
 The checked-in `knowledge/core-review/` pack is a Core-specific example built from the `leonextra` review gold set using `examples/knowledge.core.json`. It demonstrates the format; other projects should generate their own pack from their own review/FDR cases.
+
+After indexing a project with a knowledge pack, use `mode=knowledge` before implementation/FDR work:
+
+```bash
+python3 tools/rag.py search --root /path/to/project "route contract owner boundary" --mode knowledge --with-plan
+```
 
 ## Tests
 

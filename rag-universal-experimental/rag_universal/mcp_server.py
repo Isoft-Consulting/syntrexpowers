@@ -5,7 +5,7 @@ import sys
 from typing import Any
 
 from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan
-from .knowledge import build_project_knowledge
+from .knowledge import build_project_knowledge, generate_project_profile
 
 
 def tool_definitions() -> list[dict[str, Any]]:
@@ -22,7 +22,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "filter_type": {"type": ["string", "null"], "default": None},
                     "mode": {
                         "type": "string",
-                        "enum": ["default", "fdr", "architecture", "implementation", "frontend", "migration"],
+                        "enum": ["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"],
                         "default": "default",
                     },
                     "with_plan": {"type": "boolean", "default": False},
@@ -95,6 +95,17 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "required": ["cases"],
             },
         },
+        {
+            "name": "rag_knowledge_profile",
+            "description": "Generate a starter project-specific knowledge rules profile from repository layout.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "output": {"type": "string", "default": "rag.knowledge.json"},
+                    "project": {"type": "string", "default": "project"},
+                },
+            },
+        },
     ]
 
 
@@ -160,6 +171,14 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
                 str(arguments.get("output", "Docs/knowledge/rag")),
                 str(arguments.get("project", "project")),
                 arguments.get("rules"),
+            )
+        )
+    if name == "rag_knowledge_profile":
+        return text_content(
+            generate_project_profile(
+                root,
+                str(arguments.get("output", "rag.knowledge.json")),
+                str(arguments.get("project", "project")),
             )
         )
     raise ValueError(f"unknown tool: {name}")

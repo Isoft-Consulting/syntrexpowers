@@ -95,6 +95,7 @@ Projects can loosen the rules explicitly in their own `rag.config.json`, but the
 - `python3 tools/rag.py search --root <repo> --config <config> "query"` returns ranked chunks.
 - `python3 tools/rag.py search --root <repo> --config <config> "query" --mode fdr` returns review-oriented evidence bundles across plan/spec, implementation, test, and build/config roles when available.
 - `python3 tools/rag.py search --root <repo> --config <config> "query" --mode architecture --with-plan` returns ranked chunks plus a section-level read plan and diagnostics.
+- `python3 tools/rag.py search --root <repo> --config <config> "query" --mode knowledge --with-plan` prioritizes generated project-memory packs.
 - Search results include `document_status`, `status_boost`, `section`, and `read_hint`.
 - Superseded or historical documents are downranked and marked as deprioritized in read plans.
 - `python3 tools/rag.py symbol --root <repo> --config <config> Name` returns exact symbol matches.
@@ -102,5 +103,6 @@ Projects can loosen the rules explicitly in their own `rag.config.json`, but the
 - `python3 tools/rag.py eval-quality --root <repo> --config <config> --cases <cases.json>` reports Top-1, Top-3, Top-5, Top-10, and MRR.
 - `python3 tools/rag.py knowledge-build --root <repo> --cases <cases.json> --output Docs/knowledge/rag --project <name>` writes normalized lessons, pattern registry, failure taxonomy, owner map, query templates, and summary.
 - `knowledge-build --rules <rules.json>` may add project-specific owner mappings while keeping the generator itself project-neutral.
+- `python3 tools/rag.py knowledge-profile --root <repo> --output rag.knowledge.json --project <name>` writes a starter rules profile from the repository layout.
 - `python3 tools/rag.py serve-mcp --root <repo> --config <config>` speaks MCP stdio.
 - Tests prove secret path exclusion, index artifact generation, search ranking, symbol lookup, dependency lookup, provider-neutral initialize handling, and MCP tool dispatch.

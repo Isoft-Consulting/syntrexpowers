@@ -215,6 +215,14 @@
         "spec": 1.08,
         "plan": 1.06,
         "config": 1.06
+      },
+      "knowledge": {
+        "docs": 1.25,
+        "config": 1.12,
+        "spec": 1.08,
+        "plan": 1.06,
+        "test": 0.94,
+        "implementation": 0.88
       }
     },
     "fdr_query_expansions": {
@@ -230,7 +238,8 @@
       "architecture": ["canonical", "master spec", "owner", "boundary", "forbidden", "runtime owner"],
       "implementation": ["controller", "service", "route", "store", "test", "contract"],
       "frontend": ["view", "component", "store", "api client", "i18n", "route", "test"],
-      "migration": ["migration", "schema", "repository", "rollback", "backfill", "contract test"]
+      "migration": ["migration", "schema", "repository", "rollback", "backfill", "contract test"],
+      "knowledge": ["knowledge", "lesson", "pattern registry", "failure taxonomy", "owner map", "query template"]
     },
     "expand_english_synonyms": false,
     "preview_chars": 500

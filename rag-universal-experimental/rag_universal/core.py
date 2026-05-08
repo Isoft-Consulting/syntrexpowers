@@ -22,7 +22,7 @@ SOURCE_STATE_VERSION = "rag.source-state.v1"
 SEARCH_CACHE_VERSION = "rag.search-cache.v1"
 CHUNKER_VERSION = "lexical-chunker.v1"
 TOKENIZER_VERSION = "unicode-tokenizer.v1"
-SEARCH_VERSION = "hash-vector-bm25.v6"
+SEARCH_VERSION = "hash-vector-bm25.v7"
 
 _SEARCH_CACHE_CONNECTIONS: dict[tuple[str, float, int], sqlite3.Connection] = {}
 
@@ -244,6 +244,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
                 "plan": 1.06,
                 "config": 1.06,
             },
+            "knowledge": {
+                "docs": 1.25,
+                "config": 1.12,
+                "spec": 1.08,
+                "plan": 1.06,
+                "test": 0.94,
+                "implementation": 0.88,
+            },
         },
         "fdr_query_expansions": {
             "autoload": ["bootstrap", "require", "include", "runtime dependency"],
@@ -259,6 +267,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "implementation": ["controller", "service", "route", "store", "test", "contract"],
             "frontend": ["view", "component", "store", "api client", "i18n", "route", "test"],
             "migration": ["migration", "schema", "repository", "rollback", "backfill", "contract test"],
+            "knowledge": ["knowledge", "lesson", "pattern registry", "failure taxonomy", "owner map", "query template"],
         },
         "preview_chars": 500,
         "expand_english_synonyms": False,
@@ -1310,7 +1319,22 @@ def normalize_search_mode(mode: str | None) -> str:
         return "frontend"
     if normalized in ("migration", "migrations", "schema"):
         return "migration"
+    if normalized in ("knowledge", "lessons", "patterns", "taxonomy"):
+        return "knowledge"
     return "default"
+
+
+def mode_source_boost(source: str, config: dict[str, Any], mode: str) -> float:
+    if normalize_search_mode(mode) != "knowledge":
+        return 1.0
+    lower = source.lower()
+    if lower.startswith("knowledge/") or "/knowledge/" in f"/{lower}":
+        return 1.6
+    if lower.startswith("docs/knowledge/"):
+        return 1.6
+    if lower.endswith(("patterns.md", "failure-taxonomy.md", "owner-map.md", "query-templates.md", "lessons.jsonl")):
+        return 1.35
+    return 1.0
 
 
 def fdr_role(source: str, artifact: str) -> str:
@@ -1572,6 +1596,7 @@ def rows_to_results(
             float(config.get("search", {}).get("explicit_path_boost", 0.75)) * path_match
             * artifact_boost(source, chunk_type, config)
             * fdr_role_boost(source, chunk_type, config, mode)
+            * mode_source_boost(source, config, mode)
             * penalty
             * doc_status_boost
         )
@@ -1699,6 +1724,7 @@ def search_precomputed_cache(
         role = fdr_role(source, chunk_type)
         score *= artifact_boost(source, chunk_type, config)
         score *= fdr_role_boost(source, chunk_type, config, search_mode)
+        score *= mode_source_boost(source, config, search_mode)
         score *= penalty
         score *= doc_status_boost
         if score < min_score:
@@ -1892,6 +1918,7 @@ def search_index(
         role = fdr_role(source, chunk_type)
         score *= artifact_boost(source, chunk_type, config)
         score *= fdr_role_boost(source, chunk_type, config, search_mode)
+        score *= mode_source_boost(source, config, search_mode)
         score *= penalty
         score *= doc_status_boost
         if score < min_score:

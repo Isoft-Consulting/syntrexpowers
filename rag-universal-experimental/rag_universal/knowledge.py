@@ -85,6 +85,25 @@ def resolve_owner_rules(rules: dict[str, Any] | None = None) -> list[tuple[str, 
     return custom_rows + resolved
 
 
+def resolve_category_rules(rules: dict[str, Any] | None = None) -> list[tuple[str, list[str]]]:
+    resolved = list(CATEGORY_RULES)
+    if not isinstance(rules, dict):
+        return resolved
+    custom = rules.get("category_rules", [])
+    custom_rows: list[tuple[str, list[str]]] = []
+    if isinstance(custom, list):
+        for item in custom:
+            if not isinstance(item, dict):
+                continue
+            category = str(item.get("category", "")).strip()
+            signals_raw = item.get("signals", [])
+            signals = [str(signal).strip() for signal in signals_raw] if isinstance(signals_raw, list) else []
+            signals = [signal for signal in signals if signal]
+            if category and signals:
+                custom_rows.append((category, signals))
+    return custom_rows + resolved
+
+
 def load_cases(path: str | Path) -> list[dict[str, Any]]:
     value = json.loads(Path(path).read_text(encoding="utf-8"))
     return value if isinstance(value, list) else []
@@ -100,10 +119,10 @@ def infer_severity(text: str) -> str:
     return "UNKNOWN"
 
 
-def infer_categories(text: str, paths: list[str]) -> list[str]:
+def infer_categories(text: str, paths: list[str], category_rules: list[tuple[str, list[str]]] | None = None) -> list[str]:
     lower = text.lower()
     categories: set[str] = set()
-    for category, signals in CATEGORY_RULES:
+    for category, signals in category_rules or CATEGORY_RULES:
         if any(signal.lower() in lower for signal in signals):
             categories.add(category)
     path_blob = " ".join(paths).lower()
@@ -134,7 +153,11 @@ def summarize_text(text: str, limit: int = 220) -> str:
     return compact[:limit].rstrip()
 
 
-def normalize_case(case: dict[str, Any], owner_rules: list[tuple[str, str, str]] | None = None) -> dict[str, Any]:
+def normalize_case(
+    case: dict[str, Any],
+    owner_rules: list[tuple[str, str, str]] | None = None,
+    category_rules: list[tuple[str, list[str]]] | None = None,
+) -> dict[str, Any]:
     query = str(case.get("query", ""))
     expected = [str(item) for item in case.get("expected_sources", []) if str(item).strip()]
     cited = extract_query_paths(query)
@@ -158,7 +181,7 @@ def normalize_case(case: dict[str, Any], owner_rules: list[tuple[str, str, str]]
         "author": case.get("author"),
         "kind": case.get("kind"),
         "severity": infer_severity(query),
-        "categories": infer_categories(query, paths),
+        "categories": infer_categories(query, paths, category_rules),
         "target_paths": expected,
         "cited_paths": cited,
         "owners": owners,
@@ -298,9 +321,10 @@ def write_knowledge_pack(
     cases = load_cases(cases_path)
     rules = load_rules(rules_path)
     owner_rules = resolve_owner_rules(rules)
+    category_rules = resolve_category_rules(rules)
     out_dir = Path(out_dir_arg)
     out_dir.mkdir(parents=True, exist_ok=True)
-    lessons = [normalize_case(case, owner_rules) for case in cases]
+    lessons = [normalize_case(case, owner_rules, category_rules) for case in cases]
     patterns = pattern_rows(lessons)
     owners = owner_rows(lessons, owner_rules)
     lesson_lines = "".join(json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n" for item in lessons)
@@ -318,6 +342,8 @@ def write_knowledge_pack(
         "patterns": len(patterns),
         "owners": len(owners),
         "rules_path": str(rules_path) if rules_path else None,
+        "category_rules": len(category_rules),
+        "owner_rules": len(owner_rules),
         "out_dir": str(out_dir),
         "artifacts": [
             "lessons.jsonl",
@@ -350,3 +376,70 @@ def build_project_knowledge(
         if not rules.exists():
             rules = Path.cwd() / str(rules_path)
     return write_knowledge_pack(cases_path, out_path, project_name, rules)
+
+
+PROFILE_CANDIDATES: list[tuple[str, str, str]] = [
+    ("src/", "Application Source", "main application source code"),
+    ("app/", "Application Source", "main application source code"),
+    ("lib/", "Library Source", "shared libraries and reusable modules"),
+    ("cmd/", "CLI/Services", "commands, service entrypoints, daemons"),
+    ("bin/", "CLI/Workers", "scripts, workers, validation commands"),
+    ("routes/", "HTTP Routes", "route declarations and route modules"),
+    ("controllers/", "HTTP Controllers", "controller contracts"),
+    ("config/", "Configuration", "runtime configuration"),
+    ("migrations/", "Database Migrations", "schema evolution"),
+    ("database/", "Database", "database schemas, seeds, migrations"),
+    ("tests/", "Tests", "unit, integration, feature, contract tests"),
+    ("test/", "Tests", "unit, integration, feature, contract tests"),
+    ("spec/", "Tests", "spec tests"),
+    ("docs/", "Documentation", "specs, plans, guides, knowledge"),
+    ("Docs/", "Documentation", "specs, plans, guides, knowledge"),
+    ("plugins/", "Plugin/Extension Surface", "plugin manifests, extension code, plugin schemas"),
+    ("packages/", "Packages", "workspace packages"),
+    ("frontend/", "Frontend", "frontend application code"),
+    ("ui/", "Frontend", "frontend application code"),
+    ("web/", "Frontend", "web application code"),
+    ("public/", "Public Assets", "public/static assets"),
+    ("docker/", "Docker Build", "image build contracts"),
+]
+
+
+def generate_project_profile(
+    root_arg: str | Path | None,
+    output: str | Path = "rag.knowledge.json",
+    project_name: str = "project",
+) -> dict[str, Any]:
+    root = resolve_root(root_arg)
+    owner_rules: list[dict[str, str]] = []
+    for prefix, owner, scope in PROFILE_CANDIDATES:
+        candidate = root / prefix.rstrip("/")
+        if candidate.exists():
+            owner_rules.append({"prefix": prefix, "owner": owner, "scope": scope})
+    for filename, owner, scope in [
+        ("Dockerfile", "Docker Build", "image build contracts"),
+        (".dockerignore", "Docker Build", "build context and secret exclusion"),
+    ]:
+        if (root / filename).exists():
+            owner_rules.append({"prefix": filename, "owner": owner, "scope": scope})
+
+    profile = {
+        "project": project_name,
+        "schema_version": "rag.knowledge-rules.v1",
+        "owner_rules": owner_rules,
+        "category_rules": [
+            {
+                "category": "project_specific_contract",
+                "signals": ["contract", "canonical", "owner", "boundary"],
+            }
+        ],
+    }
+    out_path = Path(output)
+    if not out_path.is_absolute():
+        out_path = root / out_path
+    write_json_atomic(out_path, profile)
+    return {
+        "project": project_name,
+        "output": str(out_path),
+        "owner_rules": len(owner_rules),
+        "category_rules": len(profile["category_rules"]),
+    }

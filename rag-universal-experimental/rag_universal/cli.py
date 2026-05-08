@@ -7,7 +7,7 @@ from typing import Any
 
 from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan
 from .eval_quality import evaluate_quality
-from .knowledge import build_project_knowledge
+from .knowledge import build_project_knowledge, generate_project_profile
 from .mcp_server import run_stdio
 
 
@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--top-k", type=int, default=5)
     search.add_argument("--filter-source", default=None)
     search.add_argument("--filter-type", default=None)
-    search.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration"], default="default")
+    search.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"], default="default")
     search.add_argument("--with-plan", action="store_true", help="Return results with a section-level read plan.")
 
     symbol = subparsers.add_parser("symbol", help="Look up exact symbols")
@@ -47,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_quality = subparsers.add_parser("eval-quality", help="Compare RAG retrieval against keyword baseline")
     eval_quality.add_argument("--cases", required=True, help="Gold query JSON file.")
     eval_quality.add_argument("--top-k", type=int, default=10)
-    eval_quality.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration"], default="default")
+    eval_quality.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"], default="default")
     eval_quality.add_argument("--skip-baseline", action="store_true", help="Skip keyword baseline; useful for large path-focused gold sets.")
     eval_quality.add_argument("--summary-only", action="store_true", help="Omit per-case details from output.")
 
@@ -56,6 +56,10 @@ def build_parser() -> argparse.ArgumentParser:
     knowledge.add_argument("--output", default="Docs/knowledge/rag", help="Output directory relative to root unless absolute.")
     knowledge.add_argument("--project", default="project", help="Project name used in summary metadata.")
     knowledge.add_argument("--rules", default=None, help="Optional project-specific knowledge rules JSON.")
+
+    profile = subparsers.add_parser("knowledge-profile", help="Generate a starter project-specific knowledge rules profile")
+    profile.add_argument("--output", default="rag.knowledge.json", help="Output rules file relative to root unless absolute.")
+    profile.add_argument("--project", default="project", help="Project name used in profile metadata.")
 
     subparsers.add_parser("serve-mcp", help="Run MCP stdio server")
     return parser
@@ -109,6 +113,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "knowledge-build":
         emit(build_project_knowledge(args.root, args.cases, args.output, args.project, args.rules))
+        return 0
+    if args.command == "knowledge-profile":
+        emit(generate_project_profile(args.root, args.output, args.project))
         return 0
     if args.command == "serve-mcp":
         return run_stdio(args.root, args.config)
