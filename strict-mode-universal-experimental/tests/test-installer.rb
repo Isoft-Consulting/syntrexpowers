@@ -14,6 +14,7 @@ require_relative "../tools/global_ledger_lib"
 require_relative "../tools/global_lock_lib"
 require_relative "../tools/hook_entry_plan_lib"
 require_relative "../tools/metadata_lib"
+require_relative "../tools/provider_config_fingerprint_lib"
 
 ROOT = StrictModeMetadata.project_root
 INSTALL = ROOT.join("install.sh")
@@ -79,7 +80,7 @@ end
 def assert_file_record_hashes(name, records)
   records.each do |record|
     path = Pathname.new(record.fetch("path"))
-    expected = path.file? ? Digest::SHA256.file(path).hexdigest : "0" * 64
+    expected = StrictModeProviderConfigFingerprint.content_sha256(path, record.fetch("kind"), record.fetch("provider", ""))
     assert(name, record.fetch("content_sha256") == expected, "#{path}: stale file record hash")
   end
 end
@@ -123,13 +124,14 @@ def file_record(path, kind, provider = "")
     "dev" => stat ? stat.dev : 0,
     "inode" => stat ? stat.ino : 0,
     "size_bytes" => stat ? stat.size : 0,
-    "content_sha256" => exists == 1 ? Digest::SHA256.file(path).hexdigest : "0" * 64
+    "content_sha256" => StrictModeProviderConfigFingerprint.content_sha256(path, kind, provider)
   }
 end
 
 def protected_file_inode_index(records)
   records.flatten.each_with_object({}) do |record, index|
     next unless record.fetch("exists", 0) == 1
+    next if StrictModeProviderConfigFingerprint.mutable_provider_state_record?(record.fetch("path"), record.fetch("kind"), record.fetch("provider", ""))
     next if record.fetch("dev", 0).to_i.zero? || record.fetch("inode", 0).to_i.zero?
 
     key = "#{record.fetch("dev")}:#{record.fetch("inode")}"

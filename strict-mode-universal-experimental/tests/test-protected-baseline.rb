@@ -56,6 +56,13 @@ def write_file(path, bytes)
   path
 end
 
+def atomic_rewrite(path, bytes)
+  tmp = path.dirname.join(".#{path.basename}.tmp")
+  tmp.write(bytes)
+  File.chmod(0o600, tmp)
+  File.rename(tmp, path)
+end
+
 def rewrite_inode_index_provider!(baseline, path, kind, provider)
   baseline.fetch("protected_file_inode_index").each_value do |entries|
     entries.each do |entry|
@@ -104,6 +111,42 @@ with_install do |_root, home, install_root, state_root, project|
   assert(name, loaded.fetch("protected_inodes").any? { |entry| entry.fetch("path") == install_root.join("config/runtime.env").to_s }, "runtime.env inode missing")
   assert(name, loaded.fetch("protected_inodes").any? { |entry| entry.fetch("kind") == "install-manifest" && entry.fetch("path") == install_root.join("install-manifest.json").to_s }, "install manifest inode missing")
   assert(name, loaded.fetch("destructive_patterns").empty?, "comment-only destructive template should load empty records")
+end
+
+with_install(provider: "codex") do |_root, home, install_root, _state_root, project|
+  name = "codex hook trust state can change without invalidating protected config"
+  config = home.join(".codex/config.toml")
+  hook_key = "#{home}/.codex/hooks.json:pre_tool_use:0:0"
+  atomic_rewrite(config, "#{config.read}\n[hooks.state]\n\n[hooks.state.\"#{hook_key}\"]\ntrusted_hash = \"sha256:#{"a" * 64}\"\n")
+
+  loaded = StrictModeProtectedBaseline.load(install_root: install_root, project_dir: project, home: home)
+  assert(name, loaded.fetch("trusted"), "Codex hooks.state drift should remain trusted", loaded.fetch("errors").join("\n"))
+  assert(name, loaded.fetch("protected_inodes").any? { |entry| entry.fetch("path") == config.to_s && entry.fetch("mutable_provider_state") == true }, "mutable Codex config.toml current inode missing")
+
+  alias_path = project.join("codex-config-hardlink")
+  File.link(config, alias_path)
+  direct = StrictModeDestructiveGate.classify_tool(
+    { "kind" => "write", "file_path" => alias_path.to_s },
+    cwd: project,
+    project_dir: project,
+    protected_roots: loaded.fetch("protected_roots"),
+    protected_inodes: loaded.fetch("protected_inodes"),
+    destructive_patterns: loaded.fetch("destructive_patterns"),
+    home: home,
+    install_root: install_root
+  )
+  assert(name, direct.fetch("decision") == "block" && direct.fetch("reason_code") == "protected-root", "Codex config hardlink alias did not block", direct.inspect)
+end
+
+with_install(provider: "codex") do |_root, home, install_root, _state_root, project|
+  name = "codex non-state config drift remains protected"
+  config = home.join(".codex/config.toml")
+  hook_state = "\n[hooks.state]\n\n[hooks.state.\"#{home}/.codex/hooks.json:pre_tool_use:0:0\"]\ntrusted_hash = \"sha256:#{"b" * 64}\"\n"
+  atomic_rewrite(config, config.read.sub("codex_hooks = true", "codex_hooks = false") + hook_state)
+
+  loaded = StrictModeProtectedBaseline.load(install_root: install_root, project_dir: project, home: home)
+  assert(name, !loaded.fetch("trusted"), "Codex feature flag drift loaded as trusted")
+  assert(name, loaded.fetch("errors").any? { |message| message.include?("content_sha256 mismatch") }, "missing Codex stable content diagnostic", loaded.fetch("errors").join("\n"))
 end
 
 custom_config = lambda do |_root, _home, install_root, project|

@@ -13,6 +13,7 @@ require_relative "global_lock_lib"
 require_relative "hook_entry_plan_lib"
 require_relative "metadata_lib"
 require_relative "protected_baseline_lib"
+require_relative "provider_config_fingerprint_lib"
 require_relative "transaction_marker_lib"
 
 ZERO_HASH = "0" * 64
@@ -69,7 +70,7 @@ def file_record(path, kind, provider = "")
     "dev" => stat ? stat.dev : 0,
     "inode" => stat ? stat.ino : 0,
     "size_bytes" => stat ? stat.size : 0,
-    "content_sha256" => exists == 1 ? sha256_file(path) : ZERO_HASH
+    "content_sha256" => StrictModeProviderConfigFingerprint.content_sha256(path, kind, provider)
   }
 end
 
@@ -81,6 +82,7 @@ def protected_file_inode_index(records)
   index = {}
   records.flatten.each do |record|
     next unless record.fetch("exists", 0) == 1
+    next if StrictModeProviderConfigFingerprint.mutable_provider_state_record?(record.fetch("path"), record.fetch("kind"), record.fetch("provider", ""))
 
     dev = record.fetch("dev", 0)
     inode = record.fetch("inode", 0)

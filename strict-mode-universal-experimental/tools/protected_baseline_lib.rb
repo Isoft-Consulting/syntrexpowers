@@ -8,6 +8,7 @@ require_relative "fixture_readiness_lib"
 require_relative "hook_entry_plan_lib"
 require_relative "metadata_lib"
 require_relative "protected_config_lib"
+require_relative "provider_config_fingerprint_lib"
 
 module StrictModeProtectedBaseline
   extend self
@@ -563,9 +564,14 @@ module StrictModeProtectedBaseline
 
       stat = path.stat
       expected_hash = record.fetch("content_sha256", "")
-      current_hash = Digest::SHA256.file(path).hexdigest
+      mutable_provider_state = StrictModeProviderConfigFingerprint.mutable_provider_state_record?(record.fetch("path", ""), record.fetch("kind", ""), record.fetch("provider", ""))
+      current_hash = StrictModeProviderConfigFingerprint.content_sha256(path, record.fetch("kind", ""), record.fetch("provider", ""))
       errors << "#{path}: content_sha256 mismatch" unless expected_hash == current_hash
-      if record.key?("dev") && record.key?("inode") && record["dev"].to_i.positive? && record["inode"].to_i.positive?
+      if mutable_provider_state
+        # Codex owns [hooks.state] in config.toml and may rewrite the file after
+        # hook trust prompts. Keep the stable TOML content protected, but do not
+        # bind this provider-managed state file to inode or byte-size drift.
+      elsif record.key?("dev") && record.key?("inode") && record["dev"].to_i.positive? && record["inode"].to_i.positive?
         errors << "#{path}: dev/inode mismatch" unless record["dev"] == stat.dev && record["inode"] == stat.ino
       else
         errors << "#{path}: protected file record missing dev/inode"
@@ -585,13 +591,15 @@ module StrictModeProtectedBaseline
       else
         errors << "#{path}: protected file record missing mode"
       end
-      if record.key?("size_bytes") && record["size_bytes"].is_a?(Integer)
+      if mutable_provider_state
+        errors << "#{path}: size_bytes must be an integer" unless record.key?("size_bytes") && record["size_bytes"].is_a?(Integer)
+      elsif record.key?("size_bytes") && record["size_bytes"].is_a?(Integer)
         errors << "#{path}: size_bytes mismatch" unless record["size_bytes"] == stat.size
       else
         errors << "#{path}: protected file record missing size_bytes"
       end
 
-      inodes << {
+      inode_record = {
         "dev" => stat.dev,
         "inode" => stat.ino,
         "path" => path.to_s,
@@ -599,6 +607,8 @@ module StrictModeProtectedBaseline
         "provider" => record.fetch("provider", ""),
         "content_sha256" => current_hash
       }
+      inode_record["mutable_provider_state"] = true if mutable_provider_state
+      inodes << inode_record
     rescue KeyError => e
       errors << "#{path || '<unknown>'}: file record missing #{e.key}"
     rescue SystemCallError => e
@@ -638,7 +648,7 @@ module StrictModeProtectedBaseline
     end
     errors << "protected_file_inode_index must not be empty" if index.empty?
     indexed_keys = index.keys.sort
-    expected_keys = protected_inodes.map { |inode| "#{inode.fetch("dev")}:#{inode.fetch("inode")}" }.uniq.sort
+    expected_keys = expected_inode_index(protected_inodes).keys.sort
     missing = expected_keys - indexed_keys
     extra = indexed_keys - expected_keys
     errors << "protected_file_inode_index missing keys #{missing.join(", ")}" unless missing.empty?
@@ -659,6 +669,8 @@ module StrictModeProtectedBaseline
   def expected_inode_index(protected_inodes)
     grouped = {}
     protected_inodes.each do |inode|
+      next if StrictModeProviderConfigFingerprint.mutable_provider_state_record?(inode.fetch("path"), inode.fetch("kind"), inode.fetch("provider", ""))
+
       key = "#{inode.fetch("dev")}:#{inode.fetch("inode")}"
       grouped[key] ||= []
       grouped[key] << {
