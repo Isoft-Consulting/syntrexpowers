@@ -1672,6 +1672,16 @@ def fetch_cached_docs(connection: sqlite3.Connection, doc_ids: set[int]) -> dict
     return docs
 
 
+def cached_row_matches_filters(row: sqlite3.Row, filter_source: str | None, filter_type: str | None) -> bool:
+    source = str(row["source"] or "")
+    chunk_type = str(row["artifact_type"] or "")
+    if filter_source and filter_source not in source:
+        return False
+    if filter_type and not chunk_type.startswith(filter_type):
+        return False
+    return True
+
+
 def rows_to_results(
     rows: list[sqlite3.Row],
     config: dict[str, Any],
@@ -1750,7 +1760,8 @@ def search_precomputed_cache(
     path_matches = fetch_path_candidates(connection, extract_query_paths(query))
     if path_matches and bool(search_cfg.get("explicit_path_priority", True)):
         path_docs = fetch_cached_docs(connection, set(path_matches))
-        path_results = rows_to_results(list(path_docs.values()), config, path_matches, search_mode)
+        path_rows = [row for row in path_docs.values() if cached_row_matches_filters(row, filter_source, filter_type)]
+        path_results = rows_to_results(path_rows, config, path_matches, search_mode)
         if path_results:
             return select_search_results(path_results, top_k, max_chunks_per_source, "default")
 

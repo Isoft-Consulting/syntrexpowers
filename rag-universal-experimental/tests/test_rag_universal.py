@@ -414,6 +414,26 @@ class RagUniversalTest(unittest.TestCase):
         )
         self.assertEqual([item["source"] for item in results], ["src/one.py", "src/two.py"])
 
+    def test_explicit_path_fast_path_respects_filters(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "docs").mkdir()
+        (root / "src").mkdir()
+        (root / "docs" / "Target.md").write_text("alpha beta cited docs", encoding="utf-8")
+        (root / "src" / "Other.py").write_text("alpha beta filtered implementation", encoding="utf-8")
+        build_index(root)
+
+        source_filtered = search_index(root, None, "review docs/Target.md alpha beta", top_k=3, filter_source="src")
+        self.assertTrue(source_filtered)
+        self.assertTrue(all("src" in item["source"] for item in source_filtered))
+        self.assertNotIn("docs/Target.md", [item["source"] for item in source_filtered])
+
+        type_filtered = search_index(root, None, "review docs/Target.md alpha beta", top_k=3, filter_type="python")
+        self.assertTrue(type_filtered)
+        self.assertTrue(all(item["artifact_type"].startswith("python") for item in type_filtered))
+        self.assertNotIn("docs/Target.md", [item["source"] for item in type_filtered])
+
     def test_query_term_trimming_keeps_high_signal_terms(self) -> None:
         counts = token_counts("the and " + " ".join(f"term{i}" for i in range(40)) + " Dockerfile Dockerfile")
         trimmed = trim_query_counts(
