@@ -66,7 +66,7 @@ python3 .mcp/rag-server/tools/rag.py status --root . --config rag.config.json
 python3 .mcp/rag-server/tools/rag.py search --root . "project overview" --config rag.config.json --with-plan --auto-reindex
 ```
 
-Keep generated/runtime directories excluded. Common examples:
+List values in `rag.config.json` replace the built-in defaults. If you override `exclude_dirs`, keep the full safety set and add project-specific entries to it:
 
 ```json
 {
@@ -74,15 +74,40 @@ Keep generated/runtime directories excluded. Common examples:
   "exclude_dirs": [
     ".git",
     ".mcp",
+    ".claude",
+    ".codex",
+    ".agents",
+    ".rag-index",
     "node_modules",
+    "bower_components",
     "vendor",
     "dist",
     "build",
+    "out",
+    "target",
+    "coverage",
+    "evals",
     "storage",
     "payload",
     "sessions",
     "_tmp_storage",
-    "_tmp_payload_storage"
+    "_tmp_payload_storage",
+    ".idea",
+    ".vscode",
+    ".next",
+    ".nuxt",
+    ".vite",
+    ".turbo",
+    ".yarn",
+    ".pnpm-store",
+    ".cache",
+    "cache",
+    "tmp",
+    "temp",
+    "logs",
+    "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache"
   ]
 }
 ```

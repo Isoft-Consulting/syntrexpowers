@@ -242,12 +242,12 @@ For large path-focused gold sets, skip the expensive keyword baseline and emit o
 python3 tools/rag.py eval-quality --root /path/to/project --config /path/to/rag.config.json --cases evals/core-leonextra-path-gold.json --mode fdr --skip-baseline --summary-only
 ```
 
-Current `syntrexpowers` gold-set result after v6 lexical ranking:
+Current `syntrexpowers` gold-set result after v9 lexical ranking:
 
 | Mode | Top-1 | Top-3 | Top-5 | Top-10 | MRR |
 |---|---:|---:|---:|---:|---:|
-| RAG v6 | 8/10 | 10/10 | 10/10 | 10/10 | 0.900 |
-| Keyword baseline | 6/10 | 10/10 | 10/10 | 10/10 | 0.767 |
+| RAG v9 | 10/10 | 10/10 | 10/10 | 10/10 | 1.000 |
+| Keyword baseline | 5/10 | 10/10 | 10/10 | 10/10 | 0.717 |
 
 ## Current Limits
 

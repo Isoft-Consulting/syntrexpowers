@@ -267,6 +267,12 @@ class RagUniversalTest(unittest.TestCase):
         sources = {chunk["source"] for chunk in load_chunks(root / ".rag-index")}
         self.assertNotIn("storage/payload/work_items/payload.json", sources)
 
+    def test_agent_install_exclude_dirs_snippet_preserves_safe_defaults(self) -> None:
+        guide = (ROOT / "AGENT_INSTALL.md").read_text(encoding="utf-8")
+        snippet = guide.split("If you override `exclude_dirs`", 1)[1].split("```json", 1)[1].split("```", 1)[0]
+        documented_config = json.loads(snippet)
+        self.assertTrue(set(DEFAULT_CONFIG["exclude_dirs"]).issubset(set(documented_config["exclude_dirs"])))
+
     def test_force_include_contract_tests_and_coverage_report(self) -> None:
         root = self.make_project()
         (root / "tests" / "Unit").mkdir(parents=True)
