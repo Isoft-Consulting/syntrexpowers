@@ -702,6 +702,26 @@ with_root do |root|
   record_failure(name, "missing hash mismatch diagnostic", output) unless output.include?("manifest_hash mismatch")
 end
 
+$cases += 1
+begin
+  name = "readme codex exact fixture selectors match checked-in manifest"
+  readme = ROOT.join("README.md").read
+  manifest = StrictModeFixtures.load_json(StrictModeFixtures.manifest_path(ROOT, "codex"))
+  versions = manifest.fetch("records").map { |record| record.fetch("provider_version") }.uniq.sort
+  build_hashes = manifest.fetch("records").map { |record| record.fetch("provider_build_hash") }.reject(&:empty?).uniq.sort
+  unless versions.size == 1 && build_hashes.size == 1
+    record_failure(name, "expected one checked-in Codex version/build hash", { "versions" => versions, "build_hashes" => build_hashes }.inspect)
+  else
+    version = versions.fetch(0)
+    build_hash = build_hashes.fetch(0)
+    record_failure(name, "README missing checked-in provider version #{version}") unless readme.include?("--provider-version codex=#{version}")
+    record_failure(name, "README missing checked-in provider build hash #{build_hash}") unless readme.include?("--provider-build-hash codex=#{build_hash}")
+    record_failure(name, "README still documents stale codex=1.0.0 selector") if version != "1.0.0" && readme.include?("--provider-version codex=1.0.0")
+  end
+rescue StandardError => e
+  record_failure("readme codex exact fixture selectors match checked-in manifest", e.message)
+end
+
 if $failures.empty?
   puts "fixture readiness tests passed (#{$cases} cases)"
 else

@@ -35,7 +35,7 @@ Or run the combined local gate:
 tests/run-tests.sh
 ```
 
-`install.sh --enforce --plan-only` runs fixture readiness and emits a JSON hook plan with selected output contracts, but does not acquire install locks, copy releases, create transaction markers, or mutate provider configs. `install.sh --enforce` performs a real install only after the same readiness gate passes; with the current checked-in required fixture gaps it fails closed. Pass exact installed versions as `--provider-version codex=1.0.0` and exact build hashes as `--provider-build-hash codex=<sha256>` when validating exact-version/build fixture proofs. `--dry-run` is an alias for non-enforcing plan-only mode.
+`install.sh --enforce --plan-only` runs fixture readiness and emits a JSON hook plan with selected output contracts, but does not acquire install locks, copy releases, create transaction markers, or mutate provider configs. `install.sh --enforce` performs a real install only after the same readiness gate passes; with the current checked-in required fixture gaps it fails closed. Pass exact installed versions and exact build hashes when validating exact-version/build fixture proofs; the checked-in Codex proof set currently uses `--provider-version codex=0.128.0` and `--provider-build-hash codex=baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9`. `--dry-run` is an alias for non-enforcing plan-only mode.
 
 To inspect the current enforcing blockers as a structured report, run:
 

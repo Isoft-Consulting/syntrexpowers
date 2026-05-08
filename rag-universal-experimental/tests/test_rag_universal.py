@@ -12,11 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from rag_universal.core import (
+    DEFAULT_CONFIG,
     build_index,
     ensure_fresh_index,
     index_coverage,
     index_status,
     load_chunks,
+    load_config,
     lookup_deps,
     lookup_symbol,
     search_index,
@@ -27,6 +29,7 @@ from rag_universal.core import (
     watch_index,
 )
 from rag_universal.eval_quality import evaluate_quality
+from rag_universal.eval_quality import hit_rank
 from rag_universal.eval_quality import quality_check
 from rag_universal.knowledge import build_project_knowledge
 from rag_universal.knowledge import generate_project_profile
@@ -244,6 +247,23 @@ class RagUniversalTest(unittest.TestCase):
         )
         manifest = json.loads(index.stdout)
         self.assertEqual(manifest["num_files"], 6)
+
+    def test_example_config_preserves_runtime_excludes(self) -> None:
+        example_config = json.loads((ROOT / "rag.config.example.json").read_text(encoding="utf-8"))
+        self.assertTrue(set(DEFAULT_CONFIG["exclude_dirs"]).issubset(set(example_config["exclude_dirs"])))
+
+        root = self.make_project()
+        (root / "storage" / "payload" / "work_items").mkdir(parents=True)
+        (root / "storage" / "payload" / "work_items" / "payload.json").write_text(
+            '{"runtime":true}',
+            encoding="utf-8",
+        )
+        loaded = load_config(root, ROOT / "rag.config.example.json")
+        self.assertIn("storage", loaded["exclude_dirs"])
+
+        build_index(root, ROOT / "rag.config.example.json")
+        sources = {chunk["source"] for chunk in load_chunks(root / ".rag-index")}
+        self.assertNotIn("storage/payload/work_items/payload.json", sources)
 
     def test_force_include_contract_tests_and_coverage_report(self) -> None:
         root = self.make_project()
@@ -539,6 +559,12 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(rag_only["summary"]["rag"]["top1"], 1)
         self.assertIsNone(rag_only["summary"]["baseline"])
         self.assertEqual(rag_only["cases"], [])
+
+    def test_eval_quality_hits_are_exact_repo_relative_paths(self) -> None:
+        self.assertEqual(hit_rank(["README.md"], ["README.md"]), 1)
+        self.assertEqual(hit_rank(["src\\service.py"], ["src/service.py"]), 1)
+        self.assertIsNone(hit_rank(["docs/README.md"], ["README.md"]))
+        self.assertIsNone(hit_rank(["uier/routes/admin.php"], ["routes/admin.php"]))
 
     def test_quality_check_generates_comparative_metrics(self) -> None:
         root = self.make_project()
