@@ -6,6 +6,8 @@ It is model-neutral. Codex, DeepSeek, Claude, or any other client can use the sa
 
 The v0 implementation is intentionally lightweight: Python standard library only, lexical vector scoring plus BM25, no model downloads. A future embedding backend can be added without changing the index safety rules or MCP tool contracts.
 
+For agent-driven installation into another repository, use [`AGENT_INSTALL.md`](AGENT_INSTALL.md).
+
 ## Quick Start
 
 ```bash
