@@ -457,6 +457,10 @@ module StrictModeHookEntryPlan
 
     command = entry.fetch("command")
     errors = []
+    unless command.match?(/\ASTRICT_HOOK_TIMEOUT_MS=\d+\s+STRICT_STATE_ROOT="(?:[^"\\]|\\.)+"\s+(?:STRICT_ENFORCING_HOOK=1\s+STRICT_OUTPUT_CONTRACT_ID="(?:[^"\\]|\\.)+"\s+)?"(?:[^"\\]|\\.)+"\s+--provider\s+\S+\s+\S+\z/)
+      errors << "hook entry #{index}: command must be STRICT_HOOK_TIMEOUT_MS=<ms> STRICT_STATE_ROOT=\"<state-root>\" [STRICT_ENFORCING_HOOK=1 STRICT_OUTPUT_CONTRACT_ID=\"<id>\"] \"<install-root>/active/bin/strict-hook\" --provider <provider> <logical_event>"
+      return errors
+    end
     parts = Shellwords.split(command)
     unless [6, 8].include?(parts.size)
       errors << "hook entry #{index}: command must be STRICT_HOOK_TIMEOUT_MS=<ms> STRICT_STATE_ROOT=\"<state-root>\" [STRICT_ENFORCING_HOOK=1 STRICT_OUTPUT_CONTRACT_ID=\"<id>\"] \"<install-root>/active/bin/strict-hook\" --provider <provider> <logical_event>"
