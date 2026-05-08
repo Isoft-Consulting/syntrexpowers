@@ -56,7 +56,7 @@ module StrictModeHookEntryPlan
     fixture_manifest_hash
   ].freeze
 
-  BLOCKING_EVENTS = %w[pre-tool-use stop permission-request].freeze
+  BLOCKING_EVENTS = %w[pre-tool-use stop subagent-stop permission-request].freeze
   PROVIDERS = %w[claude codex].freeze
   PROVIDER_ACTIONS = %w[block deny].freeze
   PROVIDER_TIMEOUT_FIELDS = ["", "timeout"].freeze
@@ -66,6 +66,7 @@ module StrictModeHookEntryPlan
     "pre-tool-use" => "PreToolUse",
     "post-tool-use" => "PostToolUse",
     "stop" => "Stop",
+    "subagent-stop" => "SubagentStop",
     "permission-request" => "PermissionRequest"
   }.freeze
   SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze
@@ -227,7 +228,7 @@ module StrictModeHookEntryPlan
       errors << "selected output contract #{index}: logical_event must be blocking" unless BLOCKING_EVENTS.include?(logical_event)
       errors << "selected output contract #{index}: contract_kind must be decision-output" unless record.fetch("contract_kind") == "decision-output"
       unless provider_action_valid_for_event?(record.fetch("logical_event"), record.fetch("provider_action"))
-        errors << "selected output contract #{index}: provider_action must be block for stop or block/deny for pre-tool-use and permission-request"
+        errors << "selected output contract #{index}: provider_action must be block for stop and subagent-stop or block/deny for pre-tool-use and permission-request"
       end
       errors << "selected output contract #{index}: contract_id must be non-empty" unless contract_id.is_a?(String) && !contract_id.empty?
       %w[decision_contract_hash fixture_record_hash fixture_manifest_hash].each do |field|
@@ -551,7 +552,7 @@ module StrictModeHookEntryPlan
   end
 
   def provider_action_valid_for_event?(logical_event, provider_action)
-    return provider_action == "block" if logical_event == "stop"
+    return provider_action == "block" if %w[stop subagent-stop].include?(logical_event)
 
     PROVIDER_ACTIONS.include?(provider_action)
   end

@@ -17,9 +17,17 @@ module StrictModeFixtureReadiness
     stop
   ].freeze
   REQUIRED_BLOCKING_EVENTS = %w[pre-tool-use stop].freeze
-  OPTIONAL_BLOCKING_EVENTS = %w[permission-request].freeze
+  OPTIONAL_BLOCKING_EVENTS = %w[subagent-stop permission-request].freeze
+  PROVIDER_OPTIONAL_BLOCKING_EVENTS = {
+    "claude" => %w[subagent-stop permission-request].freeze,
+    "codex" => %w[permission-request].freeze
+  }.freeze
   BLOCKING_EVENTS = (REQUIRED_BLOCKING_EVENTS + OPTIONAL_BLOCKING_EVENTS).freeze
   EARLY_BASELINE_EVENTS = %w[session-start user-prompt-submit].freeze
+
+  def optional_blocking_events_for(provider)
+    PROVIDER_OPTIONAL_BLOCKING_EVENTS.fetch(provider, [])
+  end
   REPORT_SCHEMA_VERSION = 1
 
   def parse_provider_version_assignment(value)
@@ -90,7 +98,7 @@ module StrictModeFixtureReadiness
       installed_version = provider_versions.fetch(provider, "unknown")
       installed_build_hash = provider_build_hashes.fetch(provider, "")
       enforceable = records_by_provider.fetch(provider, []).select { |record| enforceable_record?(record, installed_version, installed_build_hash) }
-      selected_events = REQUIRED_BLOCKING_EVENTS + OPTIONAL_BLOCKING_EVENTS.select { |event| optional_blocking_ready?(enforceable, event) }
+      selected_events = REQUIRED_BLOCKING_EVENTS + optional_blocking_events_for(provider).select { |event| optional_blocking_ready?(enforceable, event) }
       selected_events.map do |event|
         selected_blocking_decision_output(root, enforceable, provider, event)
       end.compact
@@ -253,7 +261,7 @@ module StrictModeFixtureReadiness
   end
 
   def optional_checks_for(root, provider, enforceable)
-    OPTIONAL_BLOCKING_EVENTS.flat_map do |event|
+    optional_blocking_events_for(provider).flat_map do |event|
       selected = selected_blocking_decision_output(root, enforceable, provider, event)
       [
         readiness_check(
@@ -360,11 +368,11 @@ module StrictModeFixtureReadiness
   end
 
   def provider_actions_for(event)
-    event == "stop" ? %w[block] : %w[block deny]
+    %w[stop subagent-stop].include?(event) ? %w[block] : %w[block deny]
   end
 
   def missing_decision_output_message(provider, event)
-    if event == "stop"
+    if %w[stop subagent-stop].include?(event)
       "missing #{provider} #{event} decision-output fixture with block/continuation provider output"
     else
       "missing #{provider} #{event} decision-output fixture with block/deny provider output"

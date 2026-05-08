@@ -563,9 +563,9 @@ module StrictModeFixtures
     expect(errors, manifest_path, !roles["discovery"].empty?, "#{label} must include external discovery record fixtures")
     return if roles["discovery"].empty?
 
-    discovery_records = roles["discovery"].filter_map do |relative|
+    discovery_records = roles["discovery"].map do |relative|
       load_discovery_record_fixture(errors, root, manifest_path, record, relative, label)
-    end
+    end.compact
     observed = Array(proof["observed_order"])
     observed.each_with_index do |item, index|
       next unless item.is_a?(Hash)

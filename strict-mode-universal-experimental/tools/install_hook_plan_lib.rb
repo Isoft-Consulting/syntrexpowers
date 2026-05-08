@@ -24,7 +24,7 @@ module StrictModeInstallHookPlan
     "#{assignments.join(" ")} #{double_quote_shell(hook_path)} --provider #{provider} #{logical_event}"
   end
 
-  def hook_specs(provider, include_permission_request: false)
+  def hook_specs(provider, include_permission_request: false, include_subagent_stop: false)
     timeout_field = provider == "claude" ? "timeout" : ""
     specs = [
       ["SessionStart", "session-start", "", 5_000, provider == "claude" ? 6_000 : 0, timeout_field],
@@ -33,6 +33,9 @@ module StrictModeInstallHookPlan
       ["PostToolUse", "post-tool-use", ".*", 3_000, provider == "claude" ? 4_000 : 0, timeout_field],
       ["Stop", "stop", "", 60_000, provider == "claude" ? 61_000 : 0, timeout_field]
     ]
+    if include_subagent_stop
+      specs << ["SubagentStop", "subagent-stop", "", 30_000, provider == "claude" ? 31_000 : 0, timeout_field]
+    end
     if include_permission_request
       specs << ["PermissionRequest", "permission-request", ".*", 5_000, provider == "claude" ? 6_000 : 0, timeout_field]
     end
@@ -55,7 +58,10 @@ module StrictModeInstallHookPlan
     include_permission_request = selected.any? do |record|
       record["provider"] == provider && record["logical_event"] == "permission-request"
     end
-    entries = hook_specs(provider, include_permission_request: include_permission_request).map do |event, logical_event, matcher, self_timeout_ms, provider_timeout_ms, provider_timeout_field|
+    include_subagent_stop = selected.any? do |record|
+      record["provider"] == provider && record["logical_event"] == "subagent-stop"
+    end
+    entries = hook_specs(provider, include_permission_request: include_permission_request, include_subagent_stop: include_subagent_stop).map do |event, logical_event, matcher, self_timeout_ms, provider_timeout_ms, provider_timeout_field|
       command = command_for(install_root, state_root_path, provider, logical_event, self_timeout_ms)
       {
         "provider" => provider,

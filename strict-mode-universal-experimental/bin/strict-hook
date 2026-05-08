@@ -322,14 +322,20 @@ def fail_closed_decision(logical_event, reason_code, message)
   }
 end
 
-def internal_decision_from_preflight(preflight)
-  block_reason = if preflight.fetch("attempted") && !preflight.fetch("trusted")
+def internal_decision_from_preflight(preflight, stop_hook_active: false)
+  logical_event = preflight.fetch("logical_event")
+  # Recursion guard: при follow-up Stop с stop_hook_active=true пропустить block,
+  # иначе провайдер зациклится (см. specs/06-decision-contract.md:58).
+  stop_recursion = stop_hook_active && %w[stop subagent-stop].include?(logical_event)
+  block_reason = if stop_recursion
+                   nil
+                 elsif preflight.fetch("attempted") && !preflight.fetch("trusted")
                    "strict-mode could not trust preflight: #{preflight.fetch("reason_code")}"
                  elsif preflight.fetch("would_block")
                    "strict-mode blocked operation: #{preflight.fetch("reason_code")}"
-                 elsif %w[stop permission-request].include?(preflight.fetch("logical_event")) &&
+                 elsif %w[stop subagent-stop permission-request].include?(logical_event) &&
                        preflight.fetch("attempted") == false
-                   "strict-mode #{preflight.fetch("logical_event")} guard requires provider continuation"
+                   "strict-mode #{logical_event} guard requires provider continuation"
                  end
   action = block_reason ? "block" : "allow"
   {
@@ -346,7 +352,7 @@ def internal_decision_from_preflight(preflight)
   }
 end
 
-def enforcement_result(context, provider, logical_event, preflight)
+def enforcement_result(context, provider, logical_event, preflight, stop_hook_active: false)
   entry = enforcing_hook_entry(context, provider, logical_event)
   unless entry
     if !context.fetch("trusted", false) && blocking_capable_logical_event?(logical_event) && enforcing_hook_invocation?
@@ -398,7 +404,7 @@ def enforcement_result(context, provider, logical_event, preflight)
   contract = selected_output_contract(context, entry)
   raise "selected output contract missing for #{provider} #{logical_event} #{entry.fetch("output_contract_id")}" unless contract
 
-  decision = internal_decision_from_preflight(preflight)
+  decision = internal_decision_from_preflight(preflight, stop_hook_active: stop_hook_active)
   return { "active" => true, "emitted" => false, "failed_closed" => false, "output_contract_id" => contract.fetch("contract_id"), "emission" => nil, "error" => "" } unless decision.fetch("action") == "block"
 
   metadata = provider_output_metadata(contract)
@@ -492,7 +498,10 @@ preflight = if provider_detection_decision == "match" && !payload_truncated
             end
 preflight = validate_preflight_or_error(logical_event, preflight)
 context = protected_context(state_root)
-enforcement = enforcement_result(context, provider, logical_event, preflight)
+# Извлекаем stop_hook_active из распарсенного payload, чтобы recursion-guard
+# мог пропустить follow-up Stop при provider-continuation на блок.
+stop_hook_active = parsed_payload.is_a?(Hash) && parsed_payload["stop_hook_active"] == true
+enforcement = enforcement_result(context, provider, logical_event, preflight, stop_hook_active: stop_hook_active)
 if preflight.fetch("would_block") && !enforcement.fetch("active")
   warn "strict-hook preflight would block in enforcement: #{preflight.fetch("reason_code")} (discovery log-only)"
 end

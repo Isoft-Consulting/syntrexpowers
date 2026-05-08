@@ -143,14 +143,14 @@ run_case do
   bad = selected_output("codex", "stop", "codex.stop.warn")
   bad["provider_action"] = "warn"
   errors = StrictModeHookEntryPlan.selected_output_contract_errors([bad])
-  assert(name, errors.any? { |error| error.include?("provider_action must be block for stop or block/deny") }, "missing provider_action diagnostic", errors.join("\n"))
+  assert(name, errors.any? { |error| error.include?("provider_action must be block for stop and subagent-stop or block/deny") }, "missing provider_action diagnostic", errors.join("\n"))
 end
 
 run_case do
   name = "selected output contracts reject stop deny actions"
   bad = selected_output("codex", "stop", "codex.stop.deny", provider_action: "deny")
   errors = StrictModeHookEntryPlan.selected_output_contract_errors([bad])
-  assert(name, errors.any? { |error| error.include?("provider_action must be block for stop or block/deny") }, "missing stop provider_action diagnostic", errors.join("\n"))
+  assert(name, errors.any? { |error| error.include?("provider_action must be block for stop and subagent-stop or block/deny") }, "missing stop provider_action diagnostic", errors.join("\n"))
 end
 
 run_case do
