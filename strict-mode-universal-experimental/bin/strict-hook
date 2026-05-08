@@ -327,10 +327,6 @@ def fail_closed_decision(logical_event, reason_code, message)
   }
 end
 
-def internal_decision_from_preflight(preflight, stop_hook_active: false)
-  StrictModeInternalDecision.from_preflight(preflight, stop_hook_active: stop_hook_active)
-end
-
 def enforcement_result(context, provider, logical_event, preflight, stop_hook_active: false)
   entry = enforcing_hook_entry(context, provider, logical_event)
   if stop_hook_active && stop_continuation_logical_event?(logical_event) && enforcing_hook_invocation?
@@ -401,7 +397,7 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
   contract = selected_output_contract(context, entry)
   raise "selected output contract missing for #{provider} #{logical_event} #{entry.fetch("output_contract_id")}" unless contract
 
-  decision = internal_decision_from_preflight(preflight, stop_hook_active: stop_hook_active)
+  decision = StrictModeInternalDecision.from_preflight(preflight, stop_hook_active: stop_hook_active)
   return { "active" => true, "emitted" => false, "failed_closed" => false, "output_contract_id" => contract.fetch("contract_id"), "stop_hook_active" => stop_hook_active, "emission" => nil, "error" => "" } unless decision.fetch("action") == "block"
 
   metadata = provider_output_metadata(contract)

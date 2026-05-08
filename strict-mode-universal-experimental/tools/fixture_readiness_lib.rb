@@ -17,11 +17,11 @@ module StrictModeFixtureReadiness
     stop
   ].freeze
   REQUIRED_BLOCKING_EVENTS = %w[pre-tool-use stop].freeze
-  OPTIONAL_BLOCKING_EVENTS = %w[subagent-stop permission-request].freeze
   PROVIDER_OPTIONAL_BLOCKING_EVENTS = {
     "claude" => %w[subagent-stop permission-request].freeze,
     "codex" => %w[permission-request].freeze
   }.freeze
+  OPTIONAL_BLOCKING_EVENTS = PROVIDER_OPTIONAL_BLOCKING_EVENTS.values.flatten.uniq.freeze
   BLOCKING_EVENTS = (REQUIRED_BLOCKING_EVENTS + OPTIONAL_BLOCKING_EVENTS).freeze
   EARLY_BASELINE_EVENTS = %w[session-start user-prompt-submit].freeze
 
