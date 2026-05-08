@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
 from .core import extract_query_paths, resolve_root, tokenize, write_json_atomic, write_text_atomic
+
+KNOWLEDGE_GENERATOR_VERSION = "rag.knowledge-generator.v1"
+KNOWLEDGE_SUMMARY_VERSION = "rag.knowledge-summary.v1"
 
 
 CATEGORY_RULES: list[tuple[str, list[str]]] = [
@@ -107,6 +112,31 @@ def resolve_category_rules(rules: dict[str, Any] | None = None) -> list[tuple[st
 def load_cases(path: str | Path) -> list[dict[str, Any]]:
     value = json.loads(Path(path).read_text(encoding="utf-8"))
     return value if isinstance(value, list) else []
+
+
+def file_sha256(path: str | Path | None) -> str | None:
+    if path is None:
+        return None
+    resolved = Path(path)
+    if not resolved.exists():
+        return None
+    return hashlib.sha256(resolved.read_bytes()).hexdigest()
+
+
+def display_input_path(path: Path, metadata_root: Path | None) -> str:
+    if metadata_root is not None:
+        try:
+            return path.relative_to(metadata_root).as_posix()
+        except ValueError:
+            pass
+    return str(path)
+
+
+def resolve_recorded_path(root: Path, value: Any) -> Path | None:
+    if not isinstance(value, str) or not value:
+        return None
+    path = Path(value)
+    return path if path.is_absolute() else root / path
 
 
 def infer_severity(text: str) -> str:
@@ -317,9 +347,13 @@ def write_knowledge_pack(
     out_dir_arg: str | Path,
     project_name: str = "project",
     rules_path: str | Path | None = None,
+    metadata_root: str | Path | None = None,
 ) -> dict[str, Any]:
-    cases = load_cases(cases_path)
-    rules = load_rules(rules_path)
+    cases_file = Path(cases_path).resolve()
+    rules_file = Path(rules_path).resolve() if rules_path else None
+    root = Path(metadata_root).resolve() if metadata_root is not None else None
+    cases = load_cases(cases_file)
+    rules = load_rules(rules_file)
     owner_rules = resolve_owner_rules(rules)
     category_rules = resolve_category_rules(rules)
     out_dir = Path(out_dir_arg)
@@ -336,15 +370,21 @@ def write_knowledge_pack(
     write_text_atomic(out_dir / "owner-map.md", render_owner_map(owners))
     write_text_atomic(out_dir / "query-templates.md", render_query_templates(patterns))
     summary = {
+        "schema_version": KNOWLEDGE_SUMMARY_VERSION,
+        "generator_version": KNOWLEDGE_GENERATOR_VERSION,
+        "generated_at": time.time(),
         "project": project_name,
         "cases": len(cases),
         "lessons": len(lessons),
         "patterns": len(patterns),
         "owners": len(owners),
-        "rules_path": str(rules_path) if rules_path else None,
+        "cases_path": display_input_path(cases_file, root),
+        "cases_sha256": file_sha256(cases_file),
+        "rules_path": display_input_path(rules_file, root) if rules_file else None,
+        "rules_sha256": file_sha256(rules_file),
         "category_rules": len(category_rules),
         "owner_rules": len(owner_rules),
-        "out_dir": str(out_dir),
+        "out_dir": display_input_path(out_dir.resolve(), root),
         "artifacts": [
             "lessons.jsonl",
             "patterns.json",
@@ -367,6 +407,11 @@ def build_project_knowledge(
     rules_path: str | Path | None = None,
 ) -> dict[str, Any]:
     root = resolve_root(root_arg)
+    cases = Path(cases_path)
+    if not cases.is_absolute():
+        cases = root / cases
+        if not cases.exists():
+            cases = Path.cwd() / str(cases_path)
     out_path = Path(output)
     if not out_path.is_absolute():
         out_path = root / out_path
@@ -375,7 +420,53 @@ def build_project_knowledge(
         rules = root / rules
         if not rules.exists():
             rules = Path.cwd() / str(rules_path)
-    return write_knowledge_pack(cases_path, out_path, project_name, rules)
+    return write_knowledge_pack(cases, out_path, project_name, rules, root)
+
+
+def knowledge_pack_status(root_arg: str | Path | None, summary_path: str | Path) -> dict[str, Any]:
+    root = resolve_root(root_arg)
+    summary_file = Path(summary_path)
+    if not summary_file.is_absolute():
+        summary_file = root / summary_file
+    if summary_file.is_dir():
+        summary_file = summary_file / "summary.json"
+    if not summary_file.exists():
+        return {
+            "exists": False,
+            "summary_path": str(summary_file),
+            "stale": True,
+            "reason": "missing summary",
+        }
+    summary = json.loads(summary_file.read_text(encoding="utf-8"))
+    stale_reasons: list[str] = []
+    if summary.get("schema_version") != KNOWLEDGE_SUMMARY_VERSION:
+        stale_reasons.append("summary schema changed")
+    if summary.get("generator_version") != KNOWLEDGE_GENERATOR_VERSION:
+        stale_reasons.append("generator version changed")
+
+    cases_path = summary.get("cases_path")
+    cases_file = resolve_recorded_path(root, cases_path)
+    cases_current = file_sha256(cases_file)
+    if cases_path and cases_current != summary.get("cases_sha256"):
+        stale_reasons.append("cases file changed")
+    rules_path = summary.get("rules_path")
+    rules_file = resolve_recorded_path(root, rules_path)
+    rules_current = file_sha256(rules_file)
+    if rules_path and rules_current != summary.get("rules_sha256"):
+        stale_reasons.append("rules file changed")
+    return {
+        "exists": True,
+        "summary_path": str(summary_file),
+        "stale": bool(stale_reasons),
+        "reason": ", ".join(stale_reasons) if stale_reasons else None,
+        "summary": summary,
+        "inputs": {
+            "cases_path": cases_path,
+            "cases_sha256_current": cases_current,
+            "rules_path": rules_path,
+            "rules_sha256_current": rules_current,
+        },
+    }
 
 
 PROFILE_CANDIDATES: list[tuple[str, str, str]] = [

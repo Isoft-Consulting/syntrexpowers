@@ -5,7 +5,7 @@ import sys
 from typing import Any
 
 from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan
-from .knowledge import build_project_knowledge, generate_project_profile
+from .knowledge import build_project_knowledge, generate_project_profile, knowledge_pack_status
 
 
 def tool_definitions() -> list[dict[str, Any]]:
@@ -26,6 +26,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                         "default": "default",
                     },
                     "with_plan": {"type": "boolean", "default": False},
+                    "auto_reindex": {"type": "boolean", "default": False},
                 },
                 "required": ["query"],
             },
@@ -106,6 +107,16 @@ def tool_definitions() -> list[dict[str, Any]]:
                 },
             },
         },
+        {
+            "name": "rag_knowledge_status",
+            "description": "Report whether a generated knowledge pack is stale against its cases/rules inputs.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "summary": {"type": "string", "default": "Docs/knowledge/rag/summary.json"},
+                },
+            },
+        },
     ]
 
 
@@ -133,6 +144,7 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
                 arguments.get("filter_source"),
                 arguments.get("filter_type"),
                 str(arguments.get("mode", "default")),
+                bool(arguments.get("auto_reindex", False)),
             )
         )
     if name == "rag_reindex":
@@ -181,6 +193,8 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
                 str(arguments.get("project", "project")),
             )
         )
+    if name == "rag_knowledge_status":
+        return text_content(knowledge_pack_status(root, str(arguments.get("summary", "Docs/knowledge/rag/summary.json"))))
     raise ValueError(f"unknown tool: {name}")
 
 

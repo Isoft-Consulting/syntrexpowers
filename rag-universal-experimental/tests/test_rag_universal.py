@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 from rag_universal.core import (
     build_index,
+    ensure_fresh_index,
     index_coverage,
     index_status,
     load_chunks,
@@ -23,10 +24,12 @@ from rag_universal.core import (
     tokenize,
     token_counts,
     trim_query_counts,
+    watch_index,
 )
 from rag_universal.eval_quality import evaluate_quality
 from rag_universal.knowledge import build_project_knowledge
 from rag_universal.knowledge import generate_project_profile
+from rag_universal.knowledge import knowledge_pack_status
 from rag_universal.mcp_server import handle_message
 
 
@@ -133,7 +136,17 @@ class RagUniversalTest(unittest.TestCase):
         listed = handle_message({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, str(root), None)
         names = {tool["name"] for tool in listed["result"]["tools"]}
         self.assertEqual(
-            {"rag_search", "rag_reindex", "rag_status", "rag_coverage", "rag_symbol", "rag_deps", "rag_knowledge_build", "rag_knowledge_profile"},
+            {
+                "rag_search",
+                "rag_reindex",
+                "rag_status",
+                "rag_coverage",
+                "rag_symbol",
+                "rag_deps",
+                "rag_knowledge_build",
+                "rag_knowledge_profile",
+                "rag_knowledge_status",
+            },
             names,
         )
 
@@ -150,6 +163,29 @@ class RagUniversalTest(unittest.TestCase):
         payload = json.loads(called["result"]["content"][0]["text"])
         self.assertEqual(payload[0]["source"], "README.md")
         self.assertEqual(payload[0]["fdr_role"], "docs")
+
+    def test_auto_reindex_and_watch_refresh_changed_sources(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        (root / "README.md").write_text("# Demo\n\nFresh realtime token appears here.", encoding="utf-8")
+
+        stale = ensure_fresh_index(root, None, False)
+        self.assertTrue(stale["stale_before"])
+        self.assertFalse(stale["reindexed"])
+        results_without_reindex = search_index(root, None, "fresh realtime token", top_k=1)
+        self.assertEqual(results_without_reindex, [])
+
+        payload = search_index_with_plan(root, None, "fresh realtime token", top_k=1, auto_reindex=True)
+        self.assertTrue(payload["diagnostics"]["index_stale_before_search"])
+        self.assertTrue(payload["diagnostics"]["index_reindexed"])
+        self.assertFalse(payload["diagnostics"]["index_stale_after_search"])
+        self.assertEqual(payload["results"][0]["source"], "README.md")
+
+        (root / "CHANGELOG.md").write_text("# Changelog\n\nWatched refresh token.", encoding="utf-8")
+        watched = watch_index(root, None, interval_seconds=0, debounce_seconds=0, max_cycles=1)
+        self.assertEqual(watched["rebuilds"], 1)
+        self.assertFalse(watched["status"]["stale"])
+        self.assertEqual(search_index(root, None, "watched refresh token", top_k=1)[0]["source"], "CHANGELOG.md")
 
     def test_cli_accepts_root_after_subcommand(self) -> None:
         root = self.make_project()
@@ -234,15 +270,19 @@ class RagUniversalTest(unittest.TestCase):
     def test_default_force_include_indexes_review_test_evidence(self) -> None:
         root = self.make_project()
         (root / "tests" / "Unit").mkdir(parents=True)
+        (root / "tests" / "Unit" / "_tmp_storage").mkdir(parents=True)
         (root / "uier" / "tests" / "Feature").mkdir(parents=True)
         (root / "uier" / "public" / "js").mkdir(parents=True)
         (root / "uier-spa" / "src" / "tests").mkdir(parents=True)
+        (root / "storage" / "payload" / "work_items").mkdir(parents=True)
         (root / "tests" / "Unit" / "YamlHelperTest.php").write_text("<?php\n", encoding="utf-8")
+        (root / "tests" / "Unit" / "_tmp_storage" / "payload.json").write_text('{"runtime":true}', encoding="utf-8")
         (root / "uier" / "tests" / "Feature" / "DashboardTest.php").write_text("<?php\n", encoding="utf-8")
         (root / "uier" / "public" / "js" / "app.js").write_text("initFormSubmit()\n", encoding="utf-8")
         (root / "uier-spa" / "src" / "tests" / "SettingsView.test.ts").write_text("test('x', () => {})\n", encoding="utf-8")
+        (root / "storage" / "payload" / "work_items" / "payload.json").write_text('{"runtime":true}', encoding="utf-8")
         (root / "rag.config.json").write_text(
-            json.dumps({"schema_version": "rag.config.v1", "exclude_dirs": ["tests", "public"]}),
+            json.dumps({"schema_version": "rag.config.v1", "exclude_dirs": ["tests", "public", "storage", "_tmp_storage"]}),
             encoding="utf-8",
         )
         build_index(root)
@@ -257,6 +297,9 @@ class RagUniversalTest(unittest.TestCase):
             ],
         )
         self.assertEqual(coverage["summary"]["indexed"], 4)
+        sources = {chunk["source"] for chunk in load_chunks(root / ".rag-index")}
+        self.assertNotIn("tests/Unit/_tmp_storage/payload.json", sources)
+        self.assertNotIn("storage/payload/work_items/payload.json", sources)
 
     def test_path_query_suffix_escapes_like_wildcards(self) -> None:
         temp = tempfile.TemporaryDirectory()
@@ -532,7 +575,11 @@ class RagUniversalTest(unittest.TestCase):
         summary = build_project_knowledge(root, cases, "Docs/knowledge/rag", "demo", rules)
         out_dir = root / "Docs" / "knowledge" / "rag"
         self.assertEqual(summary["lessons"], 2)
-        self.assertEqual(summary["rules_path"], str(rules))
+        self.assertEqual(summary["schema_version"], "rag.knowledge-summary.v1")
+        self.assertEqual(summary["cases_path"], "review-cases.json")
+        self.assertEqual(summary["rules_sha256"], knowledge_pack_status(root, "Docs/knowledge/rag")["summary"]["rules_sha256"])
+        self.assertEqual(summary["rules_path"], "knowledge.rules.json")
+        self.assertFalse(knowledge_pack_status(root, "Docs/knowledge/rag")["stale"])
         self.assertTrue((out_dir / "lessons.jsonl").exists())
         self.assertTrue((out_dir / "patterns.md").exists())
         self.assertTrue((out_dir / "failure-taxonomy.md").exists())
@@ -544,6 +591,10 @@ class RagUniversalTest(unittest.TestCase):
         categories = {row["category"] for row in patterns}
         self.assertIn("schema_form_contract", categories)
         self.assertIn("security_guard", categories)
+        cases.write_text(json.dumps([]), encoding="utf-8")
+        stale = knowledge_pack_status(root, "Docs/knowledge/rag")
+        self.assertTrue(stale["stale"])
+        self.assertIn("cases file changed", stale["reason"])
 
     def test_knowledge_mode_prioritizes_knowledge_pack(self) -> None:
         temp = tempfile.TemporaryDirectory()

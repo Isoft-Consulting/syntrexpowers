@@ -77,6 +77,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "target",
         "coverage",
         "evals",
+        "storage",
+        "payload",
+        "sessions",
+        "_tmp_storage",
+        "_tmp_payload_storage",
         ".idea",
         ".vscode",
         ".next",
@@ -1123,6 +1128,62 @@ def index_status(root_arg: str | os.PathLike[str] | None = None, config_path: st
     }
 
 
+def ensure_fresh_index(
+    root_arg: str | os.PathLike[str] | None = None,
+    config_path: str | os.PathLike[str] | None = None,
+    auto_reindex: bool = False,
+) -> dict[str, Any]:
+    status_before = index_status(root_arg, config_path)
+    stale_before = bool(status_before.get("stale", True))
+    result: dict[str, Any] = {
+        "checked": True,
+        "stale_before": stale_before,
+        "reason_before": status_before.get("reason"),
+        "reindexed": False,
+        "status": status_before,
+    }
+    if stale_before and auto_reindex:
+        manifest = build_index(root_arg, config_path)
+        status_after = index_status(root_arg, config_path)
+        result.update(
+            {
+                "reindexed": True,
+                "manifest": manifest,
+                "status": status_after,
+            }
+        )
+    return result
+
+
+def watch_index(
+    root_arg: str | os.PathLike[str] | None = None,
+    config_path: str | os.PathLike[str] | None = None,
+    interval_seconds: float = 2.0,
+    debounce_seconds: float = 1.0,
+    max_cycles: int | None = None,
+) -> dict[str, Any]:
+    cycles = 0
+    rebuilds = 0
+    last_reason: str | None = None
+    while max_cycles is None or cycles < max_cycles:
+        status = index_status(root_arg, config_path)
+        if not status.get("exists") or status.get("stale"):
+            last_reason = str(status.get("reason") or "unknown")
+            if debounce_seconds > 0:
+                time.sleep(debounce_seconds)
+            build_index(root_arg, config_path)
+            rebuilds += 1
+        cycles += 1
+        if max_cycles is None and interval_seconds > 0:
+            time.sleep(interval_seconds)
+    return {
+        "cycles": cycles,
+        "rebuilds": rebuilds,
+        "last_reason": last_reason,
+        "status": index_status(root_arg, config_path),
+    }
+
+
 def resolve_coverage_path(root: Path, path: str) -> tuple[str, Path, bool]:
     candidate = Path(path)
     if candidate.is_absolute():
@@ -1840,11 +1901,17 @@ def search_index_with_plan(
     filter_source: str | None = None,
     filter_type: str | None = None,
     mode: str = "default",
+    auto_reindex: bool = False,
 ) -> dict[str, Any]:
+    freshness = ensure_fresh_index(root_arg, config_path, auto_reindex)
     results = search_index(root_arg, config_path, query, top_k, filter_source, filter_type, mode)
     diagnostics: dict[str, Any] = {
         "no_results": results == [],
         "explicit_paths": extract_query_paths(query),
+        "index_stale_before_search": bool(freshness.get("stale_before")),
+        "index_stale_reason": freshness.get("reason_before"),
+        "index_reindexed": bool(freshness.get("reindexed")),
+        "index_stale_after_search": bool(freshness.get("status", {}).get("stale")),
     }
     if results == []:
         diagnostics["next_steps"] = [
@@ -1863,7 +1930,10 @@ def search_index(
     filter_source: str | None = None,
     filter_type: str | None = None,
     mode: str = "default",
+    auto_reindex: bool = False,
 ) -> list[dict[str, Any]]:
+    if auto_reindex:
+        ensure_fresh_index(root_arg, config_path, True)
     root = resolve_root(root_arg)
     config = load_config(root, config_path)
     index_dir = get_index_dir(root, config)

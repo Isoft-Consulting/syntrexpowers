@@ -13,7 +13,8 @@ cd rag-universal-experimental
 python3 tools/rag.py index --root ..
 python3 tools/rag.py status --root ..
 python3 tools/rag.py search --root .. "strict mode stop guard"
-python3 tools/rag.py search --root .. "Visual Studio owner boundaries" --mode architecture --with-plan
+python3 tools/rag.py search --root .. "Visual Studio owner boundaries" --mode architecture --with-plan --auto-reindex
+python3 tools/rag.py watch --root ..
 python3 tools/rag.py symbol --root .. strict-hook
 python3 tools/rag.py deps --root .. json --direction reverse
 python3 tools/rag.py eval-quality --root .. --cases evals/syntrexpowers-gold.json
@@ -84,10 +85,12 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
 | `index` / `rag_reindex` | CLI, MCP | Build the local `.rag-index`. |
 | `status` / `rag_status` | CLI, MCP | Inspect index counts, manifest, stale config state, and source-change state. |
 | `coverage` / `rag_coverage` | CLI, MCP | Explain whether specific paths are indexed or excluded. |
-| `search` / `rag_search` | CLI, MCP | Ranked chunk retrieval with source/type filters, task modes, and optional read-plan output. |
+| `search` / `rag_search` | CLI, MCP | Ranked chunk retrieval with source/type filters, task modes, optional read-plan output, and optional stale-index rebuild. |
+| `watch` | CLI | Poll the project and rebuild when indexed files are added, changed, or deleted. |
 | `symbol` / `rag_symbol` | CLI, MCP | Exact symbol lookup. |
 | `deps` / `rag_deps` | CLI, MCP | Forward or reverse dependency edge lookup. |
 | `knowledge-build` / `rag_knowledge_build` | CLI, MCP | Build normalized lessons, pattern registry, owner map, failure taxonomy, and query templates from review/eval cases. |
+| `knowledge-status` / `rag_knowledge_status` | CLI, MCP | Check whether a knowledge pack is stale against its source cases/rules. |
 
 ## Generated Artifacts
 
@@ -103,7 +106,17 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
 
 `search.sqlite` stores precomputed postings/vector data used by `rag_search`, and `manifest.json` stores a source-state fingerprint so `rag_status` can report when indexed files changed. Do not commit generated index artifacts. The repository `.gitignore` excludes `.rag-index/`.
 
-`force_include_globs` can include narrow review-critical files from otherwise excluded directories, for example `tests/Unit/*ContractTest.php` while keeping the rest of `tests/` out of the index. `Dockerfile`, `Dockerfile.*`, and `.dockerignore` are included by default because build contracts are common FDR evidence.
+For changing projects, use one of two refresh modes:
+
+```bash
+python3 tools/rag.py search --root /path/to/project "query" --auto-reindex
+python3 tools/rag.py search --root /path/to/project "query" --with-plan --auto-reindex
+python3 tools/rag.py watch --root /path/to/project
+```
+
+`--auto-reindex` checks `rag_status` before a search and performs a full rebuild only when the manifest is missing or stale. `--with-plan` diagnostics report whether the index was stale before search, whether it was rebuilt, and whether it is still stale after search. `watch` is a simple polling loop for long-lived local sessions.
+
+`force_include_globs` can include narrow review-critical files from otherwise excluded directories, for example `tests/Unit/*ContractTest.php` while keeping the rest of `tests/` out of the index. Runtime/generated directories such as `node_modules`, `vendor`, `dist`, `storage`, `_tmp_storage`, `payload`, and `.git` are excluded by default. `Dockerfile`, `Dockerfile.*`, and `.dockerignore` are included by default because build contracts are common FDR evidence.
 
 Search applies configurable `source_penalties` to downrank high-noise generated artifacts such as `.snapshots/` and demo seeds. It also detects document trust status from Markdown content: `Canonical` / implementation-ready docs are boosted, while `SUPERSEDED` and `DO NOT IMPLEMENT` documents are strongly downranked and shown as deprioritized read-plan items.
 
@@ -169,6 +182,12 @@ python3 tools/rag.py knowledge-build \
   --rules rag-universal-experimental/examples/knowledge.core.json
 ```
 
+```bash
+python3 tools/rag.py knowledge-status \
+  --root /path/to/project \
+  --summary Docs/knowledge/rag
+```
+
 The checked-in `knowledge/core-review/` pack is a Core-specific example built from the `leonextra` review gold set using `examples/knowledge.core.json`. It demonstrates the format; other projects should generate their own pack from their own review/FDR cases.
 
 After indexing a project with a knowledge pack, use `mode=knowledge` before implementation/FDR work:
@@ -209,6 +228,6 @@ Current `syntrexpowers` gold-set result after v6 lexical ranking:
 ## Current Limits
 
 - Search is lexical in v0, not embedding-semantic.
-- Partial reindex is not implemented; use `rag_status` to detect stale source files and `rag_reindex` for a full rebuild.
+- Partial reindex is not implemented; `--auto-reindex`, `watch`, and `rag_reindex` all perform full rebuilds when the source-state fingerprint changes.
 - Dependency extraction is shallow import/use extraction, not a call graph.
 - JSON schemas document artifact shape but are not enforced by an external validator in v0 tests.

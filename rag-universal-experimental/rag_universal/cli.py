@@ -5,7 +5,7 @@ import json
 import sys
 from typing import Any
 
-from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan
+from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan, watch_index
 from .eval_quality import evaluate_quality
 from .knowledge import build_project_knowledge, generate_project_profile
 from .mcp_server import run_stdio
@@ -33,6 +33,12 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--filter-type", default=None)
     search.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"], default="default")
     search.add_argument("--with-plan", action="store_true", help="Return results with a section-level read plan.")
+    search.add_argument("--auto-reindex", action="store_true", help="Rebuild the index before searching when rag_status reports stale source files.")
+
+    watch = subparsers.add_parser("watch", help="Poll source files and rebuild the index when it becomes stale")
+    watch.add_argument("--interval", type=float, default=2.0, help="Polling interval in seconds for continuous watch mode.")
+    watch.add_argument("--debounce", type=float, default=1.0, help="Delay before rebuild after a stale check.")
+    watch.add_argument("--max-cycles", type=int, default=0, help="Stop after N polling cycles. Default 0 means run until interrupted.")
 
     symbol = subparsers.add_parser("symbol", help="Look up exact symbols")
     symbol.add_argument("name")
@@ -56,6 +62,9 @@ def build_parser() -> argparse.ArgumentParser:
     knowledge.add_argument("--output", default="Docs/knowledge/rag", help="Output directory relative to root unless absolute.")
     knowledge.add_argument("--project", default="project", help="Project name used in summary metadata.")
     knowledge.add_argument("--rules", default=None, help="Optional project-specific knowledge rules JSON.")
+
+    knowledge_status = subparsers.add_parser("knowledge-status", help="Report whether a generated knowledge pack is stale against its cases/rules inputs")
+    knowledge_status.add_argument("--summary", default="Docs/knowledge/rag/summary.json", help="Summary file or pack directory relative to root unless absolute.")
 
     profile = subparsers.add_parser("knowledge-profile", help="Generate a starter project-specific knowledge rules profile")
     profile.add_argument("--output", default="rag.knowledge.json", help="Output rules file relative to root unless absolute.")
@@ -98,9 +107,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "search":
         if args.with_plan:
-            emit(search_index_with_plan(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode))
+            emit(search_index_with_plan(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode, args.auto_reindex))
         else:
-            emit(search_index(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode))
+            emit(search_index(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode, args.auto_reindex))
+        return 0
+    if args.command == "watch":
+        try:
+            emit(watch_index(args.root, args.config, args.interval, args.debounce, args.max_cycles or None))
+        except KeyboardInterrupt:
+            emit(index_status(args.root, args.config))
         return 0
     if args.command == "symbol":
         emit(lookup_symbol(args.root, args.config, args.name, args.kind, args.limit))
@@ -113,6 +128,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "knowledge-build":
         emit(build_project_knowledge(args.root, args.cases, args.output, args.project, args.rules))
+        return 0
+    if args.command == "knowledge-status":
+        from .knowledge import knowledge_pack_status
+
+        emit(knowledge_pack_status(args.root, args.summary))
         return 0
     if args.command == "knowledge-profile":
         emit(generate_project_profile(args.root, args.output, args.project))

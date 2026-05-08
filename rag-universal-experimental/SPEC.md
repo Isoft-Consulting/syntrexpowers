@@ -14,8 +14,8 @@ This module is inspired by the Core project RAG server, but it is not a Core-spe
 | Mission | Provide fast project-local retrieval over code, docs, schemas, and specs so agents can inspect existing patterns before editing. |
 | Concept | A universal RAG toolkit with CLI and MCP stdio surfaces. It is not a hosted search service, not a secret scanner, not a replacement for grep, and not a provider-specific hook runtime. |
 | Values | Safe by default, portable, deterministic, inspectable, config-driven, and cheap to run locally. |
-| Skills | Scan indexable files, chunk content, extract symbols, extract dependency edges, build index artifacts, search chunks, report status, serve MCP tools. |
-| Behaviors | A user runs `rag.py index`; an agent calls `rag_search`; a reviewer calls `rag_status`; a developer queries exact symbols with `rag_symbol`; dependency context is available through `rag_deps`. |
+| Skills | Scan indexable files, chunk content, extract symbols, extract dependency edges, build index artifacts, search chunks, report status, refresh stale indexes, serve MCP tools. |
+| Behaviors | A user runs `rag.py index`; an agent calls `rag_search`; a reviewer calls `rag_status`; a developer queries exact symbols with `rag_symbol`; dependency context is available through `rag_deps`; long-lived sessions use `watch` or `auto_reindex` to keep search current. |
 | Environment | Python 3.10+, local filesystem, JSON artifacts under `.rag-index`, MCP stdio JSON-RPC, any client that can launch stdio MCP, no required network access, no required model download. |
 
 ## Module Boundary
@@ -32,9 +32,9 @@ Included in v0:
 - Knowledge-pack generation from review/eval cases with universal default owner rules and optional project-specific rules profiles.
 - Symbol extraction for common docs and languages.
 - Dependency edge extraction for Python, Ruby, JavaScript/TypeScript, shell, and PHP import forms.
-- CLI commands: `index`, `status`, `coverage`, `search`, `symbol`, `deps`, `eval-quality`, `serve-mcp`.
+- CLI commands: `index`, `status`, `coverage`, `search`, `watch`, `symbol`, `deps`, `eval-quality`, `knowledge-build`, `knowledge-status`, `knowledge-profile`, `serve-mcp`.
 - Quality command: `eval-quality` compares RAG retrieval against a keyword baseline on gold-query files.
-- MCP tools: `rag_search`, `rag_reindex`, `rag_status`, `rag_coverage`, `rag_symbol`, `rag_deps`.
+- MCP tools: `rag_search`, `rag_reindex`, `rag_status`, `rag_coverage`, `rag_symbol`, `rag_deps`, `rag_knowledge_build`, `rag_knowledge_status`, `rag_knowledge_profile`.
 - JSON schemas for config and generated artifacts.
 - Provider-neutral operation: Codex, DeepSeek, Claude, or another model client can use the same stdio server command if it supports MCP.
 
@@ -96,6 +96,8 @@ Projects can loosen the rules explicitly in their own `rag.config.json`, but the
 - `python3 tools/rag.py search --root <repo> --config <config> "query" --mode fdr` returns review-oriented evidence bundles across plan/spec, implementation, test, and build/config roles when available.
 - `python3 tools/rag.py search --root <repo> --config <config> "query" --mode architecture --with-plan` returns ranked chunks plus a section-level read plan and diagnostics.
 - `python3 tools/rag.py search --root <repo> --config <config> "query" --mode knowledge --with-plan` prioritizes generated project-memory packs.
+- `python3 tools/rag.py search --root <repo> --config <config> "query" --auto-reindex` rebuilds the full index first only when `status` reports a missing/stale manifest.
+- `python3 tools/rag.py watch --root <repo> --config <config>` polls the source-state fingerprint and performs full rebuilds when indexed files are added, changed, or deleted.
 - Search results include `document_status`, `status_boost`, `section`, and `read_hint`.
 - Superseded or historical documents are downranked and marked as deprioritized in read plans.
 - `python3 tools/rag.py symbol --root <repo> --config <config> Name` returns exact symbol matches.
@@ -103,6 +105,7 @@ Projects can loosen the rules explicitly in their own `rag.config.json`, but the
 - `python3 tools/rag.py eval-quality --root <repo> --config <config> --cases <cases.json>` reports Top-1, Top-3, Top-5, Top-10, and MRR.
 - `python3 tools/rag.py knowledge-build --root <repo> --cases <cases.json> --output Docs/knowledge/rag --project <name>` writes normalized lessons, pattern registry, failure taxonomy, owner map, query templates, and summary.
 - `knowledge-build --rules <rules.json>` may add project-specific owner mappings while keeping the generator itself project-neutral.
+- `python3 tools/rag.py knowledge-status --root <repo> --summary Docs/knowledge/rag` reports whether the generated pack is stale against the cases/rules hashes recorded in `summary.json`.
 - `python3 tools/rag.py knowledge-profile --root <repo> --output rag.knowledge.json --project <name>` writes a starter rules profile from the repository layout.
 - `python3 tools/rag.py serve-mcp --root <repo> --config <config>` speaks MCP stdio.
 - Tests prove secret path exclusion, index artifact generation, search ranking, symbol lookup, dependency lookup, provider-neutral initialize handling, and MCP tool dispatch.
