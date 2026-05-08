@@ -2,6 +2,8 @@
 # frozen_string_literal: true
 
 require_relative "../tools/internal_decision_lib"
+require_relative "../tools/fixture_readiness_lib"
+require_relative "../tools/hook_entry_plan_lib"
 
 $cases = 0
 $failures = []
@@ -96,6 +98,21 @@ decision = StrictModeInternalDecision.from_preflight(
   preflight(logical_event: "stop", attempted: true, trusted: true, would_block: false)
 )
 assert(name, decision["action"] == "allow", "expected allow, got #{decision["action"]}")
+
+# Drift guard: BLOCKING_EVENTS в hook_entry_plan_lib и fixture_readiness_lib
+# определены отдельно (избегаем кросс-зависимостей), но обязаны совпадать.
+# Любое расхождение = баг конфигурации блокирующих событий.
+name = "BLOCKING_EVENTS stay aligned across modules"
+hook_set = StrictModeHookEntryPlan::BLOCKING_EVENTS.sort
+readiness_set = StrictModeFixtureReadiness::BLOCKING_EVENTS.sort
+assert(name, hook_set == readiness_set,
+       "drift: hook_entry_plan #{hook_set.inspect} vs fixture_readiness #{readiness_set.inspect}")
+
+# CONTINUATION_GUARD_EVENTS должно содержать все STOP_LIKE_EVENTS.
+name = "CONTINUATION_GUARD_EVENTS is a superset of STOP_LIKE_EVENTS"
+assert(name,
+       (StrictModeInternalDecision::STOP_LIKE_EVENTS - StrictModeInternalDecision::CONTINUATION_GUARD_EVENTS).empty?,
+       "stop-like events leaked outside continuation guard set")
 
 if $failures.empty?
   puts "internal decision tests passed (#{$cases} cases)"

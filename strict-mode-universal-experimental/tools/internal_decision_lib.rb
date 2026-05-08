@@ -5,7 +5,7 @@ module StrictModeInternalDecision
   extend self
 
   STOP_LIKE_EVENTS = %w[stop subagent-stop].freeze
-  CONTINUATION_GUARD_EVENTS = %w[stop subagent-stop permission-request].freeze
+  CONTINUATION_GUARD_EVENTS = (STOP_LIKE_EVENTS + %w[permission-request]).freeze
 
   # Превращает preflight-результат в internal-decision для bin/strict-hook.
   # Recursion-guard: при follow-up Stop/SubagentStop с stop_hook_active=true

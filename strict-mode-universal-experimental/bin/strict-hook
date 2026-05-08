@@ -230,7 +230,7 @@ def enforcing_hook_entry(context, provider, logical_event)
 end
 
 def blocking_capable_logical_event?(logical_event)
-  %w[pre-tool-use stop subagent-stop permission-request].include?(logical_event)
+  StrictModeFixtureReadiness::BLOCKING_EVENTS.include?(logical_event)
 end
 
 def stop_continuation_logical_event?(logical_event)
