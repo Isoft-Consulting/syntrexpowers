@@ -6,6 +6,8 @@ Goal: one strict-mode package for Claude Code and Codex CLI without per-agent sc
 
 Canonical contract: [SPEC.md](SPEC.md). Implementation cannot claim enforcing readiness until the metadata, schema, matrix, parser, fixture, and fail-closed gates in [Implementation Readiness](specs/17-implementation-readiness.md) are satisfied.
 
+Runtime requirements: Ruby >= 2.6 for the installer, validators, and tests. `install.sh` enforces the floor and refuses to run on older interpreters.
+
 Current mechanical checks:
 
 ```bash

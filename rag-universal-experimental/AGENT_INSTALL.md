@@ -6,7 +6,7 @@ The toolkit is project-local and provider-neutral. Codex, Claude, DeepSeek, or a
 
 ## Preconditions
 
-- Python 3.10+ is available as `python3`.
+- Python 3.9+ is available as `python3` (sources use `from __future__ import annotations`, so PEP 604 / PEP 585 type hints stay strings at runtime; tests run clean on 3.9).
 - You have filesystem access to both:
   - the source toolkit directory, usually `rag-universal-experimental/`;
   - the target project root.
