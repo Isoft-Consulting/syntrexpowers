@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import math
+import sqlite3
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
-from .core import ensure_fresh_index, get_index_dir, load_chunks, load_config, load_json_list, resolve_root, search_index, search_index_with_plan, tokenize
+from .core import build_index, close_search_cache_connections, ensure_fresh_index, get_index_dir, load_chunks, load_config, load_json_list, rebuild_search_cache, resolve_root, search_index, search_index_with_plan, tokenize
 
 QUALITY_CHECK_VERSION = "rag.quality-check.v1"
 QUALITY_BENCHMARK_VERSION = "rag.quality-benchmark.v1"
@@ -317,6 +318,7 @@ def benchmark_quality(
     thresholds = profile["thresholds"]
     baseline_corpus = load_baseline_corpus(root, index_dir) if include_baseline else []
     chunk_lookup = build_chunk_text_lookup(load_chunks(index_dir))
+    rebuilt_after_sqlite_error = False
 
     rag_ranks: list[int | None] = []
     baseline_ranks: list[int | None] = []
@@ -332,7 +334,21 @@ def benchmark_quality(
         case_mode = str(case.get("mode") or mode)
 
         started = time.perf_counter()
-        rag_payload = search_index_with_plan(root, config_path, query, top_k=top_k, mode=case_mode)
+        try:
+            rag_payload = search_index_with_plan(root, config_path, query, top_k=top_k, mode=case_mode)
+        except sqlite3.DatabaseError:
+            if rebuilt_after_sqlite_error:
+                raise
+            repaired = rebuild_search_cache(index_dir, config)
+            if not repaired:
+                build_index(root, config_path, incremental=False)
+                config = load_config(root, config_path)
+                index_dir = get_index_dir(root, config)
+            close_search_cache_connections(index_dir)
+            chunk_lookup = build_chunk_text_lookup(load_chunks(index_dir))
+            rebuilt_after_sqlite_error = True
+            started = time.perf_counter()
+            rag_payload = search_index_with_plan(root, config_path, query, top_k=top_k, mode=case_mode)
         rag_elapsed = (time.perf_counter() - started) * 1000.0
         rag_sources = [str(item["source"]) for item in rag_payload["results"]]
         rag_rank = hit_rank(rag_sources, expected)

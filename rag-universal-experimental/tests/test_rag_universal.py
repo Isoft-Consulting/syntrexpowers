@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -18,11 +19,15 @@ from rag_universal.core import (
     build_index,
     build_query_variants,
     chunk_role,
+    close_search_cache_connections,
     ensure_fresh_index,
     fuse_ranked_results,
+    get_index_dir,
     index_coverage,
     index_status,
     load_chunks,
+    load_config,
+    load_search_cache,
     query_role_bias_multiplier,
     read_hint_with_role,
     read_plan_role_rank,
@@ -120,6 +125,35 @@ class RagUniversalTest(unittest.TestCase):
 
         deps = lookup_deps(root, None, "json", direction="reverse")
         self.assertEqual(deps[0]["source"], "src/service.py")
+
+    def test_search_falls_back_to_chunk_scan_when_sqlite_cache_is_unreadable(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        with mock.patch("rag_universal.core.load_search_cache") as mocked_cache, mock.patch(
+            "rag_universal.core.search_precomputed_cache",
+            side_effect=sqlite3.DatabaseError("database disk image is malformed"),
+        ):
+            mocked_cache.return_value = object()
+            results = search_index(root, None, "strict stop guard", top_k=1)
+        self.assertEqual(results[0]["source"], "README.md")
+
+    def test_load_search_cache_returns_none_for_corrupt_sqlite_file(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        index_dir = get_index_dir(root, load_config(root, None))
+        close_search_cache_connections(index_dir)
+        (index_dir / "search.sqlite").write_text("not a sqlite database", encoding="utf-8")
+        self.assertIsNone(load_search_cache(index_dir))
+
+    def test_search_repairs_corrupt_sqlite_cache_before_fallback(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        index_dir = get_index_dir(root, load_config(root, None))
+        close_search_cache_connections(index_dir)
+        (index_dir / "search.sqlite").write_text("not a sqlite database", encoding="utf-8")
+        results = search_index(root, None, "strict stop guard", top_k=1)
+        self.assertEqual(results[0]["source"], "README.md")
+        self.assertIsNotNone(load_search_cache(index_dir))
 
     def test_build_query_variants_includes_anchor_and_compact_focus_terms(self) -> None:
         root = self.make_project()
@@ -1407,6 +1441,68 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(payload["schema_version"], "rag.quality-benchmark.v1")
         self.assertEqual(payload["cases"], [])
         self.assertIn("verdict", payload)
+
+    def test_benchmark_quality_recovers_from_sqlite_error_with_search_cache_rebuild(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        cases = root / "cases.json"
+        cases.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "stop_guard",
+                        "query": "strict stop guard",
+                        "expected_sources": ["README.md"],
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        good_payload = {
+            "results": [{"source": "README.md"}],
+            "read_plan": {"items": [{"source": "README.md", "read_hint": "README.md:1"}]},
+        }
+        with mock.patch(
+            "rag_universal.eval_quality.search_index_with_plan",
+            side_effect=[sqlite3.DatabaseError("database disk image is malformed"), good_payload],
+        ), mock.patch("rag_universal.eval_quality.rebuild_search_cache", return_value=True) as mocked_rebuild, mock.patch(
+            "rag_universal.eval_quality.build_index"
+        ) as mocked_build:
+            report = benchmark_quality(root, None, cases, top_k=3, include_cases=False)
+        mocked_rebuild.assert_called_once()
+        mocked_build.assert_not_called()
+        self.assertEqual(report["summary"]["rag"]["top1"], 1)
+
+    def test_benchmark_quality_falls_back_to_full_rebuild_when_search_cache_rebuild_fails(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        cases = root / "cases.json"
+        cases.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "stop_guard",
+                        "query": "strict stop guard",
+                        "expected_sources": ["README.md"],
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        good_payload = {
+            "results": [{"source": "README.md"}],
+            "read_plan": {"items": [{"source": "README.md", "read_hint": "README.md:1"}]},
+        }
+        with mock.patch(
+            "rag_universal.eval_quality.search_index_with_plan",
+            side_effect=[sqlite3.DatabaseError("database disk image is malformed"), good_payload],
+        ), mock.patch("rag_universal.eval_quality.rebuild_search_cache", return_value=False) as mocked_rebuild, mock.patch(
+            "rag_universal.eval_quality.build_index"
+        ) as mocked_build:
+            report = benchmark_quality(root, None, cases, top_k=3, include_cases=False)
+        mocked_rebuild.assert_called_once()
+        mocked_build.assert_called_once()
+        self.assertEqual(report["summary"]["rag"]["top1"], 1)
 
     def test_resolve_benchmark_profile_uses_mode_specific_defaults(self) -> None:
         config = {

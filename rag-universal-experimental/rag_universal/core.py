@@ -27,6 +27,7 @@ SEARCH_VERSION = "hash-vector-bm25.v16"
 _SEARCH_CACHE_CONNECTIONS: dict[tuple[str, float, int], sqlite3.Connection] = {}
 _LEXICON_CACHE: dict[tuple[str, float, int], dict[str, Any]] = {}
 _SEARCH_CACHE_METADATA: dict[int, dict[str, str]] = {}
+_SEARCH_CACHE_FAILURES: dict[str, str] = {}
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "schema_version": CONFIG_VERSION,
@@ -952,6 +953,29 @@ def clear_lexicon_cache(index_dir: Path) -> None:
             _LEXICON_CACHE.pop(cache_key, None)
 
 
+def search_cache_path(index_dir: Path) -> Path | None:
+    manifest = load_manifest(index_dir)
+    if not manifest:
+        return None
+    cache_name = manifest.get("artifacts", {}).get("search_cache")
+    if not isinstance(cache_name, str):
+        return None
+    return index_dir / cache_name
+
+
+def rebuild_search_cache(index_dir: Path, config: dict[str, Any]) -> bool:
+    cache_path = search_cache_path(index_dir)
+    if cache_path is None:
+        return False
+    chunks = load_chunks(index_dir)
+    if not chunks:
+        return False
+    close_search_cache_connections(index_dir)
+    write_search_cache_sqlite(cache_path, chunks, config)
+    _SEARCH_CACHE_FAILURES.pop(str(index_dir.resolve()), None)
+    return True
+
+
 def chunk_sqlite_payload(chunk: dict[str, Any], dim: int, preview_chars: int) -> tuple[str, str, str, str, int, str, str, str, str, int, list[tuple[str, int]]]:
     source = str(chunk.get("source", ""))
     heading = str(chunk.get("heading", ""))
@@ -1088,6 +1112,9 @@ def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: 
             ],
         )
         connection.commit()
+        quick_check = connection.execute("PRAGMA quick_check").fetchone()
+        if quick_check is None or str(quick_check[0]).lower() != "ok":
+            raise sqlite3.DatabaseError(f"search cache quick_check failed: {quick_check}")
     finally:
         connection.close()
     os.replace(tmp, path)
@@ -1522,17 +1549,16 @@ def build_index_incremental(root: Path, config: dict[str, Any], index_dir: Path)
 
 
 def load_search_cache(index_dir: Path) -> sqlite3.Connection | None:
-    manifest = load_manifest(index_dir)
-    if not manifest:
+    index_key = str(index_dir.resolve())
+    cache_path = search_cache_path(index_dir)
+    if cache_path is None:
+        _SEARCH_CACHE_FAILURES.pop(index_key, None)
         return None
-    cache_name = manifest.get("artifacts", {}).get("search_cache")
-    if not isinstance(cache_name, str):
-        return None
-    cache_path = index_dir / cache_name
     if not cache_path.exists():
+        _SEARCH_CACHE_FAILURES.pop(index_key, None)
         return None
     stat = cache_path.stat()
-    cache_key = (str(index_dir.resolve()), stat.st_mtime, stat.st_size)
+    cache_key = (index_key, stat.st_mtime, stat.st_size)
     cached = _SEARCH_CACHE_CONNECTIONS.get(cache_key)
     if cached is not None:
         return cached
@@ -1541,19 +1567,26 @@ def load_search_cache(index_dir: Path) -> sqlite3.Connection | None:
     try:
         connection = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True)
         connection.row_factory = sqlite3.Row
+        quick_check = connection.execute("PRAGMA quick_check").fetchone()
+        if quick_check is None or str(quick_check[0]).lower() != "ok":
+            _SEARCH_CACHE_FAILURES[index_key] = "integrity_check_failed"
+            connection.close()
+            return None
         metadata = {str(row["key"]): str(row["value"]) for row in connection.execute("SELECT key, value FROM meta")}
     except sqlite3.DatabaseError:
         if connection is not None:
             connection.close()
+        _SEARCH_CACHE_FAILURES[index_key] = "db_error"
         return None
     if metadata.get("schema_version") != SEARCH_CACHE_VERSION:
         connection.close()
+        _SEARCH_CACHE_FAILURES[index_key] = "schema_mismatch"
         return None
     if metadata.get("search_version") != SEARCH_VERSION:
         connection.close()
+        _SEARCH_CACHE_FAILURES[index_key] = "search_version_mismatch"
         return None
 
-    index_key = cache_key[0]
     for old_key, old_connection in list(_SEARCH_CACHE_CONNECTIONS.items()):
         if old_key[0] == index_key:
             _SEARCH_CACHE_METADATA.pop(id(old_connection), None)
@@ -1561,6 +1594,7 @@ def load_search_cache(index_dir: Path) -> sqlite3.Connection | None:
             _SEARCH_CACHE_CONNECTIONS.pop(old_key, None)
     _SEARCH_CACHE_CONNECTIONS[cache_key] = connection
     _SEARCH_CACHE_METADATA[id(connection)] = metadata
+    _SEARCH_CACHE_FAILURES.pop(index_key, None)
     return connection
 
 
@@ -3674,9 +3708,25 @@ def search_index(
     root = resolve_root(root_arg)
     config = load_config(root, config_path)
     index_dir = get_index_dir(root, config)
+    index_key = str(index_dir.resolve())
     search_cache = load_search_cache(index_dir)
+    if search_cache is None and _SEARCH_CACHE_FAILURES.get(index_key) in {"db_error", "integrity_check_failed"}:
+        if rebuild_search_cache(index_dir, config):
+            search_cache = load_search_cache(index_dir)
     if search_cache is not None:
-        return search_precomputed_cache(search_cache, config, query, top_k, filter_source, filter_type, mode)
+        try:
+            return search_precomputed_cache(search_cache, config, query, top_k, filter_source, filter_type, mode)
+        except sqlite3.DatabaseError:
+            close_search_cache_connections(index_dir)
+            _SEARCH_CACHE_FAILURES[index_key] = "query_error"
+            if rebuild_search_cache(index_dir, config):
+                search_cache = load_search_cache(index_dir)
+                if search_cache is not None:
+                    try:
+                        return search_precomputed_cache(search_cache, config, query, top_k, filter_source, filter_type, mode)
+                    except sqlite3.DatabaseError:
+                        close_search_cache_connections(index_dir)
+                        _SEARCH_CACHE_FAILURES[index_key] = "query_error"
 
     chunks = load_chunks(index_dir)
     if not chunks:
