@@ -26,6 +26,7 @@ SEARCH_VERSION = "hash-vector-bm25.v16"
 
 _SEARCH_CACHE_CONNECTIONS: dict[tuple[str, float, int], sqlite3.Connection] = {}
 _LEXICON_CACHE: dict[tuple[str, float, int], dict[str, Any]] = {}
+_SEARCH_CACHE_METADATA: dict[int, dict[str, str]] = {}
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "schema_version": CONFIG_VERSION,
@@ -589,9 +590,18 @@ def status_boost(status: str, config: dict[str, Any]) -> float:
 
 
 def read_hint(source: str, start_line: int, heading: str) -> str:
+    return read_hint_with_role(source, start_line, heading, "")
+
+
+def read_hint_with_role(source: str, start_line: int, heading: str, chunk_role: str) -> str:
     clean_heading = re.sub(r"\s+", " ", heading).strip()
+    role_label = chunk_role.replace("_", " ").strip()
+    if clean_heading and clean_heading != Path(source).name and role_label:
+        return f"{source}:{start_line} [{role_label}] ({clean_heading})"
     if clean_heading and clean_heading != Path(source).name:
         return f"{source}:{start_line} ({clean_heading})"
+    if role_label:
+        return f"{source}:{start_line} [{role_label}]"
     return f"{source}:{start_line}"
 
 
@@ -606,41 +616,96 @@ def split_large_text(text: str, source: str, heading: str, start_line: int, conf
     overlap = min(int(chunk_cfg.get("overlap_chars", 160)), max(max_chars // 3, 0))
     chunks: list[dict[str, Any]] = []
 
-    paragraphs = [part.strip() for part in re.split(r"\n{2,}", text) if part.strip()]
+    paragraphs: list[tuple[str, int]] = []
+    paragraph_start = start_line
+    current_lines: list[str] = []
+    for offset, raw_line in enumerate(text.splitlines(), start=0):
+        if raw_line.strip():
+            if not current_lines:
+                paragraph_start = start_line + offset
+            current_lines.append(raw_line)
+            continue
+        if current_lines:
+            paragraphs.append(("\n".join(current_lines).strip(), paragraph_start))
+            current_lines = []
+    if current_lines:
+        paragraphs.append(("\n".join(current_lines).strip(), paragraph_start))
+    if not paragraphs and text.strip():
+        paragraphs = [(text.strip(), start_line)]
+
     buffer = ""
-    for paragraph in paragraphs or [text.strip()]:
+    buffer_start_line = start_line
+    for paragraph, paragraph_line in paragraphs:
         if len(paragraph) > max_chars:
             if buffer:
-                chunks.append(make_chunk(source, heading, buffer, start_line, len(chunks)))
+                chunks.append(make_chunk(source, heading, buffer, buffer_start_line, len(chunks)))
                 buffer = ""
+                buffer_start_line = paragraph_line
             step = max(max_chars - overlap, 1)
             for idx in range(0, len(paragraph), step):
                 piece = paragraph[idx : idx + max_chars].strip()
                 if len(piece) >= min_chars or not chunks:
-                    chunks.append(make_chunk(source, heading, piece, start_line, len(chunks)))
+                    piece_line = paragraph_line + max(0, line_for_offset(paragraph, idx) - 1)
+                    chunks.append(make_chunk(source, heading, piece, piece_line, len(chunks)))
             continue
 
         candidate = f"{buffer}\n\n{paragraph}".strip() if buffer else paragraph
         if len(candidate) > max_chars and buffer:
-            chunks.append(make_chunk(source, heading, buffer, start_line, len(chunks)))
+            chunks.append(make_chunk(source, heading, buffer, buffer_start_line, len(chunks)))
             buffer = paragraph
+            buffer_start_line = paragraph_line
         else:
+            if not buffer:
+                buffer_start_line = paragraph_line
             buffer = candidate
 
     if buffer and (len(buffer) >= min_chars or not chunks):
-        chunks.append(make_chunk(source, heading, buffer, start_line, len(chunks)))
+        chunks.append(make_chunk(source, heading, buffer, buffer_start_line, len(chunks)))
     return chunks
+
+
+def chunk_role(source: str, heading: str, text: str) -> str:
+    lower_source = source.lower()
+    lower_heading = heading.lower()
+    sample = text[:2400].lower()
+    if lower_source.endswith((".test.ts", ".test.js", ".test.vue", ".spec.ts", ".spec.js", ".spec.vue")):
+        return "test"
+    if "/tests/" in lower_source:
+        return "test"
+    if "/migrations/" in lower_source:
+        return "migration"
+    if "/repositories/" in lower_source:
+        return "repository"
+    if lower_source.endswith("controller.php") or "/controllers/" in lower_source:
+        return "controller"
+    if "/workflows/" in lower_source:
+        return "workflow"
+    if "/stores/" in lower_source:
+        return "store"
+    if lower_source.endswith(".vue"):
+        return "component"
+    if lower_source.startswith("uier-spa/src/api/") or "fetchjson(" in sample or "axios." in sample:
+        return "api_client"
+    if "validate" in sample or "validator" in lower_heading:
+        return "validator"
+    if re.search(r"\bselect\b|\binsert\b|\bupdate\b|\bdelete\b", sample):
+        return "sql"
+    if lower_source.endswith((".md", ".txt")):
+        return "docs"
+    return "implementation"
 
 
 def make_chunk(source: str, heading: str, text: str, start_line: int, ordinal: int) -> dict[str, Any]:
     normalized = text.strip()
     digest = sha256_text(f"{source}\n{heading}\n{ordinal}\n{normalized}")[:16]
     status = document_status(source, heading, normalized)
+    role = chunk_role(source, heading, normalized)
     return {
         "schema_version": CHUNK_VERSION,
         "id": f"{source}:{ordinal}:{digest}",
         "source": source,
         "heading": heading,
+        "chunk_role": role,
         "artifact_type": artifact_type(source, heading),
         "document_status": status,
         "start_line": start_line,
@@ -838,6 +903,7 @@ def close_search_cache_connections(index_dir: Path) -> None:
     index_key = str(index_dir.resolve())
     for cache_key, connection in list(_SEARCH_CACHE_CONNECTIONS.items()):
         if cache_key[0] == index_key:
+            _SEARCH_CACHE_METADATA.pop(id(connection), None)
             connection.close()
             _SEARCH_CACHE_CONNECTIONS.pop(cache_key, None)
 
@@ -852,6 +918,7 @@ def clear_lexicon_cache(index_dir: Path) -> None:
 def chunk_sqlite_payload(chunk: dict[str, Any], dim: int, preview_chars: int) -> tuple[str, str, str, str, int, str, str, str, str, int, list[tuple[str, int]]]:
     source = str(chunk.get("source", ""))
     heading = str(chunk.get("heading", ""))
+    role = str(chunk.get("chunk_role", chunk_role(source, heading, str(chunk.get("text", "")))))
     chunk_type = str(chunk.get("artifact_type", ""))
     doc_status = str(chunk.get("document_status", "normal"))
     text = str(chunk.get("text", ""))
@@ -868,7 +935,7 @@ def chunk_sqlite_payload(chunk: dict[str, Any], dim: int, preview_chars: int) ->
         int(chunk.get("start_line", 1)),
         preview,
         " ".join(sorted(set(tokenize(source)))),
-        " ".join(sorted(set(tokenize(heading)))),
+        " ".join(sorted(set(tokenize(f"{heading} {role.replace('_', ' ')}")))),
         vector,
         doc_length,
         postings,
@@ -1452,10 +1519,21 @@ def load_search_cache(index_dir: Path) -> sqlite3.Connection | None:
     index_key = cache_key[0]
     for old_key, old_connection in list(_SEARCH_CACHE_CONNECTIONS.items()):
         if old_key[0] == index_key:
+            _SEARCH_CACHE_METADATA.pop(id(old_connection), None)
             old_connection.close()
             _SEARCH_CACHE_CONNECTIONS.pop(old_key, None)
     _SEARCH_CACHE_CONNECTIONS[cache_key] = connection
+    _SEARCH_CACHE_METADATA[id(connection)] = metadata
     return connection
+
+
+def search_cache_metadata(connection: sqlite3.Connection) -> dict[str, str]:
+    cached = _SEARCH_CACHE_METADATA.get(id(connection))
+    if cached is not None:
+        return cached
+    metadata = {str(row["key"]): str(row["value"]) for row in connection.execute("SELECT key, value FROM meta")}
+    _SEARCH_CACHE_METADATA[id(connection)] = metadata
+    return metadata
 
 
 def load_lexicon(index_dir: Path) -> dict[str, Any]:
@@ -2084,6 +2162,69 @@ def adaptive_read_plan_limit(profile: dict[str, Any], default_limit: int = 6) ->
     return default_limit
 
 
+def assess_read_plan_confidence(results: list[dict[str, Any]], profile: dict[str, Any]) -> dict[str, Any]:
+    ranked = [item for item in results if str(item.get("document_status", "normal")) not in {"superseded", "historical"}]
+    if not ranked:
+        return {"level": "low", "recommended_limit": 1, "top_score": 0.0, "gap": 0.0}
+    top = ranked[0]
+    top_score = float(top.get("score", 0.0))
+    top_source = str(top.get("source", ""))
+    top_role = str(top.get("fdr_role", "other"))
+    second = next((item for item in ranked[1:] if str(item.get("source", "")) != top_source), None)
+    second_score = float(second.get("score", 0.0)) if second is not None else 0.0
+    gap = top_score - second_score
+    ratio = (second_score / top_score) if top_score > 0 else 1.0
+
+    high_confidence = (
+        top_score >= 1.2
+        and (second is None or gap >= 0.4 or ratio <= 0.58)
+        and top_role in {"implementation", "config", "build_file", "ignore_config", "compose_config"}
+    )
+    medium_confidence = (
+        top_score >= 0.7
+        and (second is None or gap >= 0.2 or ratio <= 0.78)
+    )
+    if profile.get("mode") == "knowledge" and top_role == "docs":
+        if top_score >= 1.0 and (second is None or ratio <= 0.65):
+            high_confidence = True
+        elif top_score >= 0.65 and (second is None or ratio <= 0.82):
+            medium_confidence = True
+
+    if high_confidence:
+        return {"level": "high", "recommended_limit": 1, "top_score": round(top_score, 6), "gap": round(gap, 6)}
+    if medium_confidence:
+        return {"level": "medium", "recommended_limit": 2, "top_score": round(top_score, 6), "gap": round(gap, 6)}
+    return {"level": "low", "recommended_limit": 3, "top_score": round(top_score, 6), "gap": round(gap, 6)}
+
+
+def query_role_bias_multiplier(chunk_role_label: str, profile: dict[str, Any]) -> float:
+    role = str(chunk_role_label or "").strip().lower()
+    if not role:
+        return 1.0
+    query_terms = {str(term).lower() for term in profile.get("query_terms", set())}
+    review_terms = {str(term).lower() for term in profile.get("review_terms", [])}
+    lower_mode = str(profile.get("mode", "")).lower()
+
+    if lower_mode == "frontend":
+        if ("target.call" in review_terms or "expected_source_revision" in review_terms) and role in {"api_client", "workflow"}:
+            return 1.16 if role == "api_client" else 1.08
+        if ("attributes_merge" in review_terms or {"attributes", "merge"} <= query_terms) and role in {"api_client", "store"}:
+            return 1.14 if role == "api_client" else 1.08
+        if ("allow_self_link" in review_terms or {"relation", "entity"} <= query_terms) and role in {"component", "store"}:
+            return 1.1
+        if {"dashboard", "widget"} <= query_terms and role in {"component", "store"}:
+            return 1.1
+    if "audit" in query_terms and role in {"repository", "workflow", "controller"}:
+        return 1.1
+    if "migration" in query_terms and role == "migration":
+        return 1.16
+    if {"controller"} & query_terms and role == "controller":
+        return 1.14
+    if {"repository"} & query_terms and role == "repository":
+        return 1.14
+    return 1.0
+
+
 def intent_source_multiplier(source: str, artifact: str, role: str, profile: dict[str, Any]) -> float:
     multiplier = 1.0
     lower = source.lower()
@@ -2245,6 +2386,52 @@ def review_term_multiplier(profile: dict[str, Any], source: str, heading: str, p
     return 1.06 + min(0.22, overlap * 0.30)
 
 
+def section_anchor_terms(profile: dict[str, Any]) -> list[str]:
+    anchors: list[str] = []
+    seen: set[str] = set()
+    review_terms = [str(term).lower().strip() for term in profile.get("review_terms", []) if str(term).strip()]
+    query_terms = [str(term).lower().strip() for term in profile.get("query_terms", set()) if str(term).strip()]
+    for term in review_terms:
+        if term not in seen:
+            anchors.append(term)
+            seen.add(term)
+    for term in query_terms:
+        if term in seen:
+            continue
+        if "." in term or "_" in term or len(term) >= 14:
+            anchors.append(term)
+            seen.add(term)
+    return anchors[:10]
+
+
+def section_anchor_overlap(profile: dict[str, Any], heading: str, preview: str) -> float:
+    anchors = section_anchor_terms(profile)
+    if not anchors:
+        return 0.0
+    heading_lower = heading.lower()
+    preview_lower = preview.lower()
+    matched = 0.0
+    for term in anchors:
+        if term in preview_lower:
+            matched += 1.2
+            continue
+        if term in heading_lower:
+            matched += 0.9
+    return matched / (len(anchors) * 1.2)
+
+
+def section_anchor_multiplier(profile: dict[str, Any], chunk_role_label: str, heading: str, preview: str) -> float:
+    overlap = section_anchor_overlap(profile, heading, preview)
+    if overlap <= 0.0:
+        return 1.0
+    role = str(chunk_role_label or "").lower()
+    if role in {"api_client", "workflow", "repository", "controller", "migration", "store"}:
+        return 1.08 + min(0.22, overlap * 0.28)
+    if role in {"component", "validator", "sql"}:
+        return 1.05 + min(0.16, overlap * 0.22)
+    return 1.04 + min(0.12, overlap * 0.18)
+
+
 def fdr_role(source: str, artifact: str) -> str:
     lower = source.lower()
     wrapped = f"/{lower}"
@@ -2366,10 +2553,25 @@ def build_query_variants(query: str, config: dict[str, Any], mode: str, profile:
         return variants
 
     def append_variant(parts: list[str]) -> None:
-        compact = " ".join(str(part).strip() for part in parts if str(part).strip())
+        seen_parts: set[str] = set()
+        normalized_parts: list[str] = []
+        for part in parts:
+            compact_part = str(part).strip()
+            if not compact_part:
+                continue
+            key = compact_part.lower()
+            if key in seen_parts:
+                continue
+            seen_parts.add(key)
+            normalized_parts.append(compact_part)
+        compact = " ".join(normalized_parts)
         if not compact:
             return
-        if compact not in variants:
+        compact_key = " ".join(sorted(set(tokenize(compact))))
+        if not compact_key:
+            return
+        existing_keys = {" ".join(sorted(set(tokenize(item)))) for item in variants}
+        if compact not in variants and compact_key not in existing_keys:
             variants.append(compact)
 
     anchor_terms: list[str] = []
@@ -2438,7 +2640,7 @@ def build_query_variants(query: str, config: dict[str, Any], mode: str, profile:
             if term in query_term_set or term in {value.lower() for value in review_terms}:
                 mode_focus.append(term)
     append_variant((mode_focus[:4] + anchor_terms[:4])[:8])
-    return variants[:4]
+    return variants[:3]
 
 
 def fuse_ranked_results(result_sets: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
@@ -2509,6 +2711,27 @@ def should_decompose_query(results: list[dict[str, Any]], profile: dict[str, Any
     if top_score < 0.62:
         return True
     if (top_score - second_score) < 0.08:
+        return True
+    return False
+
+
+def can_stop_variant_search(
+    primary_results: list[dict[str, Any]],
+    fused_results: list[dict[str, Any]],
+    variant_count: int,
+) -> bool:
+    if variant_count < 1 or not primary_results or not fused_results:
+        return False
+    primary_top = primary_results[0]
+    fused_top = fused_results[0]
+    if str(primary_top.get("source", "")) != str(fused_top.get("source", "")):
+        return False
+    fusion_hits = int(fused_top.get("fusion_hits", 1))
+    if fusion_hits < 2:
+        return False
+    top_score = float(fused_top.get("score", 0.0))
+    second_score = float(fused_results[1].get("score", 0.0)) if len(fused_results) > 1 else 0.0
+    if top_score >= 1.5 and (top_score - second_score) >= 0.45:
         return True
     return False
 
@@ -2654,6 +2877,22 @@ def fetch_path_candidates(connection: sqlite3.Connection, query_paths: list[str]
     return matches
 
 
+def cached_path_candidates(
+    connection: sqlite3.Connection,
+    query_paths: list[str],
+    cache: dict[tuple[str, ...], dict[int, float]] | None = None,
+) -> dict[int, float]:
+    key = tuple(query_paths)
+    if cache is None:
+        return fetch_path_candidates(connection, query_paths)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    matches = fetch_path_candidates(connection, query_paths)
+    cache[key] = matches
+    return matches
+
+
 def extract_query_anchor_terms(query: str, profile: dict[str, Any] | None = None) -> list[str]:
     active_profile = profile or score_query_profile(query, "default", None)
     anchors: list[str] = []
@@ -2724,6 +2963,27 @@ def fetch_lexicon_candidates(
         source = str(row["source"])
         score = source_scores.get(source, 0.0) / max(max_score, 0.001)
         matches[doc_id] = max(matches.get(doc_id, 0.0), score)
+    return matches
+
+
+def cached_lexicon_candidates(
+    connection: sqlite3.Connection,
+    query: str,
+    profile: dict[str, Any] | None = None,
+    cache: dict[tuple[str, tuple[str, ...]], dict[int, float]] | None = None,
+) -> dict[int, float]:
+    active_profile = profile or score_query_profile(query, "default", None)
+    key = (
+        str(query),
+        tuple(str(term).lower() for term in active_profile.get("review_terms", [])),
+    )
+    if cache is None:
+        return fetch_lexicon_candidates(connection, query, active_profile)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    matches = fetch_lexicon_candidates(connection, query, active_profile)
+    cache[key] = matches
     return matches
 
 
@@ -2829,6 +3089,57 @@ def fetch_cached_docs(connection: sqlite3.Connection, doc_ids: set[int]) -> dict
     return docs
 
 
+def compute_bm25_scores(
+    connection: sqlite3.Connection,
+    query_counts: Counter[str],
+    total_docs: int,
+    avg_len: float,
+    token_rows_cache: dict[str, list[sqlite3.Row]] | None = None,
+) -> dict[int, float]:
+    if not query_counts:
+        return {}
+    ordered_tokens = sorted(query_counts)
+    rows_by_token = token_rows_cache if token_rows_cache is not None else defaultdict(list)
+    missing_tokens = [token for token in ordered_tokens if token not in rows_by_token]
+    if missing_tokens:
+        placeholders = ",".join("?" for _ in missing_tokens)
+        try:
+            rows = connection.execute(
+                f"""
+                SELECT postings.token, postings.doc_id, postings.freq, docs.doc_length
+                FROM postings
+                JOIN docs ON docs.id = postings.doc_id
+                WHERE postings.token IN ({placeholders})
+                ORDER BY postings.token
+                """,
+                tuple(missing_tokens),
+            ).fetchall()
+        except sqlite3.DatabaseError:
+            return {}
+        fetched: dict[str, list[sqlite3.Row]] = defaultdict(list)
+        for row in rows:
+            fetched[str(row["token"])].append(row)
+        for token in missing_tokens:
+            rows_by_token[token] = fetched.get(token, [])
+
+    raw_bm25_by_doc: dict[int, float] = defaultdict(float)
+    k1 = 1.5
+    b = 0.75
+    for token in ordered_tokens:
+        token_rows = rows_by_token.get(token, [])
+        if not token_rows:
+            continue
+        df = len(token_rows)
+        idf = math.log((total_docs - df + 0.5) / (df + 0.5) + 1.0)
+        for row in token_rows:
+            doc_index = int(row["doc_id"])
+            freq = int(row["freq"])
+            doc_len = int(row["doc_length"])
+            denom = freq + k1 * (1.0 - b + b * doc_len / max(avg_len, 1.0))
+            raw_bm25_by_doc[doc_index] += idf * (freq * (k1 + 1.0)) / max(denom, 0.001)
+    return raw_bm25_by_doc
+
+
 def rows_to_results(
     rows: list[sqlite3.Row],
     config: dict[str, Any],
@@ -2843,11 +3154,14 @@ def rows_to_results(
         chunk_type = str(row["artifact_type"] or "")
         doc_status = str(row["document_status"] or "normal")
         start_line = int(row["start_line"] or 1)
+        role_label = chunk_role(source, str(row["heading"] or ""), str(row["preview"] or ""))
         path_match = path_matches.get(int(row["id"]), 0.0)
         penalty = source_penalty(source, config)
         doc_status_boost = status_boost(doc_status, config)
         role = fdr_role(source, chunk_type)
         intent_multiplier = intent_source_multiplier(source, chunk_type, role, active_profile)
+        role_bias = query_role_bias_multiplier(role_label, active_profile)
+        section_boost = section_anchor_multiplier(active_profile, role_label, str(row["heading"] or ""), str(row["preview"] or ""))
         review_multiplier = review_term_multiplier(active_profile, source, str(row["heading"] or ""), str(row["preview"] or ""))
         score = (
             float(config.get("search", {}).get("explicit_path_boost", 0.75)) * path_match
@@ -2857,6 +3171,8 @@ def rows_to_results(
             * penalty
             * doc_status_boost
             * intent_multiplier
+            * role_bias
+            * section_boost
             * review_multiplier
         )
         results.append(
@@ -2870,15 +3186,18 @@ def rows_to_results(
                 "source_penalty": round(penalty, 6),
                 "status_boost": round(doc_status_boost, 6),
                 "intent_boost": round(intent_multiplier, 6),
+                "role_bias": round(role_bias, 6),
+                "section_boost": round(section_boost, 6),
                 "review_boost": round(review_multiplier, 6),
                 "fdr_role": role,
                 "source": source,
                 "heading": row["heading"] or "",
                 "section": row["heading"] or "",
+                "chunk_role": role_label,
                 "artifact_type": chunk_type,
                 "document_status": doc_status,
                 "start_line": start_line,
-                "read_hint": read_hint(source, start_line, str(row["heading"] or "")),
+                "read_hint": read_hint_with_role(source, start_line, str(row["heading"] or ""), role_label),
                 "preview": row["preview"] or "",
             }
         )
@@ -2894,8 +3213,11 @@ def search_precomputed_cache_once(
     filter_type: str | None = None,
     mode: str = "default",
     candidate_limit_override: int | None = None,
+    bm25_token_cache: dict[str, list[sqlite3.Row]] | None = None,
+    path_candidate_cache: dict[tuple[str, ...], dict[int, float]] | None = None,
+    lexicon_candidate_cache: dict[tuple[str, tuple[str, ...]], dict[int, float]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any], int]:
-    metadata = {str(row["key"]): str(row["value"]) for row in connection.execute("SELECT key, value FROM meta")}
+    metadata = search_cache_metadata(connection)
     search_cfg = config.get("search", {})
     dim = int(search_cfg.get("hash_dim", int(metadata.get("hash_dim", 512))))
     min_score = float(search_cfg.get("min_score", 0.02))
@@ -2918,8 +3240,8 @@ def search_precomputed_cache_once(
     query_counts = trim_query_counts(token_counts(expanded_query), config)
     query_terms = set(query_counts)
     query_vector = hashed_vector(query_counts, dim)
-    path_matches = fetch_path_candidates(connection, extract_query_paths(query))
-    lexicon_matches = fetch_lexicon_candidates(connection, query, profile)
+    path_matches = cached_path_candidates(connection, extract_query_paths(query), path_candidate_cache)
+    lexicon_matches = cached_lexicon_candidates(connection, query, profile, lexicon_candidate_cache)
     if path_matches and bool(search_cfg.get("explicit_path_priority", True)):
         path_docs = fetch_cached_docs(connection, set(path_matches))
         path_results = rows_to_results(list(path_docs.values()), config, path_matches, search_mode, profile)
@@ -2928,31 +3250,7 @@ def search_precomputed_cache_once(
 
     total_docs = int(metadata.get("total_docs", 0))
     avg_len = float(metadata.get("avg_len", 1.0))
-    raw_bm25_by_doc: dict[int, float] = defaultdict(float)
-    k1 = 1.5
-    b = 0.75
-    for token in query_counts:
-        token_rows = list(
-            connection.execute(
-                """
-                SELECT postings.doc_id, postings.freq, docs.doc_length
-                FROM postings
-                JOIN docs ON docs.id = postings.doc_id
-                WHERE postings.token = ?
-                """,
-                (token,),
-            )
-        )
-        if not token_rows:
-            continue
-        df = len(token_rows)
-        idf = math.log((total_docs - df + 0.5) / (df + 0.5) + 1.0)
-        for row in token_rows:
-            doc_index = int(row["doc_id"])
-            freq = int(row["freq"])
-            doc_len = int(row["doc_length"])
-            denom = freq + k1 * (1.0 - b + b * doc_len / max(avg_len, 1.0))
-            raw_bm25_by_doc[doc_index] += idf * (freq * (k1 + 1.0)) / max(denom, 0.001)
+    raw_bm25_by_doc = compute_bm25_scores(connection, query_counts, total_docs, avg_len, bm25_token_cache)
 
     max_bm25 = max(raw_bm25_by_doc.values()) if raw_bm25_by_doc else 0.0
     if filter_source:
@@ -2972,6 +3270,7 @@ def search_precomputed_cache_once(
         source = str(doc["source"] or "")
         chunk_type = str(doc["artifact_type"] or "")
         doc_status = str(doc["document_status"] or "normal")
+        role_label = chunk_role(source, str(doc["heading"] or ""), str(doc["preview"] or ""))
         if filter_source and filter_source not in source:
             continue
         if filter_type and not chunk_type.startswith(filter_type):
@@ -2994,6 +3293,8 @@ def search_precomputed_cache_once(
         doc_status_boost = status_boost(doc_status, config)
         role = fdr_role(source, chunk_type)
         intent_multiplier = intent_source_multiplier(source, chunk_type, role, profile)
+        role_bias = query_role_bias_multiplier(role_label, profile)
+        section_boost = section_anchor_multiplier(profile, role_label, str(doc["heading"] or ""), str(doc["preview"] or ""))
         review_multiplier = review_term_multiplier(profile, source, str(doc["heading"] or ""), str(doc["preview"] or ""))
         score *= artifact_boost(source, chunk_type, config)
         score *= fdr_role_boost(source, chunk_type, config, search_mode)
@@ -3001,6 +3302,8 @@ def search_precomputed_cache_once(
         score *= penalty
         score *= doc_status_boost
         score *= intent_multiplier
+        score *= role_bias
+        score *= section_boost
         score *= review_multiplier
         if score < min_score:
             continue
@@ -3017,15 +3320,18 @@ def search_precomputed_cache_once(
                 "source_penalty": round(penalty, 6),
                 "status_boost": round(doc_status_boost, 6),
                 "intent_boost": round(intent_multiplier, 6),
+                "role_bias": round(role_bias, 6),
+                "section_boost": round(section_boost, 6),
                 "review_boost": round(review_multiplier, 6),
                 "fdr_role": role,
                 "source": source,
                 "heading": doc["heading"] or "",
                 "section": doc["heading"] or "",
+                "chunk_role": role_label,
                 "artifact_type": chunk_type,
                 "document_status": doc_status,
                 "start_line": start_line,
-                "read_hint": read_hint(source, start_line, str(doc["heading"] or "")),
+                "read_hint": read_hint_with_role(source, start_line, str(doc["heading"] or ""), role_label),
                 "preview": doc["preview"] or "",
             }
         )
@@ -3043,6 +3349,9 @@ def search_precomputed_cache(
     filter_type: str | None = None,
     mode: str = "default",
 ) -> list[dict[str, Any]]:
+    bm25_token_cache: dict[str, list[sqlite3.Row]] = {}
+    path_candidate_cache: dict[tuple[str, ...], dict[int, float]] = {}
+    lexicon_candidate_cache: dict[tuple[str, tuple[str, ...]], dict[int, float]] = {}
     primary_results, profile, max_chunks_per_source = search_precomputed_cache_once(
         connection,
         config,
@@ -3050,6 +3359,9 @@ def search_precomputed_cache(
         filter_source,
         filter_type,
         mode,
+        bm25_token_cache=bm25_token_cache,
+        path_candidate_cache=path_candidate_cache,
+        lexicon_candidate_cache=lexicon_candidate_cache,
     )
     if profile.get("mode") != "frontend":
         return select_search_results(primary_results, top_k, max_chunks_per_source, mode, config, profile)
@@ -3061,6 +3373,8 @@ def search_precomputed_cache(
     base_candidate_limit = max(50, int(search_cfg.get("candidate_limit", 5000)))
     variant_candidate_limit = max(150, min(base_candidate_limit, base_candidate_limit // 2))
     result_sets: list[list[dict[str, Any]]] = [primary_results]
+    fused_results = primary_results
+    variant_count = 0
     for variant in variants[1:]:
         variant_results, _, _ = search_precomputed_cache_once(
             connection,
@@ -3070,10 +3384,20 @@ def search_precomputed_cache(
             filter_type,
             mode,
             candidate_limit_override=variant_candidate_limit,
+            bm25_token_cache=bm25_token_cache,
+            path_candidate_cache=path_candidate_cache,
+            lexicon_candidate_cache=lexicon_candidate_cache,
         )
         if variant_results:
             result_sets.append(variant_results)
-    fused_results = fuse_ranked_results(result_sets)
+            variant_count += 1
+            fused_results = fuse_ranked_results(result_sets)
+            if can_stop_variant_search(primary_results, fused_results, variant_count):
+                break
+    if len(result_sets) == 1:
+        fused_results = primary_results
+    elif variant_count == 0:
+        fused_results = fuse_ranked_results(result_sets)
     return select_search_results(fused_results, top_k, max_chunks_per_source, mode, config, profile)
 
 
@@ -3092,6 +3416,9 @@ def select_search_results(
     active_config = config or DEFAULT_CONFIG
     active_profile = profile or score_query_profile("", mode, None)
     ordered_results = sorted(results, key=lambda item: profile_result_sort_key(item, active_config, active_profile))
+    confidence = assess_read_plan_confidence(ordered_results, active_profile)
+    if active_profile.get("mode") == "frontend" and str(confidence.get("level", "low")) == "high":
+        limit = min(limit, 3)
 
     def add_result(result: dict[str, Any]) -> bool:
         source = str(result["source"])
@@ -3122,6 +3449,13 @@ def select_search_results(
     for result in ordered_results:
         if len(selected) >= limit:
             break
+        if (
+            active_profile.get("mode") == "frontend"
+            and str(confidence.get("level", "low")) == "high"
+            and selected
+            and not allow_frontend_high_confidence_result(result, active_profile)
+        ):
+            continue
         add_result(result)
     return selected
 
@@ -3138,14 +3472,19 @@ def build_read_plan(
     seen_sources: set[str] = set()
     active_config = config or DEFAULT_CONFIG
     active_profile = profile or score_query_profile("", mode, None)
-    read_plan_limit = adaptive_read_plan_limit(active_profile, max_items)
-    ordered_results = sorted(results, key=lambda item: profile_result_sort_key(item, active_config, active_profile))
+    ordered_results = sorted(results, key=lambda item: read_plan_sort_key(item, active_config, active_profile))
+    confidence = assess_read_plan_confidence(ordered_results, active_profile)
+    read_plan_limit = min(
+        adaptive_read_plan_limit(active_profile, max_items),
+        max(1, int(confidence.get("recommended_limit", 3))),
+    )
     for result in ordered_results:
         status = str(result.get("document_status", "normal"))
         entry = {
             "source": result.get("source"),
             "read_hint": result.get("read_hint"),
             "role": result.get("fdr_role", "other"),
+            "chunk_role": result.get("chunk_role", "implementation"),
             "section": result.get("section", ""),
             "status": status,
             "score": result.get("score"),
@@ -3161,13 +3500,84 @@ def build_read_plan(
         seen_sources.add(source)
         if len(items) >= read_plan_limit:
             break
+    confidence_level = str(confidence.get("level", "low"))
+    token_budget_hint = "Start with 1-2 low-cost sections, then expand only if evidence is still missing."
+    if confidence_level == "high":
+        token_budget_hint = "Start with the first section only; expand only if that evidence is insufficient."
+    elif confidence_level == "medium":
+        token_budget_hint = "Start with the first 1-2 sections; expand only if the first hit does not resolve the task."
     return {
         "mode": normalize_search_mode(mode),
         "budget_hint": "Read only the listed sections first; avoid full-file reads unless these sections are insufficient.",
-        "token_budget_hint": "Start with 1-2 low-cost sections, then expand only if evidence is still missing.",
+        "token_budget_hint": token_budget_hint,
+        "confidence": confidence,
         "items": items,
         "deprioritized": blocked[:3],
     }
+
+
+def allow_frontend_high_confidence_result(result: dict[str, Any], profile: dict[str, Any]) -> bool:
+    source = str(result.get("source", "")).lower()
+    role = str(result.get("fdr_role", "other"))
+    if role in {"docs", "plan", "spec", "test"}:
+        return False
+    if source.endswith((".test.ts", ".test.js", ".test.vue", ".spec.ts", ".spec.js", ".spec.vue")):
+        return False
+    if source.startswith("uier-spa/src/"):
+        return True
+    if source.startswith("uier/public/js/"):
+        return True
+    if "/widgets/" in source and source.endswith((".js", ".ts", ".vue")):
+        return True
+    if source.startswith(".mcp/rag-server/"):
+        return False
+    review_terms = {str(term).lower() for term in profile.get("review_terms", [])}
+    query_terms = {str(term).lower() for term in profile.get("query_terms", set())}
+    if "target.call" in review_terms or "expected_source_revision" in review_terms:
+        return source.startswith("app/domain/plugins/workflows/")
+    return False
+
+
+def read_plan_role_rank(result: dict[str, Any], profile: dict[str, Any]) -> int:
+    chunk_role_label = str(result.get("chunk_role", "implementation")).lower()
+    query_terms = {str(term).lower() for term in profile.get("query_terms", set())}
+    review_terms = {str(term).lower() for term in profile.get("review_terms", [])}
+    mode = str(profile.get("mode", "")).lower()
+
+    if mode == "frontend":
+        if "target.call" in review_terms or "expected_source_revision" in review_terms:
+            priorities = ["api_client", "workflow", "store", "component", "controller", "repository"]
+        elif "attributes_merge" in review_terms or {"attributes", "merge"} <= query_terms:
+            priorities = ["api_client", "store", "component", "workflow", "controller"]
+        elif {"dashboard", "widget"} <= query_terms:
+            priorities = ["component", "store", "api_client", "workflow"]
+        elif "allow_self_link" in review_terms or {"relation", "entity"} <= query_terms:
+            priorities = ["component", "store", "api_client", "workflow"]
+        else:
+            priorities = ["api_client", "store", "component", "workflow", "controller", "repository"]
+    else:
+        if "migration" in query_terms:
+            priorities = ["migration", "repository", "controller", "workflow", "sql"]
+        elif "audit" in query_terms:
+            priorities = ["repository", "workflow", "controller", "migration", "sql"]
+        elif "controller" in query_terms:
+            priorities = ["controller", "repository", "workflow", "migration"]
+        elif "repository" in query_terms or "caller_role" in review_terms or "owner_caller_credentials" in review_terms:
+            priorities = ["repository", "controller", "migration", "workflow", "sql"]
+        else:
+            priorities = ["repository", "controller", "workflow", "migration", "sql"]
+    try:
+        return priorities.index(chunk_role_label)
+    except ValueError:
+        return len(priorities) + 2
+
+
+def read_plan_sort_key(item: dict[str, Any], config: dict[str, Any], profile: dict[str, Any]) -> tuple[float, float, float, str, int]:
+    role_rank = read_plan_role_rank(item, profile)
+    path_priority = bool(config.get("search", {}).get("explicit_path_priority", True))
+    path_match = float(item.get("path_match", 0.0)) if path_priority else 0.0
+    score = float(item.get("score", 0.0))
+    return (float(role_rank), -score, -path_match, str(item.get("source", "")), int(item.get("start_line", 1)))
 
 
 def search_index_with_plan(
@@ -3261,6 +3671,7 @@ def search_index(
         source = str(chunk.get("source", ""))
         chunk_type = str(chunk.get("artifact_type", ""))
         doc_status = str(chunk.get("document_status", "normal"))
+        role_label = str(chunk.get("chunk_role", chunk_role(source, str(chunk.get("heading", "")), str(chunk.get("text", "")))))
         if filter_source and filter_source not in source:
             continue
         if filter_type and not chunk_type.startswith(filter_type):
@@ -3287,6 +3698,10 @@ def search_index(
         score *= penalty
         score *= doc_status_boost
         score *= intent_multiplier
+        role_bias = query_role_bias_multiplier(role_label, profile)
+        section_boost = section_anchor_multiplier(profile, role_label, str(chunk.get("heading", "")), preview)
+        score *= role_bias
+        score *= section_boost
         score *= review_multiplier
         if score < min_score:
             continue
@@ -3302,15 +3717,18 @@ def search_index(
                 "source_penalty": round(penalty, 6),
                 "status_boost": round(doc_status_boost, 6),
                 "intent_boost": round(intent_multiplier, 6),
+                "role_bias": round(role_bias, 6),
+                "section_boost": round(section_boost, 6),
                 "review_boost": round(review_multiplier, 6),
                 "fdr_role": role,
                 "source": source,
                 "heading": chunk.get("heading", ""),
                 "section": chunk.get("heading", ""),
+                "chunk_role": role_label,
                 "artifact_type": chunk_type,
                 "document_status": doc_status,
                 "start_line": start_line,
-                "read_hint": read_hint(source, start_line, str(chunk.get("heading", ""))),
+                "read_hint": read_hint_with_role(source, start_line, str(chunk.get("heading", "")), role_label),
                 "preview": preview,
             }
         )

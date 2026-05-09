@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections import Counter
 from unittest import mock
 from pathlib import Path
 
@@ -12,22 +13,33 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from rag_universal.core import (
+    allow_frontend_high_confidence_result,
+    build_read_plan,
     build_index,
     build_query_variants,
+    chunk_role,
     ensure_fresh_index,
     fuse_ranked_results,
     index_coverage,
     index_status,
     load_chunks,
+    query_role_bias_multiplier,
+    read_hint_with_role,
+    read_plan_role_rank,
+    score_query_profile,
+    section_anchor_multiplier,
     lookup_deps,
     lookup_symbol,
     search_index,
     search_index_with_plan,
+    split_large_text,
+    select_search_results,
     tokenize,
     token_counts,
     trim_query_counts,
     watch_index,
 )
+from rag_universal.eval_quality import benchmark_quality
 from rag_universal.eval_quality import evaluate_quality
 from rag_universal.eval_quality import quality_check
 from rag_universal.knowledge import build_project_knowledge
@@ -120,8 +132,11 @@ class RagUniversalTest(unittest.TestCase):
         variants = build_query_variants(query, config, "frontend")
         self.assertGreaterEqual(len(variants), 2)
         self.assertEqual(variants[0], query)
+        self.assertLessEqual(len(variants), 3)
         self.assertTrue(any("target.call" in variant for variant in variants[1:]))
         self.assertTrue(any("expected_source_revision" in variant for variant in variants[1:]))
+        signatures = {" ".join(sorted(set(tokenize(variant)))) for variant in variants}
+        self.assertEqual(len(signatures), len(variants))
 
     def test_fuse_ranked_results_prefers_document_supported_by_multiple_variants(self) -> None:
         fused = fuse_ranked_results(
@@ -137,6 +152,69 @@ class RagUniversalTest(unittest.TestCase):
         )
         self.assertEqual(fused[0]["source"], "src/A.php")
         self.assertGreater(fused[0]["fusion_hits"], 1)
+
+    def test_can_stop_variant_search_when_primary_top_is_reinforced(self) -> None:
+        primary = [
+            {"source": "src/A.php", "start_line": 1, "heading": "A", "score": 1.7},
+            {"source": "src/B.php", "start_line": 1, "heading": "B", "score": 1.0},
+        ]
+        fused = [
+            {"source": "src/A.php", "start_line": 1, "heading": "A", "score": 1.9, "fusion_hits": 2},
+            {"source": "src/B.php", "start_line": 1, "heading": "B", "score": 1.2, "fusion_hits": 1},
+        ]
+        from rag_universal.core import can_stop_variant_search
+
+        self.assertTrue(can_stop_variant_search(primary, fused, 1))
+
+    def test_compute_bm25_scores_reuses_token_cache(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        from rag_universal.core import compute_bm25_scores, get_index_dir, load_config, load_search_cache
+
+        config = load_config(root, None)
+        connection = load_search_cache(get_index_dir(root, config))
+        self.assertIsNotNone(connection)
+        cache: dict[str, list[object]] = {}
+        first = compute_bm25_scores(connection, Counter({"readme": 1, "strict": 1}), total_docs=3, avg_len=10.0, token_rows_cache=cache)
+        self.assertTrue(cache)
+        self.assertTrue(first)
+        cache_keys = set(cache)
+        second = compute_bm25_scores(connection, Counter({"strict": 1}), total_docs=3, avg_len=10.0, token_rows_cache=cache)
+        self.assertEqual(cache_keys, set(cache))
+        self.assertTrue(second)
+
+    def test_cached_path_candidates_reuses_lookup_cache(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        from rag_universal.core import cached_path_candidates, get_index_dir, load_config, load_search_cache
+
+        config = load_config(root, None)
+        connection = load_search_cache(get_index_dir(root, config))
+        self.assertIsNotNone(connection)
+        cache: dict[tuple[str, ...], dict[int, float]] = {}
+        first = cached_path_candidates(connection, ["README.md"], cache)
+        self.assertTrue(first)
+        self.assertEqual(len(cache), 1)
+        second = cached_path_candidates(connection, ["README.md"], cache)
+        self.assertEqual(first, second)
+        self.assertEqual(len(cache), 1)
+
+    def test_cached_lexicon_candidates_reuses_lookup_cache(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        from rag_universal.core import cached_lexicon_candidates, get_index_dir, load_config, load_search_cache, score_query_profile
+
+        config = load_config(root, None)
+        connection = load_search_cache(get_index_dir(root, config))
+        self.assertIsNotNone(connection)
+        profile = score_query_profile("StrictGuard", "implementation", None)
+        cache: dict[tuple[str, tuple[str, ...]], dict[int, float]] = {}
+        first = cached_lexicon_candidates(connection, "StrictGuard", profile, cache)
+        self.assertTrue(first)
+        self.assertEqual(len(cache), 1)
+        second = cached_lexicon_candidates(connection, "StrictGuard", profile, cache)
+        self.assertEqual(first, second)
+        self.assertEqual(len(cache), 1)
 
     def test_status_and_mcp_dispatch(self) -> None:
         root = self.make_project()
@@ -592,6 +670,207 @@ class RagUniversalTest(unittest.TestCase):
         self.assertTrue(empty["diagnostics"]["no_results"])
         self.assertEqual(empty["diagnostics"]["explicit_paths"], ["src/Absent.php"])
         self.assertTrue(empty["diagnostics"]["next_steps"])
+
+    def test_read_plan_high_confidence_limits_to_single_section(self) -> None:
+        results = [
+            {
+                "source": "app/Service.php",
+                "read_hint": "app/Service.php:10",
+                "fdr_role": "implementation",
+                "section": "Service",
+                "document_status": "normal",
+                "score": 1.8,
+                "start_line": 10,
+                "heading": "Service",
+            },
+            {
+                "source": "Docs/spec.md",
+                "read_hint": "Docs/spec.md:1",
+                "fdr_role": "docs",
+                "section": "Spec",
+                "document_status": "normal",
+                "score": 0.6,
+                "start_line": 1,
+                "heading": "Spec",
+            },
+        ]
+        plan = build_read_plan(results, mode="implementation")
+        self.assertEqual(plan["confidence"]["level"], "high")
+        self.assertEqual(len(plan["items"]), 1)
+        self.assertEqual(plan["items"][0]["source"], "app/Service.php")
+
+    def test_read_plan_low_confidence_keeps_multiple_sections(self) -> None:
+        results = [
+            {
+                "source": "app/A.php",
+                "read_hint": "app/A.php:10",
+                "fdr_role": "implementation",
+                "section": "A",
+                "document_status": "normal",
+                "score": 0.74,
+                "start_line": 10,
+                "heading": "A",
+            },
+            {
+                "source": "app/B.php",
+                "read_hint": "app/B.php:11",
+                "fdr_role": "implementation",
+                "section": "B",
+                "document_status": "normal",
+                "score": 0.68,
+                "start_line": 11,
+                "heading": "B",
+            },
+        ]
+        plan = build_read_plan(results, mode="implementation")
+        self.assertIn(plan["confidence"]["level"], {"low", "medium"})
+        self.assertGreaterEqual(len(plan["items"]), 2)
+
+    def test_split_large_text_tracks_chunk_start_lines(self) -> None:
+        config = {"chunk": {"max_chars": 40, "min_chars": 1, "overlap_chars": 0}}
+        text = "alpha line\nbeta line\n\nthird block starts here\nand continues"
+        chunks = split_large_text(text, "uier-spa/src/api/example.ts", "example.ts", 10, config)
+        self.assertGreaterEqual(len(chunks), 2)
+        self.assertEqual(chunks[0]["start_line"], 10)
+        self.assertEqual(chunks[1]["start_line"], 13)
+
+    def test_read_hint_with_role_and_chunk_role(self) -> None:
+        self.assertEqual(
+            read_hint_with_role("uier-spa/src/api/visual-studio-assistant.ts", 14, "visual-studio-assistant.ts", "api_client"),
+            "uier-spa/src/api/visual-studio-assistant.ts:14 [api client]",
+        )
+        self.assertEqual(
+            chunk_role("app/Domain/Plugins/Workflows/WorkflowTargetCallExecutor.php", "WorkflowTargetCallExecutor.php", "<?php\nfinal class WorkflowTargetCallExecutor {}\n"),
+            "workflow",
+        )
+
+    def test_frontend_high_confidence_results_drop_self_rag_and_test_noise(self) -> None:
+        profile = {
+            "mode": "frontend",
+            "review_comment": True,
+            "query_terms": {"target", "call", "expected_source_revision"},
+            "review_terms": ["target.call", "expected_source_revision"],
+        }
+        results = [
+            {
+                "source": "uier-spa/src/api/visual-studio-assistant.ts",
+                "fdr_role": "implementation",
+                "score": 2.6,
+                "start_line": 1,
+                "heading": "visual-studio-assistant.ts",
+            },
+            {
+                "source": ".mcp/rag-server/rag_universal/core.py",
+                "fdr_role": "implementation",
+                "score": 1.1,
+                "start_line": 1,
+                "heading": "core.py",
+            },
+            {
+                "source": "uier-spa/src/features/data-tables-3/stores/viewport.test.ts",
+                "fdr_role": "implementation",
+                "score": 1.0,
+                "start_line": 1,
+                "heading": "viewport.test.ts",
+            },
+            {
+                "source": "app/Domain/Plugins/Workflows/WorkflowTargetCallExecutor.php",
+                "fdr_role": "implementation",
+                "score": 0.9,
+                "start_line": 1,
+                "heading": "WorkflowTargetCallExecutor.php",
+            },
+        ]
+        selected = select_search_results(results, 5, 1, "frontend", profile=profile)
+        self.assertEqual(selected[0]["source"], "uier-spa/src/api/visual-studio-assistant.ts")
+        self.assertNotIn(".mcp/rag-server/rag_universal/core.py", [item["source"] for item in selected])
+        self.assertNotIn("uier-spa/src/features/data-tables-3/stores/viewport.test.ts", [item["source"] for item in selected])
+        self.assertIn("app/Domain/Plugins/Workflows/WorkflowTargetCallExecutor.php", [item["source"] for item in selected])
+
+    def test_query_role_bias_multiplier_prefers_matching_chunk_roles(self) -> None:
+        profile = {
+            "mode": "frontend",
+            "query_terms": {"target", "call", "expected_source_revision"},
+            "review_terms": ["target.call", "expected_source_revision"],
+        }
+        self.assertGreater(query_role_bias_multiplier("api_client", profile), 1.0)
+        self.assertGreater(query_role_bias_multiplier("workflow", profile), 1.0)
+        self.assertEqual(query_role_bias_multiplier("docs", profile), 1.0)
+
+    def test_read_plan_role_rank_prefers_frontend_api_client_for_target_call(self) -> None:
+        profile = {
+            "mode": "frontend",
+            "query_terms": {"target", "call", "expected_source_revision"},
+            "review_terms": ["target.call", "expected_source_revision"],
+        }
+        self.assertLess(
+            read_plan_role_rank({"chunk_role": "api_client"}, profile),
+            read_plan_role_rank({"chunk_role": "workflow"}, profile),
+        )
+
+    def test_build_read_plan_prefers_repository_for_backend_audit_intent(self) -> None:
+        results = [
+            {
+                "source": "app/Http/Controllers/DemoController.php",
+                "read_hint": "app/Http/Controllers/DemoController.php:1 [controller]",
+                "fdr_role": "implementation",
+                "chunk_role": "controller",
+                "section": "DemoController.php",
+                "document_status": "normal",
+                "score": 0.55,
+                "start_line": 1,
+                "heading": "DemoController.php",
+            },
+            {
+                "source": "app/Domain/Demo/Repositories/DemoRepository.php",
+                "read_hint": "app/Domain/Demo/Repositories/DemoRepository.php:1 [repository]",
+                "fdr_role": "implementation",
+                "chunk_role": "repository",
+                "section": "DemoRepository.php",
+                "document_status": "normal",
+                "score": 0.52,
+                "start_line": 1,
+                "heading": "DemoRepository.php",
+            },
+            {
+                "source": "migrations/20260101_demo.php",
+                "read_hint": "migrations/20260101_demo.php:1 [migration]",
+                "fdr_role": "implementation",
+                "chunk_role": "migration",
+                "section": "20260101_demo.php",
+                "document_status": "normal",
+                "score": 0.51,
+                "start_line": 1,
+                "heading": "20260101_demo.php",
+            },
+        ]
+        profile = score_query_profile(
+            "owner_caller_credentials caller_role missing repository audit",
+            "implementation",
+            None,
+        )
+        plan = build_read_plan(results, mode="implementation", profile=profile)
+        self.assertEqual(plan["items"][0]["chunk_role"], "repository")
+
+    def test_section_anchor_multiplier_prefers_preview_with_exact_anchor(self) -> None:
+        profile = {
+            "mode": "frontend",
+            "query_terms": {"target", "call", "expected_source_revision"},
+            "review_terms": ["target.call", "expected_source_revision"],
+        }
+        self.assertGreater(
+            section_anchor_multiplier(
+                profile,
+                "api_client",
+                "visual-studio-assistant.ts",
+                "targetCallPayload expected_source_revision attributes_merge",
+            ),
+            1.0,
+        )
+        self.assertEqual(
+            section_anchor_multiplier(profile, "docs", "readme", "generic overview text"),
+            1.0,
+        )
 
     def test_markdown_path_references_create_cross_artifact_edges(self) -> None:
         temp = tempfile.TemporaryDirectory()
@@ -1080,6 +1359,52 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(rag_only["summary"]["rag"]["top1"], 1)
         self.assertIsNone(rag_only["summary"]["baseline"])
         self.assertEqual(rag_only["cases"], [])
+
+    def test_benchmark_quality_reports_latency_and_token_metrics(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        cases = root / "cases.json"
+        cases.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "stop_guard",
+                        "query": "strict stop guard",
+                        "expected_sources": ["README.md"],
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        report = benchmark_quality(root, None, cases, top_k=3)
+        self.assertEqual(report["schema_version"], "rag.quality-benchmark.v1")
+        self.assertIn("latency_ms_avg", report["summary"]["rag"])
+        self.assertIn("tokens_avg", report["summary"]["rag"])
+        self.assertIn("delta", report["summary"])
+        self.assertIn(report["verdict"]["status"], {"pass", "fail"})
+        self.assertIn("max_latency_p95_ms", report["verdict"]["thresholds"])
+        self.assertTrue(report["cases"])
+
+        tool = ROOT / "tools" / "rag.py"
+        cli = subprocess.run(
+            [
+                sys.executable,
+                str(tool),
+                "benchmark-quality",
+                "--root",
+                str(root),
+                "--cases",
+                str(cases),
+                "--summary-only",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        payload = json.loads(cli.stdout)
+        self.assertEqual(payload["schema_version"], "rag.quality-benchmark.v1")
+        self.assertEqual(payload["cases"], [])
+        self.assertIn("verdict", payload)
 
     def test_quality_check_generates_comparative_metrics(self) -> None:
         root = self.make_project()

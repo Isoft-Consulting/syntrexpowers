@@ -6,7 +6,7 @@ import sys
 from typing import Any
 
 from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan, watch_index
-from .eval_quality import evaluate_quality, quality_check
+from .eval_quality import benchmark_quality, evaluate_quality, quality_check
 from .knowledge import build_project_knowledge, generate_project_profile
 from .mcp_server import run_stdio
 
@@ -58,6 +58,18 @@ def build_parser() -> argparse.ArgumentParser:
     eval_quality.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"], default="default")
     eval_quality.add_argument("--skip-baseline", action="store_true", help="Skip keyword baseline; useful for large path-focused gold sets.")
     eval_quality.add_argument("--summary-only", action="store_true", help="Omit per-case details from output.")
+
+    benchmark = subparsers.add_parser("benchmark-quality", help="Benchmark RAG retrieval latency and token budget against keyword baseline")
+    benchmark.add_argument("--cases", required=True, help="Gold query JSON file.")
+    benchmark.add_argument("--top-k", type=int, default=5)
+    benchmark.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"], default="default")
+    benchmark.add_argument("--skip-baseline", action="store_true", help="Skip keyword baseline.")
+    benchmark.add_argument("--summary-only", action="store_true", help="Omit per-case details from output.")
+    benchmark.add_argument("--min-cases", type=int, default=5)
+    benchmark.add_argument("--min-top3-ratio", type=float, default=0.6)
+    benchmark.add_argument("--min-mrr", type=float, default=0.4)
+    benchmark.add_argument("--max-latency-p95-ms", type=float, default=20000.0)
+    benchmark.add_argument("--max-tokens-avg", type=float, default=5000.0)
 
     quality = subparsers.add_parser("quality-check", help="Run RAG health and comparative quality metrics")
     quality.add_argument("--cases", default=None, help="Optional gold query JSON file. If omitted, cases are generated from the current index.")
@@ -147,6 +159,24 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "eval-quality":
         emit(evaluate_quality(args.root, args.config, args.cases, args.top_k, args.mode, not args.skip_baseline, not args.summary_only))
+        return 0
+    if args.command == "benchmark-quality":
+        emit(
+            benchmark_quality(
+                args.root,
+                args.config,
+                args.cases,
+                args.top_k,
+                args.mode,
+                not args.skip_baseline,
+                not args.summary_only,
+                args.min_cases,
+                args.min_top3_ratio,
+                args.min_mrr,
+                args.max_latency_p95_ms,
+                args.max_tokens_avg,
+            )
+        )
         return 0
     if args.command == "quality-check":
         emit(
