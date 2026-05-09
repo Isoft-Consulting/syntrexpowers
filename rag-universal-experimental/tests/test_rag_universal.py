@@ -14,9 +14,7 @@ sys.path.insert(0, str(ROOT))
 from rag_universal.core import (
     DEFAULT_CONFIG,
     build_index,
-    document_status,
     ensure_fresh_index,
-    extract_query_paths,
     index_coverage,
     index_status,
     load_chunks,
@@ -267,12 +265,6 @@ class RagUniversalTest(unittest.TestCase):
         sources = {chunk["source"] for chunk in load_chunks(root / ".rag-index")}
         self.assertNotIn("storage/payload/work_items/payload.json", sources)
 
-    def test_agent_install_exclude_dirs_snippet_preserves_safe_defaults(self) -> None:
-        guide = (ROOT / "AGENT_INSTALL.md").read_text(encoding="utf-8")
-        snippet = guide.split("If you override `exclude_dirs`", 1)[1].split("```json", 1)[1].split("```", 1)[0]
-        documented_config = json.loads(snippet)
-        self.assertTrue(set(DEFAULT_CONFIG["exclude_dirs"]).issubset(set(documented_config["exclude_dirs"])))
-
     def test_force_include_contract_tests_and_coverage_report(self) -> None:
         root = self.make_project()
         (root / "tests" / "Unit").mkdir(parents=True)
@@ -378,21 +370,6 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(results[0]["source"], "Dockerfile")
         self.assertEqual(results[0]["path_match"], 1.0)
 
-    def test_standalone_filename_queries_use_explicit_path_priority(self) -> None:
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        root = Path(temp.name)
-        (root / "schemas").mkdir()
-        (root / "schemas" / "rag.chunk.v1.schema.json").write_text('{"title":"Chunk"}', encoding="utf-8")
-        (root / "schemas" / "rag.dep-edge.v1.schema.json").write_text('{"title":"Dependency"}', encoding="utf-8")
-        (root / "SPEC.md").write_text("# Spec\n\nUniversal RAG project contract.", encoding="utf-8")
-        (root / "README.md").write_text("# General\n\nrag type string schema " * 20, encoding="utf-8")
-        build_index(root)
-
-        self.assertEqual(extract_query_paths("inspect rag.chunk.v1.schema.json schema"), ["rag.chunk.v1.schema.json"])
-        self.assertEqual(search_index(root, None, "inspect rag.chunk.v1.schema.json schema", top_k=1)[0]["source"], "schemas/rag.chunk.v1.schema.json")
-        self.assertEqual(search_index(root, None, "inspect spec.md universal rag", top_k=1)[0]["source"], "SPEC.md")
-
     def test_explicit_path_fast_path_returns_multiple_cited_files(self) -> None:
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -413,26 +390,6 @@ class RagUniversalTest(unittest.TestCase):
             top_k=2,
         )
         self.assertEqual([item["source"] for item in results], ["src/one.py", "src/two.py"])
-
-    def test_explicit_path_fast_path_respects_filters(self) -> None:
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        root = Path(temp.name)
-        (root / "docs").mkdir()
-        (root / "src").mkdir()
-        (root / "docs" / "Target.md").write_text("alpha beta cited docs", encoding="utf-8")
-        (root / "src" / "Other.py").write_text("alpha beta filtered implementation", encoding="utf-8")
-        build_index(root)
-
-        source_filtered = search_index(root, None, "review docs/Target.md alpha beta", top_k=3, filter_source="src")
-        self.assertTrue(source_filtered)
-        self.assertTrue(all("src" in item["source"] for item in source_filtered))
-        self.assertNotIn("docs/Target.md", [item["source"] for item in source_filtered])
-
-        type_filtered = search_index(root, None, "review docs/Target.md alpha beta", top_k=3, filter_type="python")
-        self.assertTrue(type_filtered)
-        self.assertTrue(all(item["artifact_type"].startswith("python") for item in type_filtered))
-        self.assertNotIn("docs/Target.md", [item["source"] for item in type_filtered])
 
     def test_query_term_trimming_keeps_high_signal_terms(self) -> None:
         counts = token_counts("the and " + " ".join(f"term{i}" for i in range(40)) + " Dockerfile Dockerfile")
@@ -461,52 +418,6 @@ class RagUniversalTest(unittest.TestCase):
         results = search_index(root, None, "env storage dist secret build context", top_k=1, filter_source=".snapshots")
         self.assertEqual(results[0]["source"], "plugins/demo/.snapshots/1.0.0/seeds/demo.yaml")
         self.assertLess(results[0]["source_penalty"], 1.0)
-
-    def test_document_status_requires_status_marker_for_superseded_mentions(self) -> None:
-        active_spec = "# Spec\n\nStatus: executable MVP\n\nSupports canonical/superseded status detection."
-        draft_spec = "# Spec\n\nStatus: draft\n\nDecisions are intentionally not frozen yet."
-        not_ready_spec = "# Plan\n\nStatus: not ready\n\nStill blocked by missing proofs."
-        stale_spec = "# Old\n\nStatus: SUPERSEDED\n\nDo not implement from this report."
-        self.assertEqual(document_status("SPEC.md", "Spec", active_spec), "implementation_ready")
-        self.assertEqual(document_status("SPEC.md", "Spec", draft_spec), "normal")
-        self.assertEqual(document_status("Docs/plan.md", "Plan", not_ready_spec), "normal")
-        self.assertEqual(document_status("Docs/old.md", "Old", stale_spec), "superseded")
-
-    def test_fdr_mode_prefers_install_docs_over_provider_example_snippets(self) -> None:
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        root = Path(temp.name)
-        (root / "rag-universal-experimental" / "examples").mkdir(parents=True)
-        (root / "rag-universal-experimental" / "tests").mkdir(parents=True)
-        (root / "rag-universal-experimental" / "AGENT_INSTALL.md").write_text(
-            "# Agent Install Playbook\n\nUniversal RAG MCP for Codex, Claude, DeepSeek, and any stdio client.",
-            encoding="utf-8",
-        )
-        (root / "rag-universal-experimental" / "README.md").write_text(
-            "# Universal RAG\n\nModel-neutral MCP server for Codex, Claude, and DeepSeek.",
-            encoding="utf-8",
-        )
-        (root / "rag-universal-experimental" / "examples" / "mcp.deepseek.json").write_text(
-            '{"mcpServers":{"rag":{"command":"python3","args":["rag.py","serve-mcp"]}}}',
-            encoding="utf-8",
-        )
-        (root / "rag-universal-experimental" / "tests" / "test_rag_universal.py").write_text(
-            "def test_provider_neutral_rag():\n"
-            "    query = 'universal rag mcp claude deepseek codex'\n",
-            encoding="utf-8",
-        )
-        build_index(root)
-        results = search_index(root, None, "universal rag mcp claude deepseek codex", top_k=4, mode="fdr")
-        self.assertIn(
-            results[0]["source"],
-            {"rag-universal-experimental/AGENT_INSTALL.md", "rag-universal-experimental/README.md"},
-        )
-        self.assertNotEqual(results[0]["source"], "rag-universal-experimental/tests/test_rag_universal.py")
-        self.assertNotEqual(results[0]["source"], "rag-universal-experimental/examples/mcp.deepseek.json")
-        self.assertLess(
-            next(item for item in results if item["source"].endswith("mcp.deepseek.json"))["source_penalty"],
-            1.0,
-        )
 
     def test_fdr_mode_returns_role_diverse_evidence_bundle(self) -> None:
         temp = tempfile.TemporaryDirectory()

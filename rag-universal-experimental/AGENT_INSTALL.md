@@ -6,7 +6,7 @@ The toolkit is project-local and provider-neutral. Codex, Claude, DeepSeek, or a
 
 ## Preconditions
 
-- Python 3.8+ is available as `python3`. Sources use `from __future__ import annotations` (Python 3.7+), so PEP 604 / PEP 585 type hints stay strings at runtime; no `removeprefix`/`removesuffix` (3.9-only) or walrus-in-comprehension (3.8-only restriction) usages — the local test suite runs clean on 3.9, but the language-level floor is 3.8.
+- Python 3.10+ is available as `python3`.
 - You have filesystem access to both:
   - the source toolkit directory, usually `rag-universal-experimental/`;
   - the target project root.
@@ -66,7 +66,7 @@ python3 .mcp/rag-server/tools/rag.py status --root . --config rag.config.json
 python3 .mcp/rag-server/tools/rag.py search --root . "project overview" --config rag.config.json --with-plan --auto-reindex
 ```
 
-List values in `rag.config.json` replace the built-in defaults. If you override `exclude_dirs`, keep the full safety set and add project-specific entries to it:
+Keep generated/runtime directories excluded. Common examples:
 
 ```json
 {
@@ -74,40 +74,15 @@ List values in `rag.config.json` replace the built-in defaults. If you override 
   "exclude_dirs": [
     ".git",
     ".mcp",
-    ".claude",
-    ".codex",
-    ".agents",
-    ".rag-index",
     "node_modules",
-    "bower_components",
     "vendor",
     "dist",
     "build",
-    "out",
-    "target",
-    "coverage",
-    "evals",
     "storage",
     "payload",
     "sessions",
     "_tmp_storage",
-    "_tmp_payload_storage",
-    ".idea",
-    ".vscode",
-    ".next",
-    ".nuxt",
-    ".vite",
-    ".turbo",
-    ".yarn",
-    ".pnpm-store",
-    ".cache",
-    "cache",
-    "tmp",
-    "temp",
-    "logs",
-    "__pycache__",
-    ".pytest_cache",
-    ".ruff_cache"
+    "_tmp_payload_storage"
   ]
 }
 ```

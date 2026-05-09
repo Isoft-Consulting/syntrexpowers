@@ -4,7 +4,7 @@ Reusable local RAG toolkit for project-aware agents. It builds a JSON index unde
 
 It is model-neutral. Codex, DeepSeek, Claude, or any other client can use the same server if it can launch a stdio MCP process. Non-MCP clients can still call the JSON CLI commands directly.
 
-The v0 implementation is intentionally lightweight: Python 3.8+ standard library only, lexical vector scoring plus BM25, no model downloads. A future embedding backend can be added without changing the index safety rules or MCP tool contracts.
+The v0 implementation is intentionally lightweight: Python standard library only, lexical vector scoring plus BM25, no model downloads. A future embedding backend can be added without changing the index safety rules or MCP tool contracts.
 
 For agent-driven installation into another repository, use [`AGENT_INSTALL.md`](AGENT_INSTALL.md).
 
@@ -242,12 +242,12 @@ For large path-focused gold sets, skip the expensive keyword baseline and emit o
 python3 tools/rag.py eval-quality --root /path/to/project --config /path/to/rag.config.json --cases evals/core-leonextra-path-gold.json --mode fdr --skip-baseline --summary-only
 ```
 
-Current `syntrexpowers` gold-set result after v9 lexical ranking:
+Current `syntrexpowers` gold-set result after v6 lexical ranking:
 
 | Mode | Top-1 | Top-3 | Top-5 | Top-10 | MRR |
 |---|---:|---:|---:|---:|---:|
-| RAG v9 | 10/10 | 10/10 | 10/10 | 10/10 | 1.000 |
-| Keyword baseline | 5/10 | 10/10 | 10/10 | 10/10 | 0.717 |
+| RAG v6 | 8/10 | 10/10 | 10/10 | 10/10 | 0.900 |
+| Keyword baseline | 6/10 | 10/10 | 10/10 | 10/10 | 0.767 |
 
 ## Current Limits
 

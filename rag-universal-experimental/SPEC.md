@@ -16,7 +16,7 @@ This module is inspired by the Core project RAG server, but it is not a Core-spe
 | Values | Safe by default, portable, deterministic, inspectable, config-driven, and cheap to run locally. |
 | Skills | Scan indexable files, chunk content, extract symbols, extract dependency edges, build index artifacts, search chunks, report status, refresh stale indexes, measure retrieval quality, serve MCP tools. |
 | Behaviors | A user runs `rag.py index`; an agent calls `rag_search`; a reviewer calls `rag_status`; a developer queries exact symbols with `rag_symbol`; dependency context is available through `rag_deps`; long-lived sessions use `watch` or `auto_reindex` to keep search current; installers run `quality-check` before trusting retrieval. |
-| Environment | Python 3.8+, local filesystem, JSON artifacts under `.rag-index`, MCP stdio JSON-RPC, any client that can launch stdio MCP, no required network access, no required model download. |
+| Environment | Python 3.10+, local filesystem, JSON artifacts under `.rag-index`, MCP stdio JSON-RPC, any client that can launch stdio MCP, no required network access, no required model download. |
 
 ## Module Boundary
 
