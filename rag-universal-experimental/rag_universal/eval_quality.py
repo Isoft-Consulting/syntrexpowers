@@ -258,6 +258,37 @@ def benchmark_verdict(
     }
 
 
+def resolve_benchmark_profile(
+    config: dict[str, Any],
+    mode: str,
+    profile_name: str | None,
+    min_cases: int,
+    min_top3_ratio: float,
+    min_mrr: float,
+    max_latency_p95_ms: float,
+    max_tokens_avg: float,
+) -> dict[str, Any]:
+    profiles_cfg = config.get("benchmark_profiles", {})
+    available_profiles = profiles_cfg if isinstance(profiles_cfg, dict) and profiles_cfg else {}
+    requested = str(profile_name or "auto").strip().lower()
+    normalized_mode = str(mode or "default").strip().lower()
+    if requested in {"", "auto"}:
+        resolved_name = normalized_mode if normalized_mode in available_profiles else "default"
+    else:
+        resolved_name = requested if requested in available_profiles else "default"
+    base = available_profiles.get(resolved_name, available_profiles.get("default", {}))
+    return {
+        "name": resolved_name,
+        "thresholds": {
+            "min_cases": int(min_cases) if min_cases != 5 else int(base["min_cases"]),
+            "min_top3_ratio": float(min_top3_ratio) if min_top3_ratio != 0.6 else float(base["min_top3_ratio"]),
+            "min_mrr": float(min_mrr) if min_mrr != 0.4 else float(base["min_mrr"]),
+            "max_latency_p95_ms": float(max_latency_p95_ms) if max_latency_p95_ms != 20_000.0 else float(base["max_latency_p95_ms"]),
+            "max_tokens_avg": float(max_tokens_avg) if max_tokens_avg != 5_000.0 else float(base["max_tokens_avg"]),
+        },
+    }
+
+
 def benchmark_quality(
     root_arg: str | Path | None,
     config_path: str | Path | None,
@@ -266,6 +297,7 @@ def benchmark_quality(
     mode: str = "default",
     include_baseline: bool = True,
     include_cases: bool = True,
+    profile_name: str | None = None,
     min_cases: int = 5,
     min_top3_ratio: float = 0.6,
     min_mrr: float = 0.4,
@@ -281,6 +313,8 @@ def benchmark_quality(
         if not case_file.exists():
             case_file = Path.cwd() / str(cases_path)
     cases = json.loads(case_file.read_text(encoding="utf-8"))
+    profile = resolve_benchmark_profile(config, mode, profile_name, min_cases, min_top3_ratio, min_mrr, max_latency_p95_ms, max_tokens_avg)
+    thresholds = profile["thresholds"]
     baseline_corpus = load_baseline_corpus(root, index_dir) if include_baseline else []
     chunk_lookup = build_chunk_text_lookup(load_chunks(index_dir))
 
@@ -357,14 +391,15 @@ def benchmark_quality(
     return {
         "schema_version": QUALITY_BENCHMARK_VERSION,
         "cases": details,
+        "benchmark_profile": profile["name"],
         "summary": summary,
         "verdict": benchmark_verdict(
             summary,
-            min_cases,
-            min_top3_ratio,
-            min_mrr,
-            max_latency_p95_ms,
-            max_tokens_avg,
+            int(thresholds["min_cases"]),
+            float(thresholds["min_top3_ratio"]),
+            float(thresholds["min_mrr"]),
+            float(thresholds["max_latency_p95_ms"]),
+            float(thresholds["max_tokens_avg"]),
         ),
     }
 

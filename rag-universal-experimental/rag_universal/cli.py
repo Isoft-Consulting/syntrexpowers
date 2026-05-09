@@ -63,6 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--cases", required=True, help="Gold query JSON file.")
     benchmark.add_argument("--top-k", type=int, default=5)
     benchmark.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"], default="default")
+    benchmark.add_argument("--profile", choices=["auto", "default", "frontend", "implementation", "knowledge", "self-rag"], default="auto")
     benchmark.add_argument("--skip-baseline", action="store_true", help="Skip keyword baseline.")
     benchmark.add_argument("--summary-only", action="store_true", help="Omit per-case details from output.")
     benchmark.add_argument("--min-cases", type=int, default=5)
@@ -170,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.mode,
                 not args.skip_baseline,
                 not args.summary_only,
+                args.profile,
                 args.min_cases,
                 args.min_top3_ratio,
                 args.min_mrr,

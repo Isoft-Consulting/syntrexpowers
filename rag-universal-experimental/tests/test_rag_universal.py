@@ -42,6 +42,7 @@ from rag_universal.core import (
 from rag_universal.eval_quality import benchmark_quality
 from rag_universal.eval_quality import evaluate_quality
 from rag_universal.eval_quality import quality_check
+from rag_universal.eval_quality import resolve_benchmark_profile
 from rag_universal.knowledge import build_project_knowledge
 from rag_universal.knowledge import generate_project_profile
 from rag_universal.knowledge import knowledge_pack_status
@@ -1376,8 +1377,9 @@ class RagUniversalTest(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        report = benchmark_quality(root, None, cases, top_k=3)
+        report = benchmark_quality(root, None, cases, top_k=3, mode="frontend")
         self.assertEqual(report["schema_version"], "rag.quality-benchmark.v1")
+        self.assertEqual(report["benchmark_profile"], "frontend")
         self.assertIn("latency_ms_avg", report["summary"]["rag"])
         self.assertIn("tokens_avg", report["summary"]["rag"])
         self.assertIn("delta", report["summary"])
@@ -1405,6 +1407,38 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(payload["schema_version"], "rag.quality-benchmark.v1")
         self.assertEqual(payload["cases"], [])
         self.assertIn("verdict", payload)
+
+    def test_resolve_benchmark_profile_uses_mode_specific_defaults(self) -> None:
+        config = {
+            "benchmark_profiles": {
+                "default": {
+                    "min_cases": 5,
+                    "min_top3_ratio": 0.6,
+                    "min_mrr": 0.4,
+                    "max_latency_p95_ms": 20000.0,
+                    "max_tokens_avg": 5000.0,
+                },
+                "frontend": {
+                    "min_cases": 5,
+                    "min_top3_ratio": 0.7,
+                    "min_mrr": 0.55,
+                    "max_latency_p95_ms": 18000.0,
+                    "max_tokens_avg": 2500.0,
+                },
+                "implementation": {
+                    "min_cases": 5,
+                    "min_top3_ratio": 0.7,
+                    "min_mrr": 0.55,
+                    "max_latency_p95_ms": 15000.0,
+                    "max_tokens_avg": 2500.0,
+                },
+            }
+        }
+        profile = resolve_benchmark_profile(config, "frontend", "auto", 5, 0.6, 0.4, 20000.0, 5000.0)
+        self.assertEqual(profile["name"], "frontend")
+        self.assertEqual(profile["thresholds"]["max_tokens_avg"], 2500.0)
+        explicit = resolve_benchmark_profile(config, "frontend", "implementation", 5, 0.6, 0.4, 20000.0, 5000.0)
+        self.assertEqual(explicit["name"], "implementation")
 
     def test_quality_check_generates_comparative_metrics(self) -> None:
         root = self.make_project()

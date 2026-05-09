@@ -130,6 +130,43 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "min_chars": 160,
         "overlap_chars": 160,
     },
+    "benchmark_profiles": {
+        "default": {
+            "min_cases": 5,
+            "min_top3_ratio": 0.6,
+            "min_mrr": 0.4,
+            "max_latency_p95_ms": 20000.0,
+            "max_tokens_avg": 5000.0,
+        },
+        "frontend": {
+            "min_cases": 5,
+            "min_top3_ratio": 0.7,
+            "min_mrr": 0.55,
+            "max_latency_p95_ms": 18000.0,
+            "max_tokens_avg": 2500.0,
+        },
+        "implementation": {
+            "min_cases": 5,
+            "min_top3_ratio": 0.7,
+            "min_mrr": 0.55,
+            "max_latency_p95_ms": 15000.0,
+            "max_tokens_avg": 2500.0,
+        },
+        "knowledge": {
+            "min_cases": 5,
+            "min_top3_ratio": 0.55,
+            "min_mrr": 0.35,
+            "max_latency_p95_ms": 18000.0,
+            "max_tokens_avg": 3500.0,
+        },
+        "self-rag": {
+            "min_cases": 5,
+            "min_top3_ratio": 0.75,
+            "min_mrr": 0.6,
+            "max_latency_p95_ms": 12000.0,
+            "max_tokens_avg": 2000.0,
+        },
+    },
     "search": {
         "hash_dim": 512,
         "min_score": 0.02,
