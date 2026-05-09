@@ -21,7 +21,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", default=None, help="Config path relative to root, current directory, or absolute path.")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("index", help="Build the local RAG index")
+    index = subparsers.add_parser("index", help="Build the local RAG index")
+    index.add_argument("--incremental", action="store_true", help="Refresh only changed/deleted sources when the existing index is compatible.")
     subparsers.add_parser("status", help="Show local RAG index status")
     coverage = subparsers.add_parser("coverage", help="Report whether specific paths are indexed")
     coverage.add_argument("paths", nargs="+")
@@ -39,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     watch.add_argument("--interval", type=float, default=2.0, help="Polling interval in seconds for continuous watch mode.")
     watch.add_argument("--debounce", type=float, default=1.0, help="Delay before rebuild after a stale check.")
     watch.add_argument("--max-cycles", type=int, default=0, help="Stop after N polling cycles. Default 0 means run until interrupted.")
+    watch.add_argument("--full-rebuild", action="store_true", help="Disable incremental refresh and always rebuild from scratch.")
 
     symbol = subparsers.add_parser("symbol", help="Look up exact symbols")
     symbol.add_argument("name")
@@ -108,7 +110,7 @@ def normalize_global_args(argv: list[str] | None) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(normalize_global_args(argv))
     if args.command == "index":
-        emit(build_index(args.root, args.config))
+        emit(build_index(args.root, args.config, incremental=bool(args.incremental)))
         return 0
     if args.command == "status":
         emit(index_status(args.root, args.config))
@@ -124,7 +126,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "watch":
         try:
-            emit(watch_index(args.root, args.config, args.interval, args.debounce, args.max_cycles or None))
+            emit(
+                watch_index(
+                    args.root,
+                    args.config,
+                    args.interval,
+                    args.debounce,
+                    args.max_cycles or None,
+                    prefer_incremental=not bool(args.full_rebuild),
+                )
+            )
         except KeyboardInterrupt:
             emit(index_status(args.root, args.config))
         return 0

@@ -22,7 +22,7 @@ SOURCE_STATE_VERSION = "rag.source-state.v1"
 SEARCH_CACHE_VERSION = "rag.search-cache.v1"
 CHUNKER_VERSION = "lexical-chunker.v1"
 TOKENIZER_VERSION = "unicode-tokenizer.v1"
-SEARCH_VERSION = "hash-vector-bm25.v7"
+SEARCH_VERSION = "hash-vector-bm25.v13"
 
 _SEARCH_CACHE_CONNECTIONS: dict[tuple[str, float, int], sqlite3.Connection] = {}
 
@@ -359,6 +359,7 @@ def load_config(root: Path, config_path: str | os.PathLike[str] | None = None) -
             candidates.append(root / candidate)
             candidates.append(Path.cwd() / candidate)
     else:
+        candidates.append(root / ".mcp" / "rag-server" / "rag.config.json")
         candidates.append(root / "rag.config.json")
 
     for candidate in candidates:
@@ -947,42 +948,46 @@ def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: 
     os.replace(tmp, path)
 
 
-def build_index(root_arg: str | os.PathLike[str] | None = None, config_path: str | os.PathLike[str] | None = None) -> dict[str, Any]:
-    root = resolve_root(root_arg)
-    config = load_config(root, config_path)
-    index_dir = get_index_dir(root, config)
-
-    chunks: list[dict[str, Any]] = []
-    symbols: list[dict[str, Any]] = []
-    deps: list[dict[str, Any]] = []
-    files: list[dict[str, Any]] = []
-    source_state_entries: list[tuple[str, int, int]] = []
-
+def iter_indexable_file_metadata(root: Path, config: dict[str, Any]) -> list[tuple[Path, os.stat_result]]:
+    items: list[tuple[Path, os.stat_result]] = []
     for path in iter_indexable_files(root, config):
-        stat = path.stat()
-        file_chunks, text, raw = chunk_file(path, root, config)
-        source = path.relative_to(root).as_posix()
-        source_state_entries.append((source, stat.st_size, stat.st_mtime_ns))
-        chunks.extend(file_chunks)
-        symbols.extend(extract_symbols(text, source))
-        deps.extend(extract_deps(text, source))
-        files.append(
-            {
-                "source": source,
-                "bytes": len(raw),
-                "sha256": sha256_bytes(raw),
-                "chunks": len(file_chunks),
-            }
-        )
+        items.append((path, path.stat()))
+    return items
 
-    artifact_names = {
+
+def file_record_from_stat(source: str, raw: bytes, stat: os.stat_result, chunk_count: int) -> dict[str, Any]:
+    return {
+        "source": source,
+        "bytes": len(raw),
+        "mtime_ns": int(stat.st_mtime_ns),
+        "sha256": sha256_bytes(raw),
+        "chunks": chunk_count,
+    }
+
+
+def artifact_names() -> dict[str, str]:
+    return {
         "chunks": "chunks.jsonl",
         "symbols": "symbols.json",
         "deps": "deps.json",
         "files": "files.json",
         "search_cache": "search.sqlite",
     }
-    manifest = {
+
+
+def build_manifest(
+    root: Path,
+    config: dict[str, Any],
+    files: list[dict[str, Any]],
+    chunks: list[dict[str, Any]],
+    symbols: list[dict[str, Any]],
+    deps: list[dict[str, Any]],
+    source_state_entries: list[tuple[str, int, int]],
+    build_mode: str,
+    changed_sources: list[str] | None = None,
+    deleted_sources: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
         "schema_version": MANIFEST_VERSION,
         "project_root": str(root),
         "indexed_at": time.time(),
@@ -995,20 +1000,57 @@ def build_index(root_arg: str | os.PathLike[str] | None = None, config_path: str
         "num_symbols": len(symbols),
         "num_deps": len(deps),
         "source_state": summarize_source_state(source_state_entries),
-        "artifacts": artifact_names,
+        "artifacts": artifact_names(),
+        "build_mode": build_mode,
+        "change_summary": {
+            "changed_sources": len(changed_sources or []),
+            "deleted_sources": len(deleted_sources or []),
+        },
     }
 
+
+def write_index_artifacts(index_dir: Path, config: dict[str, Any], manifest: dict[str, Any], files: list[dict[str, Any]], chunks: list[dict[str, Any]], symbols: list[dict[str, Any]], deps: list[dict[str, Any]]) -> None:
+    names = manifest["artifacts"]
     chunk_lines = "".join(json.dumps(chunk, ensure_ascii=False, sort_keys=True) + "\n" for chunk in chunks)
     close_search_cache_connections(index_dir)
-    write_text_atomic(index_dir / artifact_names["chunks"], chunk_lines)
-    write_json_atomic(index_dir / artifact_names["symbols"], symbols)
-    write_json_atomic(index_dir / artifact_names["deps"], deps)
-    write_json_atomic(index_dir / artifact_names["files"], files)
-    write_search_cache_sqlite(index_dir / artifact_names["search_cache"], chunks, config)
+    write_text_atomic(index_dir / str(names["chunks"]), chunk_lines)
+    write_json_atomic(index_dir / str(names["symbols"]), symbols)
+    write_json_atomic(index_dir / str(names["deps"]), deps)
+    write_json_atomic(index_dir / str(names["files"]), files)
+    write_search_cache_sqlite(index_dir / str(names["search_cache"]), chunks, config)
     legacy_search_cache = index_dir / "search-cache.json"
     if legacy_search_cache.exists():
         legacy_search_cache.unlink()
     write_json_atomic(index_dir / "manifest.json", manifest)
+
+
+def build_index(root_arg: str | os.PathLike[str] | None = None, config_path: str | os.PathLike[str] | None = None, incremental: bool = False) -> dict[str, Any]:
+    root = resolve_root(root_arg)
+    config = load_config(root, config_path)
+    index_dir = get_index_dir(root, config)
+
+    if incremental:
+        incremental_manifest = build_index_incremental(root, config, index_dir)
+        if incremental_manifest is not None:
+            return incremental_manifest
+
+    chunks: list[dict[str, Any]] = []
+    symbols: list[dict[str, Any]] = []
+    deps: list[dict[str, Any]] = []
+    files: list[dict[str, Any]] = []
+    source_state_entries: list[tuple[str, int, int]] = []
+
+    for path, stat in iter_indexable_file_metadata(root, config):
+        file_chunks, text, raw = chunk_file(path, root, config)
+        source = path.relative_to(root).as_posix()
+        source_state_entries.append((source, stat.st_size, stat.st_mtime_ns))
+        chunks.extend(file_chunks)
+        symbols.extend(extract_symbols(text, source))
+        deps.extend(extract_deps(text, source))
+        files.append(file_record_from_stat(source, raw, stat, len(file_chunks)))
+
+    manifest = build_manifest(root, config, files, chunks, symbols, deps, source_state_entries, "full")
+    write_index_artifacts(index_dir, config, manifest, files, chunks, symbols, deps)
     return manifest
 
 
@@ -1038,6 +1080,113 @@ def load_json_list(path: Path) -> list[dict[str, Any]]:
     with path.open("r", encoding="utf-8") as handle:
         value = json.load(handle)
     return value if isinstance(value, list) else []
+
+
+def load_file_records(index_dir: Path) -> list[dict[str, Any]]:
+    return load_json_list(index_dir / "files.json")
+
+
+def incremental_rebuild_plan(root: Path, config: dict[str, Any], index_dir: Path) -> dict[str, Any] | None:
+    manifest = load_manifest(index_dir)
+    if manifest is None:
+        return None
+    if manifest.get("config_hash") != config_hash(config):
+        return None
+    if manifest.get("search_version") != SEARCH_VERSION:
+        return None
+    if manifest.get("tokenizer_version") != TOKENIZER_VERSION:
+        return None
+    if manifest.get("chunker_version") != CHUNKER_VERSION:
+        return None
+
+    existing_files = load_file_records(index_dir)
+    if not existing_files:
+        return None
+    previous_by_source = {str(item.get("source", "")): item for item in existing_files if item.get("source")}
+    if not previous_by_source:
+        return None
+
+    current_metadata = iter_indexable_file_metadata(root, config)
+    current_by_source: dict[str, tuple[Path, os.stat_result]] = {}
+    source_state_entries: list[tuple[str, int, int]] = []
+    for path, stat in current_metadata:
+        source = path.relative_to(root).as_posix()
+        current_by_source[source] = (path, stat)
+        source_state_entries.append((source, stat.st_size, stat.st_mtime_ns))
+
+    changed_sources: list[str] = []
+    changed_paths: dict[str, tuple[Path, os.stat_result]] = {}
+    for source, item in current_by_source.items():
+        previous = previous_by_source.get(source)
+        if previous is None:
+            changed_sources.append(source)
+            changed_paths[source] = item
+            continue
+        previous_bytes = int(previous.get("bytes", -1))
+        previous_mtime_ns = int(previous.get("mtime_ns", -1))
+        stat = item[1]
+        if previous_bytes != int(stat.st_size) or previous_mtime_ns != int(stat.st_mtime_ns):
+            changed_sources.append(source)
+            changed_paths[source] = item
+
+    deleted_sources = sorted(set(previous_by_source) - set(current_by_source))
+    unchanged_sources = sorted(set(current_by_source) - set(changed_sources))
+    return {
+        "changed_sources": sorted(changed_sources),
+        "changed_paths": changed_paths,
+        "deleted_sources": deleted_sources,
+        "unchanged_sources": unchanged_sources,
+        "source_state_entries": source_state_entries,
+    }
+
+
+def build_index_incremental(root: Path, config: dict[str, Any], index_dir: Path) -> dict[str, Any] | None:
+    plan = incremental_rebuild_plan(root, config, index_dir)
+    if plan is None:
+        return None
+
+    changed_sources = set(str(item) for item in plan["changed_sources"])
+    deleted_sources = set(str(item) for item in plan["deleted_sources"])
+    affected_sources = changed_sources | deleted_sources
+
+    existing_chunks = [chunk for chunk in load_chunks(index_dir) if str(chunk.get("source", "")) not in affected_sources]
+    existing_symbols = [symbol for symbol in load_json_list(index_dir / "symbols.json") if str(symbol.get("source", "")) not in affected_sources]
+    existing_deps = [dep for dep in load_json_list(index_dir / "deps.json") if str(dep.get("source", "")) not in affected_sources]
+    existing_files = [item for item in load_file_records(index_dir) if str(item.get("source", "")) not in affected_sources]
+
+    new_chunks: list[dict[str, Any]] = []
+    new_symbols: list[dict[str, Any]] = []
+    new_deps: list[dict[str, Any]] = []
+    new_files: list[dict[str, Any]] = []
+
+    changed_paths = plan["changed_paths"]
+    for source in sorted(changed_paths):
+        path, stat = changed_paths[source]
+        file_chunks, text, raw = chunk_file(path, root, config)
+        new_chunks.extend(file_chunks)
+        new_symbols.extend(extract_symbols(text, source))
+        new_deps.extend(extract_deps(text, source))
+        new_files.append(file_record_from_stat(source, raw, stat, len(file_chunks)))
+
+    chunks = sorted(existing_chunks + new_chunks, key=lambda item: (str(item.get("source", "")), int(item.get("start_line", 1)), str(item.get("heading", ""))))
+    symbols = sorted(existing_symbols + new_symbols, key=lambda item: (str(item.get("source", "")), int(item.get("line", 0)), str(item.get("kind", "")), str(item.get("name", ""))))
+    deps = sorted(existing_deps + new_deps, key=lambda item: (str(item.get("source", "")), int(item.get("line", 0)), str(item.get("kind", "")), str(item.get("target", ""))))
+    files = sorted(existing_files + new_files, key=lambda item: str(item.get("source", "")))
+
+    manifest = build_manifest(
+        root,
+        config,
+        files,
+        chunks,
+        symbols,
+        deps,
+        plan["source_state_entries"],
+        "incremental",
+        plan["changed_sources"],
+        plan["deleted_sources"],
+    )
+    write_index_artifacts(index_dir, config, manifest, files, chunks, symbols, deps)
+    return manifest
 
 
 def load_search_cache(index_dir: Path) -> sqlite3.Connection | None:
@@ -1132,6 +1281,7 @@ def ensure_fresh_index(
     root_arg: str | os.PathLike[str] | None = None,
     config_path: str | os.PathLike[str] | None = None,
     auto_reindex: bool = False,
+    prefer_incremental: bool = True,
 ) -> dict[str, Any]:
     status_before = index_status(root_arg, config_path)
     stale_before = bool(status_before.get("stale", True))
@@ -1143,12 +1293,13 @@ def ensure_fresh_index(
         "status": status_before,
     }
     if stale_before and auto_reindex:
-        manifest = build_index(root_arg, config_path)
+        manifest = build_index(root_arg, config_path, incremental=prefer_incremental)
         status_after = index_status(root_arg, config_path)
         result.update(
             {
                 "reindexed": True,
                 "manifest": manifest,
+                "reindex_mode": manifest.get("build_mode", "full"),
                 "status": status_after,
             }
         )
@@ -1161,6 +1312,7 @@ def watch_index(
     interval_seconds: float = 2.0,
     debounce_seconds: float = 1.0,
     max_cycles: int | None = None,
+    prefer_incremental: bool = True,
 ) -> dict[str, Any]:
     cycles = 0
     rebuilds = 0
@@ -1171,7 +1323,7 @@ def watch_index(
             last_reason = str(status.get("reason") or "unknown")
             if debounce_seconds > 0:
                 time.sleep(debounce_seconds)
-            build_index(root_arg, config_path)
+            build_index(root_arg, config_path, incremental=prefer_incremental)
             rebuilds += 1
         cycles += 1
         if max_cycles is None and interval_seconds > 0:
@@ -1389,6 +1541,10 @@ def mode_source_boost(source: str, config: dict[str, Any], mode: str) -> float:
     if normalize_search_mode(mode) != "knowledge":
         return 1.0
     lower = source.lower()
+    if lower.startswith(".mcp/rag-server/knowledge/"):
+        return 2.2
+    if lower.startswith("docs/knowledge/rag/"):
+        return 2.0
     if lower.startswith("knowledge/") or "/knowledge/" in f"/{lower}":
         return 1.6
     if lower.startswith("docs/knowledge/"):
@@ -1396,6 +1552,174 @@ def mode_source_boost(source: str, config: dict[str, Any], mode: str) -> float:
     if lower.endswith(("patterns.md", "failure-taxonomy.md", "owner-map.md", "query-templates.md", "lessons.jsonl")):
         return 1.35
     return 1.0
+
+
+def is_local_rag_source(source: str) -> bool:
+    return source.lower().startswith(".mcp/rag-server/")
+
+
+def is_curated_knowledge_source(source: str) -> bool:
+    lower = source.lower()
+    if lower.startswith(".mcp/rag-server/knowledge/"):
+        return True
+    if lower.startswith("docs/knowledge/rag/"):
+        return True
+    if lower.startswith("knowledge/"):
+        return True
+    if lower.endswith(("patterns.md", "failure-taxonomy.md", "owner-map.md", "query-templates.md", "lessons.jsonl", "summary.json")):
+        return True
+    return False
+
+
+def is_policy_or_operator_doc(source: str) -> bool:
+    lower = source.lower()
+    name = Path(source).name.lower()
+    if name in {"agents.md", "claude.md", "agents-plugins.md"}:
+        return True
+    return lower.startswith("docs/collective-memory/") or lower.startswith("docs/ops/")
+
+
+def score_query_profile(query: str, mode: str, filter_source: str | None = None) -> dict[str, Any]:
+    normalized_mode = normalize_search_mode(mode)
+    query_terms = set(tokenize(query))
+    lower_query = query.lower()
+    explicit_paths = extract_query_paths(query)
+    self_rag_terms = {
+        "rag",
+        "retrieval",
+        "bm25",
+        "vector",
+        "chunk",
+        "chunking",
+        "ranking",
+        "rerank",
+        "search",
+        "index",
+        "indexing",
+        "knowledge-build",
+        "quality-check",
+        "eval-quality",
+        "token",
+        "tokens",
+        "latency",
+        "candidate",
+        "candidates",
+        "sqlite",
+    }
+    knowledge_terms = {
+        "knowledge",
+        "lesson",
+        "lessons",
+        "pattern",
+        "patterns",
+        "taxonomy",
+        "owner",
+        "owners",
+        "template",
+        "templates",
+    }
+    broad = len(query_terms) >= 6 and not explicit_paths
+    filter_text = (filter_source or "").lower()
+    self_rag = (
+        ".mcp/rag-server" in filter_text
+        or any(term in query_terms for term in self_rag_terms)
+        or ".mcp/rag-server" in lower_query
+    )
+    knowledge_intent = normalized_mode == "knowledge" or any(term in query_terms for term in knowledge_terms)
+    broad_implementation = broad and normalized_mode in {"default", "implementation"} and not explicit_paths
+    self_rag_code_intent = self_rag and normalized_mode == "implementation"
+    return {
+        "mode": normalized_mode,
+        "explicit_paths": explicit_paths,
+        "broad": broad,
+        "self_rag": self_rag,
+        "knowledge_intent": knowledge_intent,
+        "broad_implementation": broad_implementation,
+        "self_rag_code_intent": self_rag_code_intent,
+        "filter_source": filter_source or "",
+    }
+
+
+def adaptive_candidate_limit(base_limit: int, profile: dict[str, Any]) -> int:
+    if profile["self_rag"]:
+        return max(250, min(base_limit, 1500))
+    if profile["knowledge_intent"]:
+        return max(300, min(base_limit, 2000))
+    if profile["broad_implementation"]:
+        return max(400, min(base_limit, 2500))
+    return base_limit
+
+
+def adaptive_max_chunks_per_source(base_limit: int, profile: dict[str, Any]) -> int:
+    if profile["broad"] or profile["knowledge_intent"]:
+        return 1
+    return base_limit
+
+
+def adaptive_read_plan_limit(profile: dict[str, Any], default_limit: int = 6) -> int:
+    if profile["self_rag"] or profile["knowledge_intent"]:
+        return min(default_limit, 4)
+    if profile["broad_implementation"]:
+        return min(default_limit, 5)
+    return default_limit
+
+
+def intent_source_multiplier(source: str, artifact: str, role: str, profile: dict[str, Any]) -> float:
+    multiplier = 1.0
+    if profile["filter_source"] and profile["filter_source"] in source:
+        multiplier *= 1.35
+    if profile["self_rag"]:
+        if is_local_rag_source(source):
+            multiplier *= 2.4
+            lower = source.lower()
+            if "/rag_universal/" in lower:
+                multiplier *= 1.55
+            elif role == "config":
+                multiplier *= 1.18
+            elif role == "docs":
+                multiplier *= 1.1
+            elif role == "test":
+                multiplier *= 0.78
+        elif is_policy_or_operator_doc(source):
+            multiplier *= 0.42
+    if profile["self_rag_code_intent"]:
+        lower = source.lower()
+        if "/rag_universal/" in lower:
+            if role == "implementation":
+                multiplier *= 1.95
+            elif role == "test":
+                multiplier *= 0.52
+        elif "/knowledge/" in lower:
+            multiplier *= 0.34
+        elif role == "config":
+            multiplier *= 0.72
+    if profile["knowledge_intent"]:
+        if profile["self_rag_code_intent"] and is_local_rag_source(source):
+            if "/knowledge/" in source.lower():
+                multiplier *= 0.58
+            elif role == "implementation":
+                multiplier *= 1.2
+            elif role == "config":
+                multiplier *= 0.92
+            return multiplier
+        if is_curated_knowledge_source(source):
+            multiplier *= 1.9
+        elif artifact.startswith("markdown"):
+            multiplier *= 0.62
+        else:
+            multiplier *= 0.82
+    if profile["broad_implementation"]:
+        if is_policy_or_operator_doc(source):
+            multiplier *= 0.22
+        elif role == "docs":
+            multiplier *= 0.52
+        elif role in {"plan", "spec"}:
+            multiplier *= 0.72
+        elif role == "test":
+            multiplier *= 0.92
+        elif role in {"implementation", "config"}:
+            multiplier *= 1.14
+    return multiplier
 
 
 def fdr_role(source: str, artifact: str) -> str:
@@ -1622,6 +1946,41 @@ def search_sort_key(item: dict[str, Any], config: dict[str, Any]) -> tuple[float
     return (-path_match, -float(item["score"]), str(item["source"]), int(item["start_line"]))
 
 
+def self_rag_role_rank(source: str, role: str, profile: dict[str, Any]) -> int:
+    if not profile.get("self_rag_code_intent"):
+        return 99
+    lower = source.lower()
+    if "/rag_universal/" in lower and role == "implementation":
+        return 0
+    if lower.endswith("/mcp_server.py") and role == "implementation":
+        return 1
+    if lower.endswith("/eval_quality.py") and role == "implementation":
+        return 1
+    if role == "implementation":
+        return 2
+    if role == "config" and "/knowledge/" not in lower:
+        return 3
+    if role == "docs" and "/knowledge/" not in lower:
+        return 4
+    if role == "config":
+        return 5
+    if role == "docs":
+        return 6
+    if role == "test":
+        return 7
+    return 8
+
+
+def profile_result_sort_key(item: dict[str, Any], config: dict[str, Any], profile: dict[str, Any]) -> tuple[float, float, float, str, int]:
+    if profile.get("self_rag_code_intent"):
+        role_rank = self_rag_role_rank(str(item.get("source", "")), str(item.get("fdr_role", "other")), profile)
+        path_priority = bool(config.get("search", {}).get("explicit_path_priority", True))
+        path_match = float(item.get("path_match", 0.0)) if path_priority else 0.0
+        return (float(role_rank), -path_match, -float(item["score"]), str(item["source"]), int(item["start_line"]))
+    default_key = search_sort_key(item, config)
+    return (0.0, *default_key)
+
+
 def fetch_cached_docs(connection: sqlite3.Connection, doc_ids: set[int]) -> dict[int, sqlite3.Row]:
     docs: dict[int, sqlite3.Row] = {}
     ordered_ids = sorted(doc_ids)
@@ -1642,8 +2001,10 @@ def rows_to_results(
     config: dict[str, Any],
     path_matches: dict[int, float],
     mode: str,
+    profile: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
+    active_profile = profile or score_query_profile("", mode, None)
     for row in rows:
         source = str(row["source"] or "")
         chunk_type = str(row["artifact_type"] or "")
@@ -1653,6 +2014,7 @@ def rows_to_results(
         penalty = source_penalty(source, config)
         doc_status_boost = status_boost(doc_status, config)
         role = fdr_role(source, chunk_type)
+        intent_multiplier = intent_source_multiplier(source, chunk_type, role, active_profile)
         score = (
             float(config.get("search", {}).get("explicit_path_boost", 0.75)) * path_match
             * artifact_boost(source, chunk_type, config)
@@ -1660,6 +2022,7 @@ def rows_to_results(
             * mode_source_boost(source, config, mode)
             * penalty
             * doc_status_boost
+            * intent_multiplier
         )
         results.append(
             {
@@ -1671,6 +2034,7 @@ def rows_to_results(
                 "path_match": round(path_match, 6),
                 "source_penalty": round(penalty, 6),
                 "status_boost": round(doc_status_boost, 6),
+                "intent_boost": round(intent_multiplier, 6),
                 "fdr_role": role,
                 "source": source,
                 "heading": row["heading"] or "",
@@ -1703,11 +2067,14 @@ def search_precomputed_cache(
     bm25_weight = float(search_cfg.get("bm25_weight", 0.35))
     source_weight = float(search_cfg.get("source_weight", 0.14))
     heading_weight = float(search_cfg.get("heading_weight", 0.06))
-    max_chunks_per_source = max(1, int(search_cfg.get("max_chunks_per_source", 2)))
-    candidate_limit = max(50, int(search_cfg.get("candidate_limit", 5000)))
+    base_max_chunks_per_source = max(1, int(search_cfg.get("max_chunks_per_source", 2)))
+    base_candidate_limit = max(50, int(search_cfg.get("candidate_limit", 5000)))
     explicit_path_boost = float(search_cfg.get("explicit_path_boost", 0.75))
 
     search_mode = normalize_search_mode(mode)
+    profile = score_query_profile(query, search_mode, filter_source)
+    max_chunks_per_source = adaptive_max_chunks_per_source(base_max_chunks_per_source, profile)
+    candidate_limit = adaptive_candidate_limit(base_candidate_limit, profile)
     expanded_query = expand_for_search_mode(query, config, search_mode)
     query_counts = trim_query_counts(token_counts(expanded_query), config)
     query_terms = set(query_counts)
@@ -1715,9 +2082,9 @@ def search_precomputed_cache(
     path_matches = fetch_path_candidates(connection, extract_query_paths(query))
     if path_matches and bool(search_cfg.get("explicit_path_priority", True)):
         path_docs = fetch_cached_docs(connection, set(path_matches))
-        path_results = rows_to_results(list(path_docs.values()), config, path_matches, search_mode)
+        path_results = rows_to_results(list(path_docs.values()), config, path_matches, search_mode, profile)
         if path_results:
-            return select_search_results(path_results, top_k, max_chunks_per_source, "default")
+            return select_search_results(path_results, top_k, max_chunks_per_source, "default", config, profile)
 
     total_docs = int(metadata.get("total_docs", 0))
     avg_len = float(metadata.get("avg_len", 1.0))
@@ -1783,11 +2150,13 @@ def search_precomputed_cache(
         penalty = source_penalty(source, config)
         doc_status_boost = status_boost(doc_status, config)
         role = fdr_role(source, chunk_type)
+        intent_multiplier = intent_source_multiplier(source, chunk_type, role, profile)
         score *= artifact_boost(source, chunk_type, config)
         score *= fdr_role_boost(source, chunk_type, config, search_mode)
         score *= mode_source_boost(source, config, search_mode)
         score *= penalty
         score *= doc_status_boost
+        score *= intent_multiplier
         if score < min_score:
             continue
         start_line = int(doc["start_line"] or 1)
@@ -1801,6 +2170,7 @@ def search_precomputed_cache(
                 "path_match": round(path_match, 6),
                 "source_penalty": round(penalty, 6),
                 "status_boost": round(doc_status_boost, 6),
+                "intent_boost": round(intent_multiplier, 6),
                 "fdr_role": role,
                 "source": source,
                 "heading": doc["heading"] or "",
@@ -1814,7 +2184,7 @@ def search_precomputed_cache(
         )
 
     results.sort(key=lambda item: search_sort_key(item, config))
-    return select_search_results(results, top_k, max_chunks_per_source, search_mode)
+    return select_search_results(results, top_k, max_chunks_per_source, search_mode, config, profile)
 
 
 def select_search_results(
@@ -1822,11 +2192,16 @@ def select_search_results(
     top_k: int,
     max_chunks_per_source: int,
     mode: str,
+    config: dict[str, Any] | None = None,
+    profile: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     limit = max(1, min(int(top_k), 50))
     selected: list[dict[str, Any]] = []
     source_counts: Counter[str] = Counter()
     selected_keys: set[tuple[str, int, str]] = set()
+    active_config = config or DEFAULT_CONFIG
+    active_profile = profile or score_query_profile("", mode, None)
+    ordered_results = sorted(results, key=lambda item: profile_result_sort_key(item, active_config, active_profile))
 
     def add_result(result: dict[str, Any]) -> bool:
         source = str(result["source"])
@@ -1842,10 +2217,10 @@ def select_search_results(
         selected_roles: set[str] = set()
         seed_count = min(3, limit)
         role_insert_limit = min(limit, seed_count + 2)
-        for result in results[:seed_count]:
+        for result in ordered_results[:seed_count]:
             if add_result(result):
                 selected_roles.add(str(result.get("fdr_role", "other")))
-        for result in results[seed_count:]:
+        for result in ordered_results[seed_count:]:
             if len(selected) >= role_insert_limit:
                 break
             role = str(result.get("fdr_role", "other"))
@@ -1854,18 +2229,28 @@ def select_search_results(
             if add_result(result):
                 selected_roles.add(role)
 
-    for result in results:
+    for result in ordered_results:
         if len(selected) >= limit:
             break
         add_result(result)
     return selected
 
 
-def build_read_plan(results: list[dict[str, Any]], mode: str = "default", max_items: int = 6) -> dict[str, Any]:
+def build_read_plan(
+    results: list[dict[str, Any]],
+    mode: str = "default",
+    max_items: int = 6,
+    config: dict[str, Any] | None = None,
+    profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     blocked: list[dict[str, Any]] = []
     seen_sources: set[str] = set()
-    for result in results:
+    active_config = config or DEFAULT_CONFIG
+    active_profile = profile or score_query_profile("", mode, None)
+    read_plan_limit = adaptive_read_plan_limit(active_profile, max_items)
+    ordered_results = sorted(results, key=lambda item: profile_result_sort_key(item, active_config, active_profile))
+    for result in ordered_results:
         status = str(result.get("document_status", "normal"))
         entry = {
             "source": result.get("source"),
@@ -1874,6 +2259,7 @@ def build_read_plan(results: list[dict[str, Any]], mode: str = "default", max_it
             "section": result.get("section", ""),
             "status": status,
             "score": result.get("score"),
+            "token_cost_hint": "low" if float(result.get("score", 0.0)) >= 0.55 else "medium",
         }
         if status in ("superseded", "historical"):
             blocked.append({**entry, "reason": "low-trust document status"})
@@ -1883,11 +2269,12 @@ def build_read_plan(results: list[dict[str, Any]], mode: str = "default", max_it
             continue
         items.append(entry)
         seen_sources.add(source)
-        if len(items) >= max_items:
+        if len(items) >= read_plan_limit:
             break
     return {
         "mode": normalize_search_mode(mode),
         "budget_hint": "Read only the listed sections first; avoid full-file reads unless these sections are insufficient.",
+        "token_budget_hint": "Start with 1-2 low-cost sections, then expand only if evidence is still missing.",
         "items": items,
         "deprioritized": blocked[:3],
     }
@@ -1905,6 +2292,7 @@ def search_index_with_plan(
 ) -> dict[str, Any]:
     freshness = ensure_fresh_index(root_arg, config_path, auto_reindex)
     results = search_index(root_arg, config_path, query, top_k, filter_source, filter_type, mode)
+    profile = score_query_profile(query, mode, filter_source)
     diagnostics: dict[str, Any] = {
         "no_results": results == [],
         "explicit_paths": extract_query_paths(query),
@@ -1912,6 +2300,12 @@ def search_index_with_plan(
         "index_stale_reason": freshness.get("reason_before"),
         "index_reindexed": bool(freshness.get("reindexed")),
         "index_stale_after_search": bool(freshness.get("status", {}).get("stale")),
+        "query_profile": {
+            "broad": profile["broad"],
+            "self_rag": profile["self_rag"],
+            "knowledge_intent": profile["knowledge_intent"],
+            "broad_implementation": profile["broad_implementation"],
+        },
     }
     if results == []:
         diagnostics["next_steps"] = [
@@ -1919,7 +2313,13 @@ def search_index_with_plan(
             "try a task-specific mode such as architecture, implementation, frontend, migration, or fdr",
             "reindex if rag_status reports stale source files",
         ]
-    return {"results": results, "read_plan": build_read_plan(results, mode), "diagnostics": diagnostics}
+    root = resolve_root(root_arg)
+    config = load_config(root, config_path)
+    return {
+        "results": results,
+        "read_plan": build_read_plan(results, mode, adaptive_read_plan_limit(profile), config, profile),
+        "diagnostics": diagnostics,
+    }
 
 
 def search_index(
@@ -1953,9 +2353,11 @@ def search_index(
     bm25_weight = float(search_cfg.get("bm25_weight", 0.35))
     source_weight = float(search_cfg.get("source_weight", 0.14))
     heading_weight = float(search_cfg.get("heading_weight", 0.06))
-    max_chunks_per_source = max(1, int(search_cfg.get("max_chunks_per_source", 2)))
+    base_max_chunks_per_source = max(1, int(search_cfg.get("max_chunks_per_source", 2)))
 
     search_mode = normalize_search_mode(mode)
+    profile = score_query_profile(query, search_mode, filter_source)
+    max_chunks_per_source = adaptive_max_chunks_per_source(base_max_chunks_per_source, profile)
     expanded_query = expand_for_search_mode(query, config, search_mode)
     query_counts = trim_query_counts(token_counts(expanded_query), config)
     query_terms = set(query_counts)
@@ -1986,11 +2388,13 @@ def search_index(
         penalty = source_penalty(source, config)
         doc_status_boost = status_boost(doc_status, config)
         role = fdr_role(source, chunk_type)
+        intent_multiplier = intent_source_multiplier(source, chunk_type, role, profile)
         score *= artifact_boost(source, chunk_type, config)
         score *= fdr_role_boost(source, chunk_type, config, search_mode)
         score *= mode_source_boost(source, config, search_mode)
         score *= penalty
         score *= doc_status_boost
+        score *= intent_multiplier
         if score < min_score:
             continue
         start_line = int(chunk.get("start_line", 1))
@@ -2005,6 +2409,7 @@ def search_index(
                 "path_match": 0.0,
                 "source_penalty": round(penalty, 6),
                 "status_boost": round(doc_status_boost, 6),
+                "intent_boost": round(intent_multiplier, 6),
                 "fdr_role": role,
                 "source": source,
                 "heading": chunk.get("heading", ""),
@@ -2018,7 +2423,7 @@ def search_index(
         )
 
     results.sort(key=lambda item: search_sort_key(item, config))
-    return select_search_results(results, top_k, max_chunks_per_source, search_mode)
+    return select_search_results(results, top_k, max_chunks_per_source, search_mode, config, profile)
 
 
 def lookup_symbol(

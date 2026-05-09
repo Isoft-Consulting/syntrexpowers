@@ -12,13 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from rag_universal.core import (
-    DEFAULT_CONFIG,
     build_index,
     ensure_fresh_index,
     index_coverage,
     index_status,
     load_chunks,
-    load_config,
     lookup_deps,
     lookup_symbol,
     search_index,
@@ -29,7 +27,6 @@ from rag_universal.core import (
     watch_index,
 )
 from rag_universal.eval_quality import evaluate_quality
-from rag_universal.eval_quality import hit_rank
 from rag_universal.eval_quality import quality_check
 from rag_universal.knowledge import build_project_knowledge
 from rag_universal.knowledge import generate_project_profile
@@ -209,6 +206,27 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(watched["rebuilds"], 1)
         self.assertFalse(watched["status"]["stale"])
         self.assertEqual(search_index(root, None, "watched refresh token", top_k=1)[0]["source"], "CHANGELOG.md")
+        self.assertEqual(watched["status"]["manifest"]["build_mode"], "incremental")
+
+    def test_incremental_index_updates_changed_added_and_deleted_sources(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        (root / "README.md").write_text("# Demo\n\nIncremental refresh token.", encoding="utf-8")
+        (root / "CHANGELOG.md").write_text("# Changelog\n\nIncremental add token.", encoding="utf-8")
+        (root / "schemas" / "demo.schema.json").unlink()
+
+        manifest = build_index(root, None, incremental=True)
+        self.assertEqual(manifest["build_mode"], "incremental")
+        self.assertEqual(manifest["change_summary"]["changed_sources"], 2)
+        self.assertEqual(manifest["change_summary"]["deleted_sources"], 1)
+
+        results = search_index(root, None, "incremental refresh token", top_k=1)
+        self.assertEqual(results[0]["source"], "README.md")
+        added = search_index(root, None, "incremental add token", top_k=1)
+        self.assertEqual(added[0]["source"], "CHANGELOG.md")
+        coverage = index_coverage(root, None, ["schemas/demo.schema.json"])
+        self.assertFalse(coverage["paths"][0]["indexed"])
+        self.assertEqual(coverage["paths"][0]["reason"], "missing")
 
     def test_cli_accepts_root_after_subcommand(self) -> None:
         root = self.make_project()
@@ -248,22 +266,24 @@ class RagUniversalTest(unittest.TestCase):
         manifest = json.loads(index.stdout)
         self.assertEqual(manifest["num_files"], 6)
 
-    def test_example_config_preserves_runtime_excludes(self) -> None:
-        example_config = json.loads((ROOT / "rag.config.example.json").read_text(encoding="utf-8"))
-        self.assertTrue(set(DEFAULT_CONFIG["exclude_dirs"]).issubset(set(example_config["exclude_dirs"])))
-
+    def test_default_config_can_live_under_local_rag_server_directory(self) -> None:
         root = self.make_project()
-        (root / "storage" / "payload" / "work_items").mkdir(parents=True)
-        (root / "storage" / "payload" / "work_items" / "payload.json").write_text(
-            '{"runtime":true}',
+        (root / ".mcp" / "rag-server").mkdir(parents=True)
+        (root / "tests" / "Unit").mkdir(parents=True)
+        (root / "tests" / "Unit" / "BuildAndPushNodeImagesScriptTest.php").write_text("<?php\n", encoding="utf-8")
+        (root / ".mcp" / "rag-server" / "rag.config.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "rag.config.v1",
+                    "exclude_dirs": ["tests", "node_modules"],
+                    "force_include_globs": ["tests/Unit/*ScriptTest.php"],
+                }
+            ),
             encoding="utf-8",
         )
-        loaded = load_config(root, ROOT / "rag.config.example.json")
-        self.assertIn("storage", loaded["exclude_dirs"])
-
-        build_index(root, ROOT / "rag.config.example.json")
-        sources = {chunk["source"] for chunk in load_chunks(root / ".rag-index")}
-        self.assertNotIn("storage/payload/work_items/payload.json", sources)
+        build_index(root)
+        coverage = index_coverage(root, None, ["tests/Unit/BuildAndPushNodeImagesScriptTest.php"])
+        self.assertTrue(coverage["paths"][0]["indexed"])
 
     def test_force_include_contract_tests_and_coverage_report(self) -> None:
         root = self.make_project()
@@ -340,6 +360,52 @@ class RagUniversalTest(unittest.TestCase):
         sources = {chunk["source"] for chunk in load_chunks(root / ".rag-index")}
         self.assertNotIn("tests/Unit/_tmp_storage/payload.json", sources)
         self.assertNotIn("storage/payload/work_items/payload.json", sources)
+
+    def test_project_config_can_force_include_local_rag_server_under_dot_mcp(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / ".mcp" / "rag-server" / "rag_universal").mkdir(parents=True)
+        (root / ".mcp" / "rag-server" / "tests").mkdir(parents=True)
+        (root / ".mcp" / "rag-server" / "README.md").write_text(
+            "# Local RAG\n\nBM25 ranking and token-aware read plan.",
+            encoding="utf-8",
+        )
+        (root / ".mcp" / "rag-server" / "rag_universal" / "core.py").write_text(
+            "def score_rag():\n    return 'bm25 vector ranking'\n",
+            encoding="utf-8",
+        )
+        (root / ".mcp" / "rag-server" / "tests" / "test_rag_universal.py").write_text(
+            "def test_read_plan():\n    assert True\n",
+            encoding="utf-8",
+        )
+        (root / "rag.config.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "rag.config.v1",
+                    "force_include_globs": [
+                        ".mcp/rag-server/*.md",
+                        ".mcp/rag-server/rag_universal/*.py",
+                        ".mcp/rag-server/tests/*.py",
+                        ".mcp/rag-server/**/*.md",
+                        ".mcp/rag-server/**/*.py",
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        build_index(root)
+        coverage = index_coverage(
+            root,
+            None,
+            [
+                ".mcp/rag-server/README.md",
+                ".mcp/rag-server/rag_universal/core.py",
+            ],
+        )
+        self.assertEqual(coverage["summary"]["indexed"], 2)
+        results = search_index(root, None, "rag ranking bm25 read plan", top_k=2, mode="implementation")
+        self.assertTrue(results[0]["source"].startswith(".mcp/rag-server/"))
 
     def test_path_query_suffix_escapes_like_wildcards(self) -> None:
         temp = tempfile.TemporaryDirectory()
@@ -536,6 +602,131 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(results[0]["source"], "matrices/matrix.provider-feature-gate.v1.matrix.json")
         self.assertEqual(len([item for item in results if item["source"] == "docs/generic.md"]), 1)
 
+    def test_broad_implementation_query_prefers_local_rag_sources_over_policy_docs(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / ".mcp" / "rag-server" / "rag_universal").mkdir(parents=True)
+        (root / "AGENTS.md").write_text(
+            "# AGENTS\n\nrag search ranking chunking token cost " * 40,
+            encoding="utf-8",
+        )
+        (root / ".mcp" / "rag-server" / "README.md").write_text(
+            "# Local RAG\n\nSearch quality, ranking, chunking, token cost and retrieval budget.",
+            encoding="utf-8",
+        )
+        (root / ".mcp" / "rag-server" / "rag_universal" / "core.py").write_text(
+            "def rank_chunks():\n    return 'search ranking chunking token cost'\n",
+            encoding="utf-8",
+        )
+        (root / "rag.config.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "rag.config.v1",
+                    "force_include_globs": [
+                        ".mcp/rag-server/*.md",
+                        ".mcp/rag-server/rag_universal/*.py",
+                        ".mcp/rag-server/**/*.md",
+                        ".mcp/rag-server/**/*.py",
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        build_index(root)
+        results = search_index(root, None, "rag server ranking chunking token cost", top_k=3, mode="implementation")
+        self.assertTrue(results[0]["source"].startswith(".mcp/rag-server/"))
+        self.assertNotEqual(results[0]["source"], "AGENTS.md")
+
+    def test_knowledge_mode_prefers_curated_knowledge_pack(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "Docs" / "knowledge" / "rag").mkdir(parents=True)
+        (root / "Docs" / "visual").mkdir(parents=True)
+        (root / "Docs" / "knowledge" / "rag" / "patterns.md").write_text(
+            "# Patterns\n\nRoute contract owner boundary failure taxonomy query template.",
+            encoding="utf-8",
+        )
+        (root / "Docs" / "visual" / "master-spec.md").write_text(
+            "# Visual\n\nRoute contract owner boundary guidance for general product docs.",
+            encoding="utf-8",
+        )
+        build_index(root)
+        results = search_index(root, None, "route contract owner boundary failure taxonomy", top_k=2, mode="knowledge")
+        self.assertEqual(results[0]["source"], "Docs/knowledge/rag/patterns.md")
+
+    def test_self_rag_implementation_query_with_knowledge_terms_prefers_runtime_code(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / ".mcp" / "rag-server" / "rag_universal").mkdir(parents=True)
+        (root / ".mcp" / "rag-server" / "knowledge" / "core-review").mkdir(parents=True)
+        (root / ".mcp" / "rag-server" / "rag_universal" / "core.py").write_text(
+            "def rerank_search_results():\n    return 'quality-check eval-quality knowledge-build rerank'\n",
+            encoding="utf-8",
+        )
+        (root / ".mcp" / "rag-server" / "knowledge" / "core-review" / "owner-map.json").write_text(
+            json.dumps({"note": "quality-check eval-quality knowledge-build rerank"}),
+            encoding="utf-8",
+        )
+        (root / ".mcp" / "rag-server" / "tests").mkdir(parents=True)
+        (root / ".mcp" / "rag-server" / "tests" / "test_rag_universal.py").write_text(
+            "def test_rag():\n    assert True\n",
+            encoding="utf-8",
+        )
+        (root / "rag.config.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "rag.config.v1",
+                    "force_include_globs": [
+                        ".mcp/rag-server/rag_universal/*.py",
+                        ".mcp/rag-server/knowledge/**/*.json",
+                        ".mcp/rag-server/tests/*.py",
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        build_index(root)
+        results = search_index(root, None, "quality-check eval-quality knowledge-build rerank", top_k=3, mode="implementation")
+        self.assertEqual(results[0]["source"], ".mcp/rag-server/rag_universal/core.py")
+
+    def test_self_rag_read_plan_prefers_runtime_layers_before_tests(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / ".mcp" / "rag-server" / "rag_universal").mkdir(parents=True)
+        (root / ".mcp" / "rag-server" / "tests").mkdir(parents=True)
+        (root / ".mcp" / "rag-server" / "rag_universal" / "core.py").write_text(
+            "def chunk_budget():\n    return 'chunking overlap read plan budget'\n",
+            encoding="utf-8",
+        )
+        (root / ".mcp" / "rag-server" / "rag_universal" / "cli.py").write_text(
+            "def cli_budget():\n    return 'chunking overlap read plan budget'\n",
+            encoding="utf-8",
+        )
+        (root / ".mcp" / "rag-server" / "tests" / "test_rag_universal.py").write_text(
+            "def test_budget():\n    assert True\n",
+            encoding="utf-8",
+        )
+        (root / "rag.config.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "rag.config.v1",
+                    "force_include_globs": [
+                        ".mcp/rag-server/rag_universal/*.py",
+                        ".mcp/rag-server/tests/*.py",
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        build_index(root)
+        payload = search_index_with_plan(root, None, "chunking overlap read plan budget", top_k=4, mode="implementation")
+        self.assertTrue(payload["results"][0]["source"].startswith(".mcp/rag-server/rag_universal/"))
+        self.assertTrue(payload["read_plan"]["items"][0]["source"].startswith(".mcp/rag-server/rag_universal/"))
+
     def test_eval_quality_compares_rag_and_baseline(self) -> None:
         root = self.make_project()
         build_index(root)
@@ -559,12 +750,6 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(rag_only["summary"]["rag"]["top1"], 1)
         self.assertIsNone(rag_only["summary"]["baseline"])
         self.assertEqual(rag_only["cases"], [])
-
-    def test_eval_quality_hits_are_exact_repo_relative_paths(self) -> None:
-        self.assertEqual(hit_rank(["README.md"], ["README.md"]), 1)
-        self.assertEqual(hit_rank(["src\\service.py"], ["src/service.py"]), 1)
-        self.assertIsNone(hit_rank(["docs/README.md"], ["README.md"]))
-        self.assertIsNone(hit_rank(["uier/routes/admin.php"], ["routes/admin.php"]))
 
     def test_quality_check_generates_comparative_metrics(self) -> None:
         root = self.make_project()

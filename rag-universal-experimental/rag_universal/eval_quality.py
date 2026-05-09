@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import posixpath
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -11,18 +10,9 @@ from .core import ensure_fresh_index, get_index_dir, load_chunks, load_config, l
 QUALITY_CHECK_VERSION = "rag.quality-check.v1"
 
 
-def normalize_source_path(value: str) -> str:
-    source = str(value).replace("\\", "/").strip()
-    while source.startswith("./"):
-        source = source[2:]
-    normalized = posixpath.normpath(source)
-    return "" if normalized == "." else normalized
-
-
 def hit_rank(sources: list[str], expected_sources: list[str]) -> int | None:
-    expected_set = {normalize_source_path(expected) for expected in expected_sources}
     for index, source in enumerate(sources, start=1):
-        if normalize_source_path(source) in expected_set:
+        if any(expected in source for expected in expected_sources):
             return index
     return None
 

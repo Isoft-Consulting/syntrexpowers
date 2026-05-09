@@ -29,6 +29,8 @@ Use an explicit config:
 python3 tools/rag.py index --root .. --config rag.config.example.json
 ```
 
+For project-local installs under `.mcp/rag-server/`, the default config lookup now prefers `.mcp/rag-server/rag.config.json` before a root-level `rag.config.json`.
+
 Run as an MCP server:
 
 ```bash
@@ -110,15 +112,16 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
 
 `search.sqlite` stores precomputed postings/vector data used by `rag_search`, and `manifest.json` stores a source-state fingerprint so `rag_status` can report when indexed files changed. Do not commit generated index artifacts. The repository `.gitignore` excludes `.rag-index/`.
 
-For changing projects, use one of two refresh modes:
+For changing projects, use one of three refresh modes:
 
 ```bash
+python3 tools/rag.py index --root /path/to/project --incremental
 python3 tools/rag.py search --root /path/to/project "query" --auto-reindex
 python3 tools/rag.py search --root /path/to/project "query" --with-plan --auto-reindex
 python3 tools/rag.py watch --root /path/to/project
 ```
 
-`--auto-reindex` checks `rag_status` before a search and performs a full rebuild only when the manifest is missing or stale. `--with-plan` diagnostics report whether the index was stale before search, whether it was rebuilt, and whether it is still stale after search. `watch` is a simple polling loop for long-lived local sessions.
+`index --incremental` refreshes only changed/deleted sources when the current manifest, config hash, tokenizer, chunker, and search version are compatible; otherwise it falls back to a full rebuild. `--auto-reindex` checks `rag_status` before a search and rebuilds when the manifest is missing or stale, preferring an incremental rebuild when possible. `--with-plan` diagnostics report whether the index was stale before search, whether it was rebuilt, and whether it is still stale after search. `watch` is a simple polling loop for long-lived local sessions and also prefers incremental rebuilds when possible.
 
 `force_include_globs` can include narrow review-critical files from otherwise excluded directories, for example `tests/Unit/*ContractTest.php` while keeping the rest of `tests/` out of the index. Runtime/generated directories such as `node_modules`, `vendor`, `dist`, `storage`, `_tmp_storage`, `payload`, and `.git` are excluded by default. `Dockerfile`, `Dockerfile.*`, and `.dockerignore` are included by default because build contracts are common FDR evidence.
 
@@ -252,6 +255,6 @@ Current `syntrexpowers` gold-set result after v6 lexical ranking:
 ## Current Limits
 
 - Search is lexical in v0, not embedding-semantic.
-- Partial reindex is not implemented; `--auto-reindex`, `watch`, and `rag_reindex` all perform full rebuilds when the source-state fingerprint changes.
+- Incremental reindex updates only changed/deleted sources, but it still rewrites the aggregate artifacts and SQLite search cache after merging the refreshed document set.
 - Dependency extraction is shallow import/use extraction, not a call graph.
 - JSON schemas document artifact shape but are not enforced by an external validator in v0 tests.
