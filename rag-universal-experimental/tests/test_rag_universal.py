@@ -84,6 +84,7 @@ class RagUniversalTest(unittest.TestCase):
         self.assertFalse(any("should-not-be-indexed" in chunk["text"] for chunk in chunks))
         self.assertTrue((root / ".rag-index" / "manifest.json").exists())
         self.assertTrue((root / ".rag-index" / "search.sqlite").exists())
+        self.assertTrue((root / ".rag-index" / "lexicon.json").exists())
         self.assertEqual(manifest["artifacts"]["search_cache"], "search.sqlite")
 
     def test_search_symbol_and_deps(self) -> None:
@@ -1001,6 +1002,54 @@ class RagUniversalTest(unittest.TestCase):
         )
         (root / "Docs" / "guides" / "visual-studio-user-guide.md").write_text(
             "repair AI normalization mixes explicit attributes with flat keys and can mask full attributes replace risk instead of safe attributes_merge.\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = "repair AI normalization mixes explicit attributes with flat keys and can mask full attributes replace risk instead of safe attributes_merge"
+        results = search_index(root, None, query, top_k=3, mode="frontend")
+        self.assertEqual(results[0]["source"], "uier-spa/src/api/visual-studio-assistant.ts")
+
+    def test_frontend_lexicon_boost_prefers_assistant_api_over_devtools_noise(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "uier-spa" / "src" / "api").mkdir(parents=True)
+        (root / "uier" / "plugins" / "devtools" / "backend" / "Mcp").mkdir(parents=True)
+        (root / "uier" / "plugins" / "devtools" / "backend" / "Support").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "api" / "visual-studio-assistant.ts").write_text(
+            "export function normalizeAttributesMerge(payload) { return payload.attributes_merge ?? payload.target.call }\n",
+            encoding="utf-8",
+        )
+        (root / "uier" / "plugins" / "devtools" / "backend" / "Mcp" / "DocsContentBuilder.php").write_text(
+            "<?php\nfunction buildDocs(): array { return ['target.call', 'entity_operation', 'expected_source_revision']; }\n",
+            encoding="utf-8",
+        )
+        (root / "uier" / "plugins" / "devtools" / "backend" / "Support" / "MspCapabilityRegistry.php").write_text(
+            "<?php\nfunction capabilities(): array { return ['attributes_merge', 'target.call']; }\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = "local CAS validation warns for core.update but misses canonical target.call entity_operation update with expected_source_revision and later conflict handler"
+        results = search_index(root, None, query, top_k=3, mode="frontend")
+        self.assertEqual(results[0]["source"], "uier-spa/src/api/visual-studio-assistant.ts")
+
+    def test_frontend_attributes_merge_query_downranks_devtools_noise(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "uier-spa" / "src" / "api").mkdir(parents=True)
+        (root / "uier" / "plugins" / "devtools" / "backend" / "Support").mkdir(parents=True)
+        (root / "uier" / "plugins" / "devtools" / "backend" / "Mcp").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "api" / "visual-studio-assistant.ts").write_text(
+            "export function normalizeWorkflowPartialUpdateStep(step) { return step.attributes_merge ?? step.target?.call }\n",
+            encoding="utf-8",
+        )
+        (root / "uier" / "plugins" / "devtools" / "backend" / "Support" / "MspCapabilityRegistry.php").write_text(
+            "<?php\nfunction capability(): array { return ['attributes_merge', 'entity_operation:update', 'target.call', 'expected_source_revision']; }\n",
+            encoding="utf-8",
+        )
+        (root / "uier" / "plugins" / "devtools" / "backend" / "Mcp" / "DocsContentBuilder.php").write_text(
+            "<?php\nfunction docs(): string { return 'attributes_merge target.call expected_source_revision core.update'; }\n",
             encoding="utf-8",
         )
         build_index(root)

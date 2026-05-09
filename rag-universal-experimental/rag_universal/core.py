@@ -22,9 +22,10 @@ SOURCE_STATE_VERSION = "rag.source-state.v1"
 SEARCH_CACHE_VERSION = "rag.search-cache.v1"
 CHUNKER_VERSION = "lexical-chunker.v1"
 TOKENIZER_VERSION = "unicode-tokenizer.v1"
-SEARCH_VERSION = "hash-vector-bm25.v14"
+SEARCH_VERSION = "hash-vector-bm25.v16"
 
 _SEARCH_CACHE_CONNECTIONS: dict[tuple[str, float, int], sqlite3.Connection] = {}
+_LEXICON_CACHE: dict[tuple[str, float, int], dict[str, Any]] = {}
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "schema_version": CONFIG_VERSION,
@@ -841,6 +842,13 @@ def close_search_cache_connections(index_dir: Path) -> None:
             _SEARCH_CACHE_CONNECTIONS.pop(cache_key, None)
 
 
+def clear_lexicon_cache(index_dir: Path) -> None:
+    index_key = str(index_dir.resolve())
+    for cache_key in list(_LEXICON_CACHE.keys()):
+        if cache_key[0] == index_key:
+            _LEXICON_CACHE.pop(cache_key, None)
+
+
 def chunk_sqlite_payload(chunk: dict[str, Any], dim: int, preview_chars: int) -> tuple[str, str, str, str, int, str, str, str, str, int, list[tuple[str, int]]]:
     source = str(chunk.get("source", ""))
     heading = str(chunk.get("heading", ""))
@@ -877,6 +885,10 @@ def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: 
     if tmp.exists():
         tmp.unlink()
 
+    files_path = path.parent / "files.json"
+    symbols_path = path.parent / "symbols.json"
+    lexicon_rows = build_lexicon_rows(load_json_list(files_path), load_json_list(symbols_path))
+
     connection = sqlite3.connect(tmp)
     try:
         connection.execute("PRAGMA journal_mode=OFF")
@@ -906,7 +918,13 @@ def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: 
               freq INTEGER NOT NULL,
               PRIMARY KEY (token, doc_id)
             ) WITHOUT ROWID;
+            CREATE TABLE lexicon (
+              term TEXT NOT NULL,
+              source TEXT NOT NULL,
+              PRIMARY KEY (term, source)
+            ) WITHOUT ROWID;
             CREATE INDEX idx_docs_source ON docs (source);
+            CREATE INDEX idx_lexicon_source ON lexicon (source);
             """
         )
 
@@ -950,6 +968,8 @@ def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: 
             if len(doc_rows) >= 500:
                 flush()
         flush()
+        if lexicon_rows:
+            connection.executemany("INSERT INTO lexicon VALUES (?, ?)", lexicon_rows)
 
         total_docs = len(chunks)
         avg_len = total_doc_len / max(total_docs, 1)
@@ -975,6 +995,11 @@ def update_search_cache_sqlite_incremental(path: Path, changed_chunks: list[dict
     search_cfg = config.get("search", {})
     dim = int(search_cfg.get("hash_dim", 512))
     preview_chars = int(search_cfg.get("preview_chars", 500))
+    files_path = path.parent / "files.json"
+    symbols_path = path.parent / "symbols.json"
+    current_files = load_json_list(files_path)
+    current_symbols = load_json_list(symbols_path)
+    lexicon_rows = [row for row in build_lexicon_rows(current_files, current_symbols) if row[1] in affected_sources]
     close_search_cache_connections(path.parent)
     connection = sqlite3.connect(path)
     try:
@@ -993,6 +1018,7 @@ def update_search_cache_sqlite_incremental(path: Path, changed_chunks: list[dict
                 doc_placeholders = ",".join("?" for _ in doc_ids)
                 connection.execute(f"DELETE FROM postings WHERE doc_id IN ({doc_placeholders})", tuple(doc_ids))
                 connection.execute(f"DELETE FROM docs WHERE id IN ({doc_placeholders})", tuple(doc_ids))
+            connection.execute(f"DELETE FROM lexicon WHERE source IN ({placeholders})", tuple(sorted(affected_sources)))
         row = connection.execute("SELECT COALESCE(MAX(id), -1) FROM docs").fetchone()
         next_id = int(row[0]) + 1 if row is not None else 0
         total_doc_len = int(connection.execute("SELECT COALESCE(SUM(doc_length), 0) FROM docs").fetchone()[0])
@@ -1010,6 +1036,8 @@ def update_search_cache_sqlite_incremental(path: Path, changed_chunks: list[dict
                 connection.executemany("INSERT INTO docs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", new_doc_rows)
             if new_posting_rows:
                 connection.executemany("INSERT INTO postings VALUES (?, ?, ?)", new_posting_rows)
+            if lexicon_rows:
+                connection.executemany("INSERT INTO lexicon VALUES (?, ?)", lexicon_rows)
             total_docs = int(connection.execute("SELECT COUNT(*) FROM docs").fetchone()[0])
             avg_len = total_doc_len / max(total_docs, 1)
             connection.execute("DELETE FROM meta")
@@ -1047,12 +1075,88 @@ def file_record_from_stat(source: str, raw: bytes, stat: os.stat_result, chunk_c
     }
 
 
+def lexicon_terms_for_text(text: str) -> set[str]:
+    terms: set[str] = set()
+    raw = str(text).strip()
+    if not raw:
+        return terms
+    lowered = raw.lower()
+    if len(lowered) >= 3:
+        terms.add(lowered)
+    for token in tokenize(raw):
+        normalized = token.strip().lower()
+        if len(normalized) >= 3:
+            terms.add(normalized)
+    for match in re.finditer(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b", raw):
+        normalized = match.group(0).lower()
+        if len(normalized) >= 3:
+            terms.add(normalized)
+            terms.add(normalized.replace(".", "_"))
+    return terms
+
+
+def collect_source_lexicon_terms(
+    files: list[dict[str, Any]],
+    symbols: list[dict[str, Any]],
+) -> dict[str, set[str]]:
+    source_terms: dict[str, set[str]] = defaultdict(set)
+    for item in files:
+        source = str(item.get("source", ""))
+        if not source:
+            continue
+        path = Path(source)
+        source_terms[source].update(lexicon_terms_for_text(path.name))
+        if path.suffix:
+            stem = path.stem
+            if stem:
+                source_terms[source].update(lexicon_terms_for_text(stem))
+    for symbol in symbols:
+        source = str(symbol.get("source", ""))
+        if not source:
+            continue
+        name = str(symbol.get("name", "")).strip()
+        if name:
+            source_terms[source].update(lexicon_terms_for_text(name))
+    return source_terms
+
+
+def build_lexicon(
+    files: list[dict[str, Any]],
+    chunks: list[dict[str, Any]],
+    symbols: list[dict[str, Any]],
+) -> dict[str, list[str]]:
+    source_terms = collect_source_lexicon_terms(files, symbols)
+    lexicon: dict[str, list[str]] = {}
+    by_term: dict[str, set[str]] = defaultdict(set)
+    for source, terms in source_terms.items():
+        for term in terms:
+            if len(term) < 3:
+                continue
+            by_term[term].add(source)
+    for term, sources in by_term.items():
+        lexicon[term] = sorted(sources)[:48]
+    return lexicon
+
+
+def build_lexicon_rows(
+    files: list[dict[str, Any]],
+    symbols: list[dict[str, Any]],
+) -> list[tuple[str, str]]:
+    rows: list[tuple[str, str]] = []
+    for source, terms in collect_source_lexicon_terms(files, symbols).items():
+        for term in sorted(terms):
+            if len(term) >= 3:
+                rows.append((term, source))
+    return rows
+
+
 def artifact_names() -> dict[str, str]:
     return {
         "chunks": "chunks.jsonl",
         "symbols": "symbols.json",
         "deps": "deps.json",
         "files": "files.json",
+        "lexicon": "lexicon.json",
         "search_cache": "search.sqlite",
     }
 
@@ -1094,11 +1198,14 @@ def build_manifest(
 def write_index_artifacts(index_dir: Path, config: dict[str, Any], manifest: dict[str, Any], files: list[dict[str, Any]], chunks: list[dict[str, Any]], symbols: list[dict[str, Any]], deps: list[dict[str, Any]]) -> None:
     names = manifest["artifacts"]
     chunk_lines = "".join(json.dumps(chunk, ensure_ascii=False, sort_keys=True) + "\n" for chunk in chunks)
+    lexicon = build_lexicon(files, chunks, symbols)
     close_search_cache_connections(index_dir)
+    clear_lexicon_cache(index_dir)
     write_text_atomic(index_dir / str(names["chunks"]), chunk_lines)
     write_json_atomic(index_dir / str(names["symbols"]), symbols)
     write_json_atomic(index_dir / str(names["deps"]), deps)
     write_json_atomic(index_dir / str(names["files"]), files)
+    write_json_atomic(index_dir / str(names["lexicon"]), lexicon)
     write_search_cache_sqlite(index_dir / str(names["search_cache"]), chunks, config)
     legacy_search_cache = index_dir / "search-cache.json"
     if legacy_search_cache.exists():
@@ -1118,11 +1225,14 @@ def write_index_artifacts_incremental(
 ) -> None:
     names = manifest["artifacts"]
     chunk_lines = "".join(json.dumps(chunk, ensure_ascii=False, sort_keys=True) + "\n" for chunk in chunks)
+    lexicon = build_lexicon(files, chunks, symbols)
     close_search_cache_connections(index_dir)
+    clear_lexicon_cache(index_dir)
     write_text_atomic(index_dir / str(names["chunks"]), chunk_lines)
     write_json_atomic(index_dir / str(names["symbols"]), symbols)
     write_json_atomic(index_dir / str(names["deps"]), deps)
     write_json_atomic(index_dir / str(names["files"]), files)
+    write_json_atomic(index_dir / str(names["lexicon"]), lexicon)
     cache_path = index_dir / str(names["search_cache"])
     changed_chunks = [chunk for chunk in chunks if str(chunk.get("source", "")) in set(changed_sources)]
     updated = update_search_cache_sqlite_incremental(cache_path, changed_chunks, set(changed_sources), config)
@@ -1190,6 +1300,14 @@ def load_json_list(path: Path) -> list[dict[str, Any]]:
     with path.open("r", encoding="utf-8") as handle:
         value = json.load(handle)
     return value if isinstance(value, list) else []
+
+
+def load_json_dict(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as handle:
+        value = json.load(handle)
+    return value if isinstance(value, dict) else {}
 
 
 def load_file_records(index_dir: Path) -> list[dict[str, Any]]:
@@ -1338,6 +1456,29 @@ def load_search_cache(index_dir: Path) -> sqlite3.Connection | None:
             _SEARCH_CACHE_CONNECTIONS.pop(old_key, None)
     _SEARCH_CACHE_CONNECTIONS[cache_key] = connection
     return connection
+
+
+def load_lexicon(index_dir: Path) -> dict[str, Any]:
+    manifest = load_manifest(index_dir)
+    if not manifest:
+        return {}
+    lexicon_name = manifest.get("artifacts", {}).get("lexicon")
+    if not isinstance(lexicon_name, str):
+        return {}
+    lexicon_path = index_dir / lexicon_name
+    if not lexicon_path.exists():
+        return {}
+    stat = lexicon_path.stat()
+    cache_key = (str(index_dir.resolve()), stat.st_mtime, stat.st_size)
+    cached = _LEXICON_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    for old_key in list(_LEXICON_CACHE.keys()):
+        if old_key[0] == cache_key[0]:
+            _LEXICON_CACHE.pop(old_key, None)
+    loaded = load_json_dict(lexicon_path)
+    _LEXICON_CACHE[cache_key] = loaded
+    return loaded
 
 
 def index_status(root_arg: str | os.PathLike[str] | None = None, config_path: str | os.PathLike[str] | None = None) -> dict[str, Any]:
@@ -2012,6 +2153,8 @@ def intent_source_multiplier(source: str, artifact: str, role: str, profile: dic
         if is_policy_or_operator_doc(source):
             multiplier *= 0.18
     if profile["review_comment"] and profile["mode"] == "frontend":
+        if lower.startswith("uier/plugins/devtools/"):
+            multiplier *= 0.08
         if lower.startswith("uier-spa/src/tests/"):
             multiplier *= 0.16
         elif lower.startswith("uier-spa/src/views/visual-studio/"):
@@ -2057,6 +2200,14 @@ def intent_source_multiplier(source: str, artifact: str, role: str, profile: dic
         if "expected_source_revision" in review_terms or "target.call" in review_terms:
             if lower.endswith("/visual-studio-assistant.ts"):
                 multiplier *= 1.4
+    if profile["mode"] == "frontend":
+        if "attributes_merge" in review_terms or {"attributes", "merge"} <= query_terms:
+            if lower.startswith("uier/plugins/devtools/"):
+                multiplier *= 0.03
+            elif lower.endswith("/visual-studio-assistant.ts"):
+                multiplier *= 1.32
+        if "target.call" in review_terms and lower.startswith("uier/plugins/devtools/"):
+            multiplier *= 0.18
     return multiplier
 
 
@@ -2503,6 +2654,79 @@ def fetch_path_candidates(connection: sqlite3.Connection, query_paths: list[str]
     return matches
 
 
+def extract_query_anchor_terms(query: str, profile: dict[str, Any] | None = None) -> list[str]:
+    active_profile = profile or score_query_profile(query, "default", None)
+    anchors: list[str] = []
+    seen: set[str] = set()
+    for path in active_profile.get("explicit_paths", []):
+        for candidate in (str(path).strip(), Path(str(path)).name):
+            normalized = candidate.lower().strip()
+            if len(normalized) >= 3 and normalized not in seen:
+                anchors.append(normalized)
+                seen.add(normalized)
+    for term in active_profile.get("review_terms", []):
+        normalized = str(term).lower().strip()
+        if len(normalized) >= 3 and normalized not in seen:
+            anchors.append(normalized)
+            seen.add(normalized)
+    for match in re.finditer(r"\b[A-Z][A-Za-z0-9]+(?:[A-Z][A-Za-z0-9]+)+\b", query):
+        normalized = match.group(0).lower()
+        if normalized not in seen:
+            anchors.append(normalized)
+            seen.add(normalized)
+    for match in re.finditer(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b", query):
+        normalized = match.group(0).lower()
+        if normalized not in seen:
+            anchors.append(normalized)
+            seen.add(normalized)
+        dotted = normalized.replace(".", "_")
+        if dotted not in seen:
+            anchors.append(dotted)
+            seen.add(dotted)
+    return anchors[:16]
+
+
+def fetch_lexicon_candidates(
+    connection: sqlite3.Connection,
+    query: str,
+    profile: dict[str, Any] | None = None,
+) -> dict[int, float]:
+    anchors = extract_query_anchor_terms(query, profile)
+    if not anchors:
+        return {}
+    source_scores: dict[str, float] = defaultdict(float)
+    for anchor in anchors[:12]:
+        anchor_weight = 1.0
+        if "." in anchor or "_" in anchor:
+            anchor_weight = 1.2
+        try:
+            rows = connection.execute(
+                "SELECT source FROM lexicon WHERE term = ? ORDER BY source LIMIT 24",
+                (anchor,),
+            ).fetchall()
+        except sqlite3.DatabaseError:
+            return {}
+        for rank, row in enumerate(rows, start=1):
+            source = str(row["source"])
+            source_scores[str(source)] += anchor_weight / float(rank + 2)
+    if not source_scores:
+        return {}
+    ordered_sources = sorted(source_scores, key=lambda item: (-source_scores[item], item))[:64]
+    placeholders = ",".join("?" for _ in ordered_sources)
+    matches: dict[int, float] = {}
+    query_rows = connection.execute(
+        f"SELECT MIN(id) AS id, source FROM docs WHERE source IN ({placeholders}) GROUP BY source",
+        tuple(ordered_sources),
+    )
+    max_score = max(source_scores.values())
+    for row in query_rows:
+        doc_id = int(row["id"])
+        source = str(row["source"])
+        score = source_scores.get(source, 0.0) / max(max_score, 0.001)
+        matches[doc_id] = max(matches.get(doc_id, 0.0), score)
+    return matches
+
+
 def search_sort_key(item: dict[str, Any], config: dict[str, Any]) -> tuple[float, float, str, int]:
     path_priority = bool(config.get("search", {}).get("explicit_path_priority", True))
     path_match = float(item.get("path_match", 0.0)) if path_priority else 0.0
@@ -2682,6 +2906,7 @@ def search_precomputed_cache_once(
     base_max_chunks_per_source = max(1, int(search_cfg.get("max_chunks_per_source", 2)))
     base_candidate_limit = max(50, int(search_cfg.get("candidate_limit", 5000)))
     explicit_path_boost = float(search_cfg.get("explicit_path_boost", 0.75))
+    lexicon_weight = 0.42
 
     search_mode = normalize_search_mode(mode)
     profile = score_query_profile(query, search_mode, filter_source)
@@ -2694,6 +2919,7 @@ def search_precomputed_cache_once(
     query_terms = set(query_counts)
     query_vector = hashed_vector(query_counts, dim)
     path_matches = fetch_path_candidates(connection, extract_query_paths(query))
+    lexicon_matches = fetch_lexicon_candidates(connection, query, profile)
     if path_matches and bool(search_cfg.get("explicit_path_priority", True)):
         path_docs = fetch_cached_docs(connection, set(path_matches))
         path_results = rows_to_results(list(path_docs.values()), config, path_matches, search_mode, profile)
@@ -2735,6 +2961,7 @@ def search_precomputed_cache_once(
         ranked_candidates = sorted(raw_bm25_by_doc, key=lambda item: raw_bm25_by_doc[item], reverse=True)
         candidate_indexes = set(ranked_candidates[:candidate_limit])
     candidate_indexes.update(path_matches)
+    candidate_indexes.update(lexicon_matches)
     docs_by_id = fetch_cached_docs(connection, candidate_indexes)
 
     results: list[dict[str, Any]] = []
@@ -2754,12 +2981,14 @@ def search_precomputed_cache_once(
         source_match = overlap_terms(query_terms, doc["source_terms"])
         heading_match = overlap_terms(query_terms, doc["heading_terms"])
         path_match = path_matches.get(index, 0.0)
+        lexicon_match = lexicon_matches.get(index, 0.0)
         score = (
             vector_weight * vector_score
             + bm25_weight * bm25
             + source_weight * source_match
             + heading_weight * heading_match
             + explicit_path_boost * path_match
+            + lexicon_weight * lexicon_match
         )
         penalty = source_penalty(source, config)
         doc_status_boost = status_boost(doc_status, config)
@@ -2784,6 +3013,7 @@ def search_precomputed_cache_once(
                 "source_match": round(source_match, 6),
                 "heading_match": round(heading_match, 6),
                 "path_match": round(path_match, 6),
+                "lexicon_match": round(lexicon_match, 6),
                 "source_penalty": round(penalty, 6),
                 "status_boost": round(doc_status_boost, 6),
                 "intent_boost": round(intent_multiplier, 6),
@@ -2821,6 +3051,8 @@ def search_precomputed_cache(
         filter_type,
         mode,
     )
+    if profile.get("mode") != "frontend":
+        return select_search_results(primary_results, top_k, max_chunks_per_source, mode, config, profile)
     variants = build_query_variants(query, config, mode, profile)
     if len(variants) <= 1 or not should_decompose_query(primary_results, profile):
         return select_search_results(primary_results, top_k, max_chunks_per_source, mode, config, profile)
