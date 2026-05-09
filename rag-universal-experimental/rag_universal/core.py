@@ -1579,11 +1579,68 @@ def is_policy_or_operator_doc(source: str) -> bool:
     return lower.startswith("docs/collective-memory/") or lower.startswith("docs/ops/")
 
 
+REVIEW_COMMENT_MARKERS = {
+    "actual",
+    "bug",
+    "error",
+    "expected",
+    "fail",
+    "failure",
+    "finding",
+    "harm",
+    "line",
+    "reality",
+    "repro",
+    "severity",
+    "truncate",
+    "truncation",
+    "unbound",
+    "utf8",
+    "utf8mb4",
+}
+
+
+def extract_review_comment_terms(query: str) -> list[str]:
+    identifiers: list[str] = []
+    seen: set[str] = set()
+    for match in re.finditer(r"\b[A-Za-z][A-Za-z0-9_]{2,}\b", query):
+        normalized = match.group(0).lower()
+        if "_" not in normalized:
+            continue
+        if normalized not in seen:
+            identifiers.append(normalized)
+            seen.add(normalized)
+    for token in tokenize(query):
+        normalized = token.strip("_-")
+        if len(normalized) < 3:
+            continue
+        if normalized.isdigit():
+            continue
+        if normalized.count("_") > 2 and len(normalized) > 24:
+            continue
+        if normalized in seen:
+            continue
+        if "_" in normalized or any(char.isdigit() for char in normalized):
+            identifiers.append(normalized)
+            seen.add(normalized)
+            continue
+        if normalized in {"strlen", "substr", "mb_strlen", "mb_substr", "utf8mb4", "dockerfile", "dockerignore", "autoload"}:
+            identifiers.append(normalized)
+            seen.add(normalized)
+    for path in extract_query_paths(query):
+        basename = Path(path).name.lower()
+        if basename and basename not in seen:
+            identifiers.append(basename)
+            seen.add(basename)
+    return identifiers[:10]
+
+
 def score_query_profile(query: str, mode: str, filter_source: str | None = None) -> dict[str, Any]:
     normalized_mode = normalize_search_mode(mode)
     query_terms = set(tokenize(query))
     lower_query = query.lower()
     explicit_paths = extract_query_paths(query)
+    review_terms = extract_review_comment_terms(query)
     self_rag_terms = {
         "rag",
         "retrieval",
@@ -1628,6 +1685,12 @@ def score_query_profile(query: str, mode: str, filter_source: str | None = None)
     knowledge_intent = normalized_mode == "knowledge" or any(term in query_terms for term in knowledge_terms)
     broad_implementation = broad and normalized_mode in {"default", "implementation"} and not explicit_paths
     self_rag_code_intent = self_rag and normalized_mode == "implementation"
+    review_marker_hits = sum(1 for marker in REVIEW_COMMENT_MARKERS if marker in query_terms)
+    review_comment = (
+        normalized_mode in {"default", "implementation", "fdr"}
+        and len(query_terms) >= 8
+        and (review_marker_hits >= 2 or len(review_terms) >= 2 or "line " in lower_query)
+    )
     return {
         "mode": normalized_mode,
         "explicit_paths": explicit_paths,
@@ -1636,11 +1699,15 @@ def score_query_profile(query: str, mode: str, filter_source: str | None = None)
         "knowledge_intent": knowledge_intent,
         "broad_implementation": broad_implementation,
         "self_rag_code_intent": self_rag_code_intent,
+        "review_comment": review_comment,
+        "review_terms": review_terms,
         "filter_source": filter_source or "",
     }
 
 
 def adaptive_candidate_limit(base_limit: int, profile: dict[str, Any]) -> int:
+    if profile["review_comment"]:
+        return max(300, min(base_limit, 1800))
     if profile["self_rag"]:
         return max(250, min(base_limit, 1500))
     if profile["knowledge_intent"]:
@@ -1651,12 +1718,14 @@ def adaptive_candidate_limit(base_limit: int, profile: dict[str, Any]) -> int:
 
 
 def adaptive_max_chunks_per_source(base_limit: int, profile: dict[str, Any]) -> int:
-    if profile["broad"] or profile["knowledge_intent"]:
+    if profile["review_comment"] or profile["broad"] or profile["knowledge_intent"]:
         return 1
     return base_limit
 
 
 def adaptive_read_plan_limit(profile: dict[str, Any], default_limit: int = 6) -> int:
+    if profile["review_comment"]:
+        return min(default_limit, 4)
     if profile["self_rag"] or profile["knowledge_intent"]:
         return min(default_limit, 4)
     if profile["broad_implementation"]:
@@ -1719,7 +1788,52 @@ def intent_source_multiplier(source: str, artifact: str, role: str, profile: dic
             multiplier *= 0.92
         elif role in {"implementation", "config"}:
             multiplier *= 1.14
+    if profile["review_comment"]:
+        if role in {"implementation", "build_file", "ignore_config", "compose_config"}:
+            multiplier *= 1.28
+        elif role == "test":
+            multiplier *= 1.04
+        elif role in {"docs", "plan", "spec"}:
+            multiplier *= 0.62
+        elif role == "config":
+            multiplier *= 0.84
+        if is_policy_or_operator_doc(source):
+            multiplier *= 0.18
     return multiplier
+
+
+def review_term_overlap(profile: dict[str, Any], source: str, heading: str, preview: str) -> float:
+    if not profile.get("review_comment"):
+        return 0.0
+    terms = [str(term).lower() for term in profile.get("review_terms", []) if str(term).strip()]
+    if not terms:
+        return 0.0
+    source_lower = source.lower()
+    heading_lower = heading.lower()
+    preview_lower = preview.lower()
+    weighted_matches = 0.0
+    for term in terms:
+        if term in source_lower:
+            weighted_matches += 1.6
+            continue
+        if term in heading_lower:
+            weighted_matches += 1.15
+            continue
+        if term in preview_lower:
+            weighted_matches += 1.0
+    return weighted_matches / (len(terms) * 1.6)
+
+
+def review_term_multiplier(profile: dict[str, Any], source: str, heading: str, preview: str) -> float:
+    overlap = review_term_overlap(profile, source, heading, preview)
+    if overlap <= 0.0:
+        return 1.0
+    lower = source.lower()
+    if lower.endswith(".dockerignore") or Path(source).name.lower().startswith("dockerfile"):
+        return 1.18 + min(0.28, overlap * 0.35)
+    if lower.endswith((".sh", ".php", ".py")):
+        return 1.12 + min(0.34, overlap * 0.42)
+    return 1.06 + min(0.22, overlap * 0.30)
 
 
 def fdr_role(source: str, artifact: str) -> str:
@@ -1901,6 +2015,14 @@ PATH_QUERY_RE = re.compile(
 def extract_query_paths(query: str) -> list[str]:
     paths: list[str] = []
     seen: set[str] = set()
+    special_names = {"dockerfile", ".dockerignore", "docker-compose.yml", "docker-compose.yaml"}
+    for raw in query.split():
+        candidate = raw.strip("`'\"()[]{}:,;")
+        lowered = candidate.lower()
+        if lowered in special_names or lowered.startswith("dockerfile."):
+            if candidate not in seen:
+                paths.append(candidate)
+                seen.add(candidate)
     for match in PATH_QUERY_RE.finditer(query):
         candidate = match.group(0).strip("`'\"()[]{}:,;")
         while len(candidate) > 1 and candidate[-1] in ".,;:":
@@ -1909,8 +2031,7 @@ def extract_query_paths(query: str) -> list[str]:
             continue
         normalized = candidate[2:] if candidate.startswith("./") else candidate
         name = normalized.rsplit("/", 1)[-1]
-        special_names = {"Dockerfile", ".dockerignore", "docker-compose.yml", "docker-compose.yaml"}
-        if "." not in name and name not in special_names:
+        if "." not in name and name.lower() not in special_names:
             continue
         if normalized not in seen:
             paths.append(normalized)
@@ -1971,9 +2092,36 @@ def self_rag_role_rank(source: str, role: str, profile: dict[str, Any]) -> int:
     return 8
 
 
+def review_comment_role_rank(source: str, role: str, profile: dict[str, Any]) -> int:
+    if not profile.get("review_comment"):
+        return 99
+    lower = source.lower()
+    name = Path(source).name.lower()
+    if role == "implementation":
+        return 0
+    if role in {"build_file", "ignore_config", "compose_config"}:
+        return 1
+    if name in {".dockerignore", "dockerfile", "dockerfile.core-api", "dockerfile.uier-api", "dockerfile.uier-spa"}:
+        return 1
+    if role == "config":
+        return 2
+    if role == "test":
+        return 3
+    if role in {"plan", "spec", "docs"}:
+        return 4
+    if is_policy_or_operator_doc(lower):
+        return 5
+    return 6
+
+
 def profile_result_sort_key(item: dict[str, Any], config: dict[str, Any], profile: dict[str, Any]) -> tuple[float, float, float, str, int]:
     if profile.get("self_rag_code_intent"):
         role_rank = self_rag_role_rank(str(item.get("source", "")), str(item.get("fdr_role", "other")), profile)
+        path_priority = bool(config.get("search", {}).get("explicit_path_priority", True))
+        path_match = float(item.get("path_match", 0.0)) if path_priority else 0.0
+        return (float(role_rank), -path_match, -float(item["score"]), str(item["source"]), int(item["start_line"]))
+    if profile.get("review_comment"):
+        role_rank = review_comment_role_rank(str(item.get("source", "")), str(item.get("fdr_role", "other")), profile)
         path_priority = bool(config.get("search", {}).get("explicit_path_priority", True))
         path_match = float(item.get("path_match", 0.0)) if path_priority else 0.0
         return (float(role_rank), -path_match, -float(item["score"]), str(item["source"]), int(item["start_line"]))
@@ -2015,6 +2163,7 @@ def rows_to_results(
         doc_status_boost = status_boost(doc_status, config)
         role = fdr_role(source, chunk_type)
         intent_multiplier = intent_source_multiplier(source, chunk_type, role, active_profile)
+        review_multiplier = review_term_multiplier(active_profile, source, str(row["heading"] or ""), str(row["preview"] or ""))
         score = (
             float(config.get("search", {}).get("explicit_path_boost", 0.75)) * path_match
             * artifact_boost(source, chunk_type, config)
@@ -2023,6 +2172,7 @@ def rows_to_results(
             * penalty
             * doc_status_boost
             * intent_multiplier
+            * review_multiplier
         )
         results.append(
             {
@@ -2035,6 +2185,7 @@ def rows_to_results(
                 "source_penalty": round(penalty, 6),
                 "status_boost": round(doc_status_boost, 6),
                 "intent_boost": round(intent_multiplier, 6),
+                "review_boost": round(review_multiplier, 6),
                 "fdr_role": role,
                 "source": source,
                 "heading": row["heading"] or "",
@@ -2151,12 +2302,14 @@ def search_precomputed_cache(
         doc_status_boost = status_boost(doc_status, config)
         role = fdr_role(source, chunk_type)
         intent_multiplier = intent_source_multiplier(source, chunk_type, role, profile)
+        review_multiplier = review_term_multiplier(profile, source, str(doc["heading"] or ""), str(doc["preview"] or ""))
         score *= artifact_boost(source, chunk_type, config)
         score *= fdr_role_boost(source, chunk_type, config, search_mode)
         score *= mode_source_boost(source, config, search_mode)
         score *= penalty
         score *= doc_status_boost
         score *= intent_multiplier
+        score *= review_multiplier
         if score < min_score:
             continue
         start_line = int(doc["start_line"] or 1)
@@ -2171,6 +2324,7 @@ def search_precomputed_cache(
                 "source_penalty": round(penalty, 6),
                 "status_boost": round(doc_status_boost, 6),
                 "intent_boost": round(intent_multiplier, 6),
+                "review_boost": round(review_multiplier, 6),
                 "fdr_role": role,
                 "source": source,
                 "heading": doc["heading"] or "",
@@ -2389,16 +2543,18 @@ def search_index(
         doc_status_boost = status_boost(doc_status, config)
         role = fdr_role(source, chunk_type)
         intent_multiplier = intent_source_multiplier(source, chunk_type, role, profile)
+        preview = re.sub(r"\s+", " ", str(chunk.get("text", ""))).strip()[:preview_chars]
+        review_multiplier = review_term_multiplier(profile, source, str(chunk.get("heading", "")), preview)
         score *= artifact_boost(source, chunk_type, config)
         score *= fdr_role_boost(source, chunk_type, config, search_mode)
         score *= mode_source_boost(source, config, search_mode)
         score *= penalty
         score *= doc_status_boost
         score *= intent_multiplier
+        score *= review_multiplier
         if score < min_score:
             continue
         start_line = int(chunk.get("start_line", 1))
-        preview = re.sub(r"\s+", " ", str(chunk.get("text", ""))).strip()[:preview_chars]
         results.append(
             {
                 "score": round(score, 6),
@@ -2410,6 +2566,7 @@ def search_index(
                 "source_penalty": round(penalty, 6),
                 "status_boost": round(doc_status_boost, 6),
                 "intent_boost": round(intent_multiplier, 6),
+                "review_boost": round(review_multiplier, 6),
                 "fdr_role": role,
                 "source": source,
                 "heading": chunk.get("heading", ""),

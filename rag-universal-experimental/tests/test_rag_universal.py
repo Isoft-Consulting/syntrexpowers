@@ -727,6 +727,78 @@ class RagUniversalTest(unittest.TestCase):
         self.assertTrue(payload["results"][0]["source"].startswith(".mcp/rag-server/rag_universal/"))
         self.assertTrue(payload["read_plan"]["items"][0]["source"].startswith(".mcp/rag-server/rag_universal/"))
 
+    def test_review_comment_query_prefers_shell_script_over_plan_noise(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "bin").mkdir(parents=True)
+        (root / "Docs" / "plans").mkdir(parents=True)
+        (root / ".mcp" / "rag-server").mkdir(parents=True)
+        (root / "bin" / "build_and_push_node_images.sh").write_text(
+            "#!/usr/bin/env bash\nset -u\ndeclare -A V1_ALLOWED=([\"core-api\"]=1)\n",
+            encoding="utf-8",
+        )
+        (root / "Docs" / "plans" / "node-images.md").write_text(
+            "Task build and push script for rollout. macOS Bash 3.2 contract notes.\n",
+            encoding="utf-8",
+        )
+        (root / ".mcp" / "rag-server" / "rag.config.example.json").write_text(
+            json.dumps({"bash": ["set -u", "declare", "shell script"]}),
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = "на macOS Bash 3.2 declare -A V1_ALLOWED это не associative array line 153 core unbound variable build_and_push_node_images"
+        results = search_index(root, None, query, top_k=3, mode="implementation")
+        self.assertEqual(results[0]["source"], "bin/build_and_push_node_images.sh")
+
+    def test_review_comment_query_prefers_controller_for_utf8_truncation_finding(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "app" / "Http" / "Controllers").mkdir(parents=True)
+        (root / "tests" / "Unit").mkdir(parents=True)
+        (root / "Docs" / "specs").mkdir(parents=True)
+        (root / "app" / "Http" / "Controllers" / "ControlPlaneNodeController.php").write_text(
+            "<?php\n$auditMessage = 'Rollout queued';\nif (strlen($auditMessage) > 255) { $auditMessage = substr($auditMessage, 0, 252) . '...'; }\n",
+            encoding="utf-8",
+        )
+        (root / "tests" / "Unit" / "ControlPlaneRolloutNodesTest.php").write_text(
+            "<?php\nfunction test_rollout(): void { assert(true); }\n",
+            encoding="utf-8",
+        )
+        (root / "Docs" / "specs" / "rollout.md").write_text(
+            "Audit reason VARCHAR(255) utf8mb4 contract.\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = "audit message truncation strlen substr UTF-8 corruption utf8mb4 VARCHAR(255) ControlPlaneNodeController rolloutImages"
+        results = search_index(root, None, query, top_k=3, mode="implementation")
+        self.assertEqual(results[0]["source"], "app/Http/Controllers/ControlPlaneNodeController.php")
+
+    def test_review_comment_query_prefers_controller_for_target_node_ids_finding(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "app" / "Http" / "Controllers").mkdir(parents=True)
+        (root / "Docs" / "plans").mkdir(parents=True)
+        (root / "tests" / "Unit").mkdir(parents=True)
+        (root / "app" / "Http" / "Controllers" / "ControlPlaneNodeController.php").write_text(
+            "<?php\nfunction prepareRolloutPayload(array $payload): array {}\nfunction resolveExplicitRolloutTargets(array $ids): array { return $ids; }\n// target_node_ids array unbounded N+1 queries one rollout submit\n",
+            encoding="utf-8",
+        )
+        (root / "Docs" / "plans" / "rollout.md").write_text(
+            "Task 4 rollout API create one update_node job per target.\n",
+            encoding="utf-8",
+        )
+        (root / "tests" / "Unit" / "ControlPlaneRolloutNodesTest.php").write_text(
+            "<?php\nfunction test_rollout_targets(): void { assert(true); }\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = "target_node_ids array unbounded 1000 UUIDs resolveExplicitRolloutTargets N+1 query pattern one rollout submit"
+        results = search_index(root, None, query, top_k=3, mode="implementation")
+        self.assertEqual(results[0]["source"], "app/Http/Controllers/ControlPlaneNodeController.php")
+
     def test_eval_quality_compares_rag_and_baseline(self) -> None:
         root = self.make_project()
         build_index(root)
