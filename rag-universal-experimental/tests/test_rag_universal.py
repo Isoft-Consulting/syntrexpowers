@@ -13,7 +13,9 @@ sys.path.insert(0, str(ROOT))
 
 from rag_universal.core import (
     build_index,
+    build_query_variants,
     ensure_fresh_index,
+    fuse_ranked_results,
     index_coverage,
     index_status,
     load_chunks,
@@ -104,6 +106,36 @@ class RagUniversalTest(unittest.TestCase):
 
         deps = lookup_deps(root, None, "json", direction="reverse")
         self.assertEqual(deps[0]["source"], "src/service.py")
+
+    def test_build_query_variants_includes_anchor_and_compact_focus_terms(self) -> None:
+        root = self.make_project()
+        config_path = root / ".mcp" / "rag-server" / "rag.config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text("{}", encoding="utf-8")
+        from rag_universal.core import load_config
+
+        config = load_config(root, None)
+        query = "local CAS validation warns for core.update but misses canonical target.call entity_operation update with expected_source_revision and later conflict handler"
+        variants = build_query_variants(query, config, "frontend")
+        self.assertGreaterEqual(len(variants), 2)
+        self.assertEqual(variants[0], query)
+        self.assertTrue(any("target.call" in variant for variant in variants[1:]))
+        self.assertTrue(any("expected_source_revision" in variant for variant in variants[1:]))
+
+    def test_fuse_ranked_results_prefers_document_supported_by_multiple_variants(self) -> None:
+        fused = fuse_ranked_results(
+            [
+                [
+                    {"source": "src/A.php", "start_line": 1, "heading": "A", "score": 0.6},
+                    {"source": "src/B.php", "start_line": 1, "heading": "B", "score": 0.9},
+                ],
+                [
+                    {"source": "src/A.php", "start_line": 1, "heading": "A", "score": 0.55},
+                ],
+            ]
+        )
+        self.assertEqual(fused[0]["source"], "src/A.php")
+        self.assertGreater(fused[0]["fusion_hits"], 1)
 
     def test_status_and_mcp_dispatch(self) -> None:
         root = self.make_project()
@@ -798,6 +830,183 @@ class RagUniversalTest(unittest.TestCase):
         query = "target_node_ids array unbounded 1000 UUIDs resolveExplicitRolloutTargets N+1 query pattern one rollout submit"
         results = search_index(root, None, query, top_k=3, mode="implementation")
         self.assertEqual(results[0]["source"], "app/Http/Controllers/ControlPlaneNodeController.php")
+
+    def test_frontend_review_comment_query_prefers_widget_source_over_review_docs(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "uier-spa" / "src" / "components").mkdir(parents=True)
+        (root / "Docs" / "notes").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "components" / "SandboxesWidget.vue").write_text(
+            "<script setup>\nconst responseData = response.data?.data ?? response.data\nconst items = responseData?.items ?? []\n</script>\n",
+            encoding="utf-8",
+        )
+        (root / "Docs" / "notes" / "review.md").write_text(
+            "SandboxesWidget response.data.items interface API returns data schema data items always empty list.\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = "SandboxesWidget response.data.items interface API returns data schema data items always empty list"
+        results = search_index(root, None, query, top_k=3, mode="frontend")
+        self.assertEqual(results[0]["source"], "uier-spa/src/components/SandboxesWidget.vue")
+
+    def test_frontend_review_comment_query_prefers_schema_form_source_over_review_docs(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "uier-spa" / "src" / "components").mkdir(parents=True)
+        (root / "Docs" / "notes").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "components" / "SchemaForm.vue").write_text(
+            "<script setup>\nconst endpoint = '/v1/interfaces/admin/' + field.options.endpoint\nconst params = field.options.params\n</script>\n",
+            encoding="utf-8",
+        )
+        (root / "Docs" / "notes" / "history.md").write_text(
+            "SchemaForm dynamic select options endpoint forcibly converted to /v1/interfaces/admin and ignores options.params.\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = "SchemaForm dynamic select options endpoint forcibly converted to /v1/interfaces/admin and ignores options.params"
+        results = search_index(root, None, query, top_k=3, mode="frontend")
+        self.assertEqual(results[0]["source"], "uier-spa/src/components/SchemaForm.vue")
+
+    def test_frontend_review_comment_query_prefers_schema_dashboard_source_over_tests(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "uier-spa" / "src" / "components" / "schema").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "tests" / "components").mkdir(parents=True)
+        (root / "Docs" / "notes").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "components" / "schema" / "SchemaDashboard.vue").write_text(
+            "<script setup>\nconst widgetGenerations = new Map()\nconst nextWidgetId = `${definition.id}-${index}`\n</script>\n",
+            encoding="utf-8",
+        )
+        (root / "uier-spa" / "src" / "tests" / "components" / "SchemaDashboard.test.ts").write_text(
+            "describe('SchemaDashboard', () => { it('renders widgets', () => {}) })\n",
+            encoding="utf-8",
+        )
+        (root / "Docs" / "notes" / "dashboard.md").write_text(
+            "SchemaDashboard widget registry reuses the same widget id across multiple cards and breaks refresh isolation.\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = "SchemaDashboard widget registry reuses the same widget id across multiple cards and breaks refresh isolation"
+        results = search_index(root, None, query, top_k=3, mode="frontend")
+        self.assertEqual(results[0]["source"], "uier-spa/src/components/schema/SchemaDashboard.vue")
+
+    def test_frontend_review_comment_query_prefers_relation_editor_over_unrelated_views(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "uier-spa" / "src" / "components" / "visual-studio" / "entity").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "views" / "visual-studio").mkdir(parents=True)
+        (root / "Docs" / "notes").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "components" / "visual-studio" / "entity" / "RelationEditor.vue").write_text(
+            "<script setup>\nconst allowSelfLink = relation.allow_self_link === true\n</script>\n",
+            encoding="utf-8",
+        )
+        (root / "uier-spa" / "src" / "views" / "visual-studio" / "CompositionMapView.vue").write_text(
+            "<script setup>\nconst relationMap = []\n</script>\n",
+            encoding="utf-8",
+        )
+        (root / "Docs" / "notes" / "relations.md").write_text(
+            "same-type relation self-link allow_self_link flag UI blocks it and relation editor prevents linking an entity type to itself.\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = "same-type relation self-link allow_self_link flag UI blocks it and relation editor prevents linking an entity type to itself"
+        results = search_index(root, None, query, top_k=3, mode="frontend")
+        self.assertEqual(results[0]["source"], "uier-spa/src/components/visual-studio/entity/RelationEditor.vue")
+
+    def test_frontend_review_comment_query_prefers_visual_studio_api_over_tests(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "uier-spa" / "src" / "api").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "tests" / "api").mkdir(parents=True)
+        (root / "Docs" / "notes").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "api" / "visual-studio-assistant.ts").write_text(
+            "export function normalizeTargetCall(payload) { return payload.target.call?.attributes ?? payload.target.call }\n",
+            encoding="utf-8",
+        )
+        (root / "uier-spa" / "src" / "tests" / "api" / "visual-studio-assistant.test.ts").write_text(
+            "describe('assistant', () => { it('normalizes target.call', () => {}) })\n",
+            encoding="utf-8",
+        )
+        (root / "Docs" / "notes" / "assistant.md").write_text(
+            "CAS detection misses target.call update because comparison only inspects top-level request object and not nested payload.\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = "CAS detection misses target.call update because comparison only inspects top-level request object and not nested payload"
+        results = search_index(root, None, query, top_k=3, mode="frontend")
+        self.assertEqual(results[0]["source"], "uier-spa/src/api/visual-studio-assistant.ts")
+
+    def test_frontend_review_comment_query_prefers_visual_studio_api_over_review_docs(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "uier-spa" / "src" / "api").mkdir(parents=True)
+        (root / "Docs" / "reviews").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "api" / "visual-studio-automations.ts").write_text(
+            "export function projectAutomationsPath(projectId) { return `/v1/automation-core/definitions?project_id=${projectId}` }\n",
+            encoding="utf-8",
+        )
+        (root / "Docs" / "reviews" / "visual-studio.md").write_text(
+            "project automation builder still calls legacy /projects/{projectId}/automations route instead of canonical visual studio automation endpoint.\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = "project automation builder still calls legacy /projects/{projectId}/automations route instead of canonical visual studio automation endpoint"
+        results = search_index(root, None, query, top_k=3, mode="frontend")
+        self.assertEqual(results[0]["source"], "uier-spa/src/api/visual-studio-automations.ts")
+
+    def test_frontend_review_comment_query_prefers_schema_dashboard_without_exact_filename(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "uier-spa" / "src" / "components" / "schema").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "tests" / "components").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "components" / "dashboard" / "widgets").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "components" / "schema" / "SchemaDashboard.vue").write_text(
+            "<script setup>\nconst widgetId = `${dashboard.id}-${widget.key}`\nconst activeDashboardId = props.dashboardId\n</script>\n",
+            encoding="utf-8",
+        )
+        (root / "uier-spa" / "src" / "tests" / "components" / "dashboard-widgets.test.ts").write_text(
+            "describe('dashboard widgets', () => { it('renders stats', () => {}) })\n",
+            encoding="utf-8",
+        )
+        (root / "uier-spa" / "src" / "components" / "dashboard" / "widgets" / "AdminStatsWidget.vue").write_text(
+            "<script setup>\nconst stats = []\n</script>\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = "dashboard to dashboard SPA navigation reuses widget ids and stale response race accepts previous dashboard data for summary stats table widgets"
+        results = search_index(root, None, query, top_k=3, mode="frontend")
+        self.assertEqual(results[0]["source"], "uier-spa/src/components/schema/SchemaDashboard.vue")
+
+    def test_frontend_review_comment_query_prefers_assistant_api_for_attributes_merge_risk(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "uier-spa" / "src" / "api").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "tests" / "stores" / "visual-studio").mkdir(parents=True)
+        (root / "Docs" / "guides").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "api" / "visual-studio-assistant.ts").write_text(
+            "export function normalizeAttributesMerge(payload) { return payload.attributes_merge ?? payload.attributes }\n",
+            encoding="utf-8",
+        )
+        (root / "uier-spa" / "src" / "tests" / "stores" / "visual-studio" / "automation-builder.test.ts").write_text(
+            "describe('automation builder', () => { it('normalizes assistant payload', () => {}) })\n",
+            encoding="utf-8",
+        )
+        (root / "Docs" / "guides" / "visual-studio-user-guide.md").write_text(
+            "repair AI normalization mixes explicit attributes with flat keys and can mask full attributes replace risk instead of safe attributes_merge.\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = "repair AI normalization mixes explicit attributes with flat keys and can mask full attributes replace risk instead of safe attributes_merge"
+        results = search_index(root, None, query, top_k=3, mode="frontend")
+        self.assertEqual(results[0]["source"], "uier-spa/src/api/visual-studio-assistant.ts")
 
     def test_eval_quality_compares_rag_and_baseline(self) -> None:
         root = self.make_project()

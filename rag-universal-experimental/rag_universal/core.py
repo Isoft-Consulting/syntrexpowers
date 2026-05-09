@@ -22,7 +22,7 @@ SOURCE_STATE_VERSION = "rag.source-state.v1"
 SEARCH_CACHE_VERSION = "rag.search-cache.v1"
 CHUNKER_VERSION = "lexical-chunker.v1"
 TOKENIZER_VERSION = "unicode-tokenizer.v1"
-SEARCH_VERSION = "hash-vector-bm25.v13"
+SEARCH_VERSION = "hash-vector-bm25.v14"
 
 _SEARCH_CACHE_CONNECTIONS: dict[tuple[str, float, int], sqlite3.Connection] = {}
 
@@ -39,6 +39,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "**/*.py",
         "**/*.js",
         "**/*.ts",
+        "**/*.vue",
+        "**/*.jsx",
+        "**/*.tsx",
         "**/*.sh",
         "**/*.php",
         "Dockerfile",
@@ -838,6 +841,32 @@ def close_search_cache_connections(index_dir: Path) -> None:
             _SEARCH_CACHE_CONNECTIONS.pop(cache_key, None)
 
 
+def chunk_sqlite_payload(chunk: dict[str, Any], dim: int, preview_chars: int) -> tuple[str, str, str, str, int, str, str, str, str, int, list[tuple[str, int]]]:
+    source = str(chunk.get("source", ""))
+    heading = str(chunk.get("heading", ""))
+    chunk_type = str(chunk.get("artifact_type", ""))
+    doc_status = str(chunk.get("document_status", "normal"))
+    text = str(chunk.get("text", ""))
+    preview = re.sub(r"\s+", " ", text).strip()[:preview_chars]
+    counts = token_counts(weighted_document_text(chunk))
+    doc_length = sum(counts.values())
+    vector = serialize_vector(hashed_vector(counts, dim))
+    postings = [(token, int(freq)) for token, freq in counts.items()]
+    return (
+        source,
+        heading,
+        chunk_type,
+        doc_status,
+        int(chunk.get("start_line", 1)),
+        preview,
+        " ".join(sorted(set(tokenize(source)))),
+        " ".join(sorted(set(tokenize(heading)))),
+        vector,
+        doc_length,
+        postings,
+    )
+
+
 def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: dict[str, Any]) -> None:
     search_cfg = config.get("search", {})
     dim = int(search_cfg.get("hash_dim", 512))
@@ -877,6 +906,7 @@ def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: 
               freq INTEGER NOT NULL,
               PRIMARY KEY (token, doc_id)
             ) WITHOUT ROWID;
+            CREATE INDEX idx_docs_source ON docs (source);
             """
         )
 
@@ -899,17 +929,8 @@ def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: 
                 posting_rows.clear()
 
         for doc_index, chunk in enumerate(chunks):
-            source = str(chunk.get("source", ""))
-            heading = str(chunk.get("heading", ""))
-            chunk_type = str(chunk.get("artifact_type", ""))
-            doc_status = str(chunk.get("document_status", "normal"))
-            text = str(chunk.get("text", ""))
-            preview = re.sub(r"\s+", " ", text).strip()[:preview_chars]
-
-            counts = token_counts(weighted_document_text(chunk))
-            doc_length = sum(counts.values())
+            source, heading, chunk_type, doc_status, start_line, preview, source_terms, heading_terms, vector, doc_length, postings = chunk_sqlite_payload(chunk, dim, preview_chars)
             total_doc_len += doc_length
-            vector = serialize_vector(hashed_vector(counts, dim))
             doc_rows.append(
                 (
                     doc_index,
@@ -917,15 +938,15 @@ def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: 
                     heading,
                     chunk_type,
                     doc_status,
-                    int(chunk.get("start_line", 1)),
+                    start_line,
                     preview,
-                    " ".join(sorted(set(tokenize(source)))),
-                    " ".join(sorted(set(tokenize(heading)))),
+                    source_terms,
+                    heading_terms,
                     vector,
                     doc_length,
                 )
             )
-            posting_rows.extend((token, doc_index, int(freq)) for token, freq in counts.items())
+            posting_rows.extend((token, doc_index, freq) for token, freq in postings)
             if len(doc_rows) >= 500:
                 flush()
         flush()
@@ -946,6 +967,67 @@ def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: 
     finally:
         connection.close()
     os.replace(tmp, path)
+
+
+def update_search_cache_sqlite_incremental(path: Path, changed_chunks: list[dict[str, Any]], affected_sources: set[str], config: dict[str, Any]) -> bool:
+    if not path.exists():
+        return False
+    search_cfg = config.get("search", {})
+    dim = int(search_cfg.get("hash_dim", 512))
+    preview_chars = int(search_cfg.get("preview_chars", 500))
+    close_search_cache_connections(path.parent)
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA synchronous=OFF")
+        metadata = {str(row[0]): str(row[1]) for row in connection.execute("SELECT key, value FROM meta")}
+        if metadata.get("schema_version") != SEARCH_CACHE_VERSION:
+            return False
+        if metadata.get("search_version") != SEARCH_VERSION:
+            return False
+        if affected_sources:
+            placeholders = ",".join("?" for _ in affected_sources)
+            source_rows = list(connection.execute(f"SELECT id FROM docs WHERE source IN ({placeholders})", tuple(sorted(affected_sources))))
+            doc_ids = [int(row[0]) for row in source_rows]
+            if doc_ids:
+                doc_placeholders = ",".join("?" for _ in doc_ids)
+                connection.execute(f"DELETE FROM postings WHERE doc_id IN ({doc_placeholders})", tuple(doc_ids))
+                connection.execute(f"DELETE FROM docs WHERE id IN ({doc_placeholders})", tuple(doc_ids))
+        row = connection.execute("SELECT COALESCE(MAX(id), -1) FROM docs").fetchone()
+        next_id = int(row[0]) + 1 if row is not None else 0
+        total_doc_len = int(connection.execute("SELECT COALESCE(SUM(doc_length), 0) FROM docs").fetchone()[0])
+        new_doc_rows: list[tuple[int, str, str, str, str, int, str, str, str, str, int]] = []
+        new_posting_rows: list[tuple[str, int, int]] = []
+        for chunk in changed_chunks:
+            source, heading, chunk_type, doc_status, start_line, preview, source_terms, heading_terms, vector, doc_length, postings = chunk_sqlite_payload(chunk, dim, preview_chars)
+            doc_id = next_id
+            next_id += 1
+            total_doc_len += doc_length
+            new_doc_rows.append((doc_id, source, heading, chunk_type, doc_status, start_line, preview, source_terms, heading_terms, vector, doc_length))
+            new_posting_rows.extend((token, doc_id, freq) for token, freq in postings)
+        with connection:
+            if new_doc_rows:
+                connection.executemany("INSERT INTO docs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", new_doc_rows)
+            if new_posting_rows:
+                connection.executemany("INSERT INTO postings VALUES (?, ?, ?)", new_posting_rows)
+            total_docs = int(connection.execute("SELECT COUNT(*) FROM docs").fetchone()[0])
+            avg_len = total_doc_len / max(total_docs, 1)
+            connection.execute("DELETE FROM meta")
+            connection.executemany(
+                "INSERT INTO meta VALUES (?, ?)",
+                [
+                    ("schema_version", SEARCH_CACHE_VERSION),
+                    ("search_version", SEARCH_VERSION),
+                    ("hash_dim", str(dim)),
+                    ("total_docs", str(total_docs)),
+                    ("avg_len", repr(avg_len)),
+                ],
+            )
+        return True
+    except sqlite3.DatabaseError:
+        return False
+    finally:
+        connection.close()
 
 
 def iter_indexable_file_metadata(root: Path, config: dict[str, Any]) -> list[tuple[Path, os.stat_result]]:
@@ -1018,6 +1100,34 @@ def write_index_artifacts(index_dir: Path, config: dict[str, Any], manifest: dic
     write_json_atomic(index_dir / str(names["deps"]), deps)
     write_json_atomic(index_dir / str(names["files"]), files)
     write_search_cache_sqlite(index_dir / str(names["search_cache"]), chunks, config)
+    legacy_search_cache = index_dir / "search-cache.json"
+    if legacy_search_cache.exists():
+        legacy_search_cache.unlink()
+    write_json_atomic(index_dir / "manifest.json", manifest)
+
+
+def write_index_artifacts_incremental(
+    index_dir: Path,
+    config: dict[str, Any],
+    manifest: dict[str, Any],
+    files: list[dict[str, Any]],
+    chunks: list[dict[str, Any]],
+    symbols: list[dict[str, Any]],
+    deps: list[dict[str, Any]],
+    changed_sources: list[str],
+) -> None:
+    names = manifest["artifacts"]
+    chunk_lines = "".join(json.dumps(chunk, ensure_ascii=False, sort_keys=True) + "\n" for chunk in chunks)
+    close_search_cache_connections(index_dir)
+    write_text_atomic(index_dir / str(names["chunks"]), chunk_lines)
+    write_json_atomic(index_dir / str(names["symbols"]), symbols)
+    write_json_atomic(index_dir / str(names["deps"]), deps)
+    write_json_atomic(index_dir / str(names["files"]), files)
+    cache_path = index_dir / str(names["search_cache"])
+    changed_chunks = [chunk for chunk in chunks if str(chunk.get("source", "")) in set(changed_sources)]
+    updated = update_search_cache_sqlite_incremental(cache_path, changed_chunks, set(changed_sources), config)
+    if not updated:
+        write_search_cache_sqlite(cache_path, chunks, config)
     legacy_search_cache = index_dir / "search-cache.json"
     if legacy_search_cache.exists():
         legacy_search_cache.unlink()
@@ -1185,7 +1295,7 @@ def build_index_incremental(root: Path, config: dict[str, Any], index_dir: Path)
         plan["changed_sources"],
         plan["deleted_sources"],
     )
-    write_index_artifacts(index_dir, config, manifest, files, chunks, symbols, deps)
+    write_index_artifacts_incremental(index_dir, config, manifest, files, chunks, symbols, deps, plan["changed_sources"])
     return manifest
 
 
@@ -1582,27 +1692,120 @@ def is_policy_or_operator_doc(source: str) -> bool:
 REVIEW_COMMENT_MARKERS = {
     "actual",
     "bug",
+    "canonical",
+    "conflict",
+    "default",
+    "dirty",
+    "endpoint",
+    "endpoint",
     "error",
     "expected",
     "fail",
     "failure",
     "finding",
     "harm",
+    "isolation",
+    "legacy",
+    "leak",
     "line",
+    "payload",
+    "race",
     "reality",
+    "replace",
     "repro",
+    "reuse",
+    "reuses",
+    "route",
+    "scope",
+    "scoped",
     "severity",
+    "stale",
+    "switching",
     "truncate",
     "truncation",
     "unbound",
+    "unsaved",
     "utf8",
     "utf8mb4",
+    "wrong",
+}
+
+FRONTEND_REVIEW_MARKERS = {
+    "attributes_merge",
+    "dashboard",
+    "dirty",
+    "entity",
+    "leak",
+    "merge",
+    "normalization",
+    "overwrite",
+    "race",
+    "relation",
+    "replace",
+    "reuse",
+    "reuses",
+    "stale",
+    "switching",
+    "unsaved",
+    "widget",
+}
+
+DECOMPOSITION_GENERIC_TERMS = {
+    "already",
+    "because",
+    "builder",
+    "breaks",
+    "canonical",
+    "comparison",
+    "confirm",
+    "data",
+    "default",
+    "denied",
+    "entity",
+    "expected",
+    "existing",
+    "instead",
+    "local",
+    "missing",
+    "nonexistent",
+    "normalization",
+    "operation",
+    "payload",
+    "previous",
+    "project",
+    "repair",
+    "response",
+    "review",
+    "route",
+    "safe",
+    "save",
+    "scoped",
+    "selection",
+    "should",
+    "shows",
+    "still",
+    "summary",
+    "update",
 }
 
 
 def extract_review_comment_terms(query: str) -> list[str]:
     identifiers: list[str] = []
     seen: set[str] = set()
+    for match in re.finditer(r"\b[A-Z][A-Za-z0-9]+(?:[A-Z][A-Za-z0-9]+)+\b", query):
+        normalized = match.group(0).lower()
+        if normalized not in seen:
+            identifiers.append(normalized)
+            seen.add(normalized)
+    for match in re.finditer(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b", query):
+        normalized = match.group(0).lower()
+        if normalized not in seen:
+            identifiers.append(normalized)
+            seen.add(normalized)
+        dotted_parts = normalized.replace(".", "_")
+        if dotted_parts not in seen:
+            identifiers.append(dotted_parts)
+            seen.add(dotted_parts)
     for match in re.finditer(r"\b[A-Za-z][A-Za-z0-9_]{2,}\b", query):
         normalized = match.group(0).lower()
         if "_" not in normalized:
@@ -1686,15 +1889,22 @@ def score_query_profile(query: str, mode: str, filter_source: str | None = None)
     broad_implementation = broad and normalized_mode in {"default", "implementation"} and not explicit_paths
     self_rag_code_intent = self_rag and normalized_mode == "implementation"
     review_marker_hits = sum(1 for marker in REVIEW_COMMENT_MARKERS if marker in query_terms)
+    frontend_review_hits = sum(1 for marker in FRONTEND_REVIEW_MARKERS if marker in query_terms)
     review_comment = (
-        normalized_mode in {"default", "implementation", "fdr"}
+        normalized_mode in {"default", "implementation", "frontend", "fdr"}
         and len(query_terms) >= 8
-        and (review_marker_hits >= 2 or len(review_terms) >= 2 or "line " in lower_query)
+        and (
+            review_marker_hits >= 2
+            or len(review_terms) >= 2
+            or "line " in lower_query
+            or (normalized_mode == "frontend" and frontend_review_hits >= 2)
+        )
     )
     return {
         "mode": normalized_mode,
         "explicit_paths": explicit_paths,
         "broad": broad,
+        "query_terms": query_terms,
         "self_rag": self_rag,
         "knowledge_intent": knowledge_intent,
         "broad_implementation": broad_implementation,
@@ -1735,12 +1945,14 @@ def adaptive_read_plan_limit(profile: dict[str, Any], default_limit: int = 6) ->
 
 def intent_source_multiplier(source: str, artifact: str, role: str, profile: dict[str, Any]) -> float:
     multiplier = 1.0
+    lower = source.lower()
+    query_terms = set(str(term) for term in profile.get("query_terms", set()))
+    review_terms = {str(term).lower() for term in profile.get("review_terms", [])}
     if profile["filter_source"] and profile["filter_source"] in source:
         multiplier *= 1.35
     if profile["self_rag"]:
         if is_local_rag_source(source):
             multiplier *= 2.4
-            lower = source.lower()
             if "/rag_universal/" in lower:
                 multiplier *= 1.55
             elif role == "config":
@@ -1799,6 +2011,52 @@ def intent_source_multiplier(source: str, artifact: str, role: str, profile: dic
             multiplier *= 0.84
         if is_policy_or_operator_doc(source):
             multiplier *= 0.18
+    if profile["review_comment"] and profile["mode"] == "frontend":
+        if lower.startswith("uier-spa/src/tests/"):
+            multiplier *= 0.16
+        elif lower.startswith("uier-spa/src/views/visual-studio/"):
+            multiplier *= 1.34
+        elif lower.startswith("uier-spa/src/stores/visual-studio/"):
+            multiplier *= 1.38
+        elif lower.startswith("uier-spa/src/api/visual-studio-"):
+            multiplier *= 1.4
+        elif lower.startswith("uier-spa/src/components/visual-studio/"):
+            multiplier *= 1.3
+        elif lower.startswith("uier-spa/src/components/schema/"):
+            multiplier *= 1.32
+        elif lower.startswith("uier-spa/src/components/"):
+            multiplier *= 1.12
+        elif lower.startswith("uier-spa/src/views/"):
+            multiplier *= 1.08
+        elif lower.startswith("uier-spa/src/"):
+            multiplier *= 1.04
+        if role == "test":
+            multiplier *= 0.28
+        elif role in {"docs", "plan", "spec"}:
+            multiplier *= 0.28
+        if lower.startswith("docs/reviews/") or lower.startswith("docs/visual/"):
+            multiplier *= 0.22
+        if {"dashboard", "widget"} <= query_terms:
+            if "schemadashboard" in lower or lower.startswith("uier-spa/src/components/schema/schemadashboard.vue"):
+                multiplier *= 1.8
+            elif "/components/dashboard/widgets/" in lower:
+                multiplier *= 1.35
+        if "allow_self_link" in review_terms or {"relation", "entity"} <= query_terms:
+            if lower.endswith("/relationeditor.vue") or lower.endswith("/visual-studio-entity-builder.ts"):
+                multiplier *= 1.55
+        if {"project", "runs"} <= query_terms or "project_id" in review_terms:
+            if lower.endswith("/visual-studio-automations.ts") or lower.endswith("/automation-builder.ts"):
+                multiplier *= 1.45
+            elif lower.endswith("/automationbuilderview.vue"):
+                multiplier *= 1.18
+        if "attributes_merge" in review_terms or {"attributes", "merge"} <= query_terms:
+            if lower.endswith("/visual-studio-assistant.ts"):
+                multiplier *= 1.7
+            elif lower.endswith("/automation-builder.ts"):
+                multiplier *= 1.3
+        if "expected_source_revision" in review_terms or "target.call" in review_terms:
+            if lower.endswith("/visual-studio-assistant.ts"):
+                multiplier *= 1.4
     return multiplier
 
 
@@ -1842,6 +2100,8 @@ def fdr_role(source: str, artifact: str) -> str:
     name = Path(source).name.lower()
     if lower.startswith("tests/") or "/tests/" in wrapped:
         return "test"
+    if lower.endswith((".vue", ".tsx", ".jsx", ".js", ".ts")):
+        return "implementation"
     if name == ".dockerignore":
         return "ignore_config"
     if name == "dockerfile" or name.startswith("dockerfile."):
@@ -1918,6 +2178,188 @@ def expand_for_search_mode(query: str, config: dict[str, Any], mode: str) -> str
     if not additions:
         return expanded
     return f"{expanded} {' '.join(additions)}"
+
+
+def query_term_priority(term: str, profile: dict[str, Any], stopwords: set[str]) -> float:
+    normalized = term.strip().lower()
+    if len(normalized) < 3 or normalized in stopwords:
+        return -1.0
+    score = float(len(normalized))
+    review_terms = {str(value).lower() for value in profile.get("review_terms", [])}
+    if normalized in review_terms:
+        score += 8.0
+    if "." in normalized or "_" in normalized:
+        score += 6.0
+    if any(char.isdigit() for char in normalized):
+        score += 3.0
+    if normalized in FRONTEND_REVIEW_MARKERS:
+        score += 3.0
+    if normalized in {"target.call", "attributes_merge", "project_id", "expected_source_revision"}:
+        score += 4.0
+    if normalized in DECOMPOSITION_GENERIC_TERMS:
+        score -= 2.5
+    return score
+
+
+def build_query_variants(query: str, config: dict[str, Any], mode: str, profile: dict[str, Any] | None = None) -> list[str]:
+    normalized_query = " ".join(str(query).split())
+    if not normalized_query:
+        return []
+    active_profile = profile or score_query_profile(normalized_query, mode, None)
+    query_terms = [str(term).lower() for term in active_profile.get("query_terms", set()) if str(term).strip()]
+    stopwords = {str(word).lower() for word in config.get("search", {}).get("query_stopwords", [])}
+    explicit_paths = [str(path).strip() for path in active_profile.get("explicit_paths", []) if str(path).strip()]
+    review_terms = [str(term).strip() for term in active_profile.get("review_terms", []) if str(term).strip()]
+    variants: list[str] = [normalized_query]
+    if len(query_terms) < 8 and len(review_terms) < 2 and not explicit_paths:
+        return variants
+
+    def append_variant(parts: list[str]) -> None:
+        compact = " ".join(str(part).strip() for part in parts if str(part).strip())
+        if not compact:
+            return
+        if compact not in variants:
+            variants.append(compact)
+
+    anchor_terms: list[str] = []
+    seen_anchor_terms: set[str] = set()
+    for path in explicit_paths[:3]:
+        basename = Path(path).name
+        for candidate in (path, basename):
+            normalized = candidate.strip()
+            if normalized and normalized not in seen_anchor_terms:
+                anchor_terms.append(normalized)
+                seen_anchor_terms.add(normalized)
+    for term in review_terms[:8]:
+        normalized = term.lower()
+        if normalized not in seen_anchor_terms:
+            anchor_terms.append(normalized)
+            seen_anchor_terms.add(normalized)
+    append_variant(anchor_terms[:8])
+
+    informative_terms: list[tuple[float, str]] = []
+    seen_terms: set[str] = set()
+    for term in tokenize(normalized_query):
+        normalized = term.lower()
+        if normalized in seen_terms:
+            continue
+        priority = query_term_priority(normalized, active_profile, stopwords)
+        if priority <= 0:
+            continue
+        informative_terms.append((priority, normalized))
+        seen_terms.add(normalized)
+    informative_terms.sort(key=lambda item: (-item[0], item[1]))
+    append_variant([term for _, term in informative_terms[:6]])
+
+    mode_focus: list[str] = []
+    query_term_set = set(query_terms)
+    if normalize_search_mode(mode) == "frontend":
+        for term in (
+            "dashboard",
+            "widget",
+            "automation",
+            "assistant",
+            "entity",
+            "relation",
+            "project_id",
+            "attributes_merge",
+            "target.call",
+            "schema",
+            "store",
+            "api",
+            "view",
+        ):
+            if term in query_term_set or term in {value.lower() for value in review_terms}:
+                mode_focus.append(term)
+    elif normalize_search_mode(mode) == "implementation":
+        for term in (
+            "controller",
+            "service",
+            "repository",
+            "dispatcher",
+            "migration",
+            "job",
+            "script",
+            "route",
+            "target_node_ids",
+            "project_id",
+        ):
+            if term in query_term_set or term in {value.lower() for value in review_terms}:
+                mode_focus.append(term)
+    append_variant((mode_focus[:4] + anchor_terms[:4])[:8])
+    return variants[:4]
+
+
+def fuse_ranked_results(result_sets: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    fused: dict[tuple[str, int, str], dict[str, Any]] = {}
+    for set_index, results in enumerate(result_sets):
+        list_weight = 1.0 if set_index == 0 else 0.72
+        for rank, item in enumerate(results, start=1):
+            key = (str(item.get("source", "")), int(item.get("start_line", 1)), str(item.get("heading", "")))
+            rrf = list_weight / float(rank + 5)
+            current = fused.get(key)
+            if current is None:
+                best = dict(item)
+                best["_fusion_rrf"] = rrf
+                best["_fusion_hits"] = 1
+                best["_fusion_best_score"] = float(item.get("score", 0.0))
+                fused[key] = best
+                continue
+            current["_fusion_rrf"] = float(current.get("_fusion_rrf", 0.0)) + rrf
+            current["_fusion_hits"] = int(current.get("_fusion_hits", 0)) + 1
+            best_score = max(float(current.get("_fusion_best_score", 0.0)), float(item.get("score", 0.0)))
+            current["_fusion_best_score"] = best_score
+            if float(item.get("score", 0.0)) > float(current.get("score", 0.0)):
+                preserved = {
+                    "_fusion_rrf": current["_fusion_rrf"],
+                    "_fusion_hits": current["_fusion_hits"],
+                    "_fusion_best_score": current["_fusion_best_score"],
+                }
+                current.clear()
+                current.update(item)
+                current.update(preserved)
+    merged = list(fused.values())
+    for item in merged:
+        fusion_hits = int(item.get("_fusion_hits", 1))
+        fused_score = (
+            float(item.get("_fusion_best_score", item.get("score", 0.0)))
+            + float(item.get("_fusion_rrf", 0.0)) * 2.25
+            + max(0, fusion_hits - 1) * 0.03
+        )
+        item["score"] = round(fused_score, 6)
+        item["fusion_hits"] = fusion_hits
+        item["fusion_score"] = round(float(item.get("_fusion_rrf", 0.0)), 6)
+        item.pop("_fusion_rrf", None)
+        item.pop("_fusion_hits", None)
+        item.pop("_fusion_best_score", None)
+    merged.sort(key=lambda entry: (-float(entry.get("score", 0.0)), str(entry.get("source", "")), int(entry.get("start_line", 1))))
+    return merged
+
+
+def should_decompose_query(results: list[dict[str, Any]], profile: dict[str, Any]) -> bool:
+    if not results:
+        return True
+    if not (profile.get("review_comment") or profile.get("broad") or profile.get("self_rag")):
+        return False
+    top = results[0]
+    top_score = float(top.get("score", 0.0))
+    top_role = str(top.get("fdr_role", "other"))
+    top_source = str(top.get("source", "")).lower()
+    second_score = float(results[1].get("score", 0.0)) if len(results) > 1 else 0.0
+    if profile.get("mode") == "frontend":
+        if top_source.startswith("uier/plugins/devtools/"):
+            return True
+        if not top_source.startswith(("uier-spa/src/", "app/", "plugins/")):
+            return True
+        if top_source.startswith("uier-spa/src/tests/") or top_role in {"docs", "plan", "spec", "test"}:
+            return True
+    elif top_role in {"docs", "plan", "spec"} and profile.get("review_comment"):
+        return True
+    if top_score < 0.62:
+        return True
+    if (top_score - second_score) < 0.08:
+        return True
+    return False
 
 
 def overlap_score(query_terms: set[str], text: str) -> float:
@@ -2097,6 +2539,25 @@ def review_comment_role_rank(source: str, role: str, profile: dict[str, Any]) ->
         return 99
     lower = source.lower()
     name = Path(source).name.lower()
+    if profile.get("mode") == "frontend":
+        if lower.startswith("uier-spa/src/api/visual-studio-"):
+            return 0
+        if lower.startswith("uier-spa/src/stores/visual-studio/"):
+            return 0
+        if lower.startswith("uier-spa/src/views/visual-studio/"):
+            return 0
+        if lower.startswith("uier-spa/src/components/visual-studio/"):
+            return 0
+        if lower.startswith("uier-spa/src/components/schema/"):
+            return 0
+        if lower.startswith("uier-spa/src/components/"):
+            return 1
+        if lower.startswith("uier-spa/src/views/"):
+            return 1
+        if lower.startswith("uier-spa/src/tests/"):
+            return 5
+        if role in {"plan", "spec", "docs"}:
+            return 6
     if role == "implementation":
         return 0
     if role in {"build_file", "ignore_config", "compose_config"}:
@@ -2201,15 +2662,15 @@ def rows_to_results(
     return results
 
 
-def search_precomputed_cache(
+def search_precomputed_cache_once(
     connection: sqlite3.Connection,
     config: dict[str, Any],
     query: str,
-    top_k: int = 5,
     filter_source: str | None = None,
     filter_type: str | None = None,
     mode: str = "default",
-) -> list[dict[str, Any]]:
+    candidate_limit_override: int | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any], int]:
     metadata = {str(row["key"]): str(row["value"]) for row in connection.execute("SELECT key, value FROM meta")}
     search_cfg = config.get("search", {})
     dim = int(search_cfg.get("hash_dim", int(metadata.get("hash_dim", 512))))
@@ -2226,6 +2687,8 @@ def search_precomputed_cache(
     profile = score_query_profile(query, search_mode, filter_source)
     max_chunks_per_source = adaptive_max_chunks_per_source(base_max_chunks_per_source, profile)
     candidate_limit = adaptive_candidate_limit(base_candidate_limit, profile)
+    if candidate_limit_override is not None:
+        candidate_limit = max(50, int(candidate_limit_override))
     expanded_query = expand_for_search_mode(query, config, search_mode)
     query_counts = trim_query_counts(token_counts(expanded_query), config)
     query_terms = set(query_counts)
@@ -2235,7 +2698,7 @@ def search_precomputed_cache(
         path_docs = fetch_cached_docs(connection, set(path_matches))
         path_results = rows_to_results(list(path_docs.values()), config, path_matches, search_mode, profile)
         if path_results:
-            return select_search_results(path_results, top_k, max_chunks_per_source, "default", config, profile)
+            return (path_results, profile, max_chunks_per_source)
 
     total_docs = int(metadata.get("total_docs", 0))
     avg_len = float(metadata.get("avg_len", 1.0))
@@ -2338,7 +2801,48 @@ def search_precomputed_cache(
         )
 
     results.sort(key=lambda item: search_sort_key(item, config))
-    return select_search_results(results, top_k, max_chunks_per_source, search_mode, config, profile)
+    return (results, profile, max_chunks_per_source)
+
+
+def search_precomputed_cache(
+    connection: sqlite3.Connection,
+    config: dict[str, Any],
+    query: str,
+    top_k: int = 5,
+    filter_source: str | None = None,
+    filter_type: str | None = None,
+    mode: str = "default",
+) -> list[dict[str, Any]]:
+    primary_results, profile, max_chunks_per_source = search_precomputed_cache_once(
+        connection,
+        config,
+        query,
+        filter_source,
+        filter_type,
+        mode,
+    )
+    variants = build_query_variants(query, config, mode, profile)
+    if len(variants) <= 1 or not should_decompose_query(primary_results, profile):
+        return select_search_results(primary_results, top_k, max_chunks_per_source, mode, config, profile)
+
+    search_cfg = config.get("search", {})
+    base_candidate_limit = max(50, int(search_cfg.get("candidate_limit", 5000)))
+    variant_candidate_limit = max(150, min(base_candidate_limit, base_candidate_limit // 2))
+    result_sets: list[list[dict[str, Any]]] = [primary_results]
+    for variant in variants[1:]:
+        variant_results, _, _ = search_precomputed_cache_once(
+            connection,
+            config,
+            variant,
+            filter_source,
+            filter_type,
+            mode,
+            candidate_limit_override=variant_candidate_limit,
+        )
+        if variant_results:
+            result_sets.append(variant_results)
+    fused_results = fuse_ranked_results(result_sets)
+    return select_search_results(fused_results, top_k, max_chunks_per_source, mode, config, profile)
 
 
 def select_search_results(
