@@ -56,11 +56,15 @@ def check_corpus(baseline: dict[str, Any]) -> list[str]:
         ("backend", ("core-leonextra-fresh-merged-prs-v1.json", "implementation", "implementation")),
     ]:
         cases_file, mode, profile = corpus_config
+        cases_path = Path(__file__).resolve().parent / cases_file
+        if not cases_path.exists():
+            violations.append(f"[{corpus_key}] Corpus file not found: {cases_path}")
+            continue
         _FRESHNESS_CACHE.clear()
         _PERF_TIMINGS.clear()
 
         t0 = time.perf_counter()
-        result = benchmark_quality(ROOT, None, f"evals/{cases_file}", top_k=5, mode=mode, profile_name=profile)
+        result = benchmark_quality(ROOT, None, str(cases_path), top_k=5, mode=mode, profile_name=profile)
         wall = time.perf_counter() - t0
 
         summary = result["summary"]["rag"]
@@ -121,7 +125,7 @@ def check_manual_queries(baseline: dict[str, Any]) -> list[str]:
 
     for q in baseline["manual_queries_pr88"]["queries"]:
         qid = q["id"]
-        query_text = q.get("query_text", qid)
+        query_text = q.get("query_text") or qid
         expected = q["expected"]
         baseline_rank = q["rag_rank"]
 

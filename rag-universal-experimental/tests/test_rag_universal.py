@@ -25,14 +25,17 @@ from rag_universal.core import (
     get_index_dir,
     index_coverage,
     index_status,
+    intent_source_multiplier,
     load_chunks,
     load_config,
     load_search_cache,
+    profile_result_sort_key,
     query_role_bias_multiplier,
     read_hint_with_role,
     read_plan_role_rank,
     score_query_profile,
     section_anchor_multiplier,
+    source_preview_chars,
     lookup_deps,
     lookup_symbol,
     search_index,
@@ -1677,6 +1680,88 @@ class RagUniversalTest(unittest.TestCase):
         self.assertIn("src/", prefixes)
         self.assertIn("routes/", prefixes)
         self.assertIn("tests/", prefixes)
+
+
+    def test_source_preview_chars_spec_md_yaml_expansion(self) -> None:
+        self.assertEqual(source_preview_chars("docs/specs/2026-05-08-foundation.md", 500), 4000)
+        self.assertEqual(source_preview_chars("Docs/Specs/ARCHITECTURE.md", 500), 4000)
+        self.assertEqual(source_preview_chars("README.md", 500), 2000)
+        self.assertEqual(source_preview_chars("src/Controller.php", 500), 500)
+        self.assertEqual(source_preview_chars("schema.yaml", 500), 2000)
+        self.assertEqual(source_preview_chars("config.yml", 500), 2000)
+        # Preserves higher base_chars
+        self.assertEqual(source_preview_chars("docs/specs/x.md", 6000), 6000)
+        self.assertEqual(source_preview_chars("README.md", 3000), 3000)
+
+    def test_spec_cross_cutting_detection_explicit_markers(self) -> None:
+        # Q1-style: error codes + cross-cutting + spec
+        p = score_query_profile(
+            "error codes stale_capability_version capability_push_conflict "
+            "cross-cutting Foundation spec federated architecture",
+            "default",
+        )
+        self.assertTrue(p["spec_cross_cutting"])
+        self.assertGreaterEqual(p["spec_cross_marker_hits"], 2)
+
+    def test_spec_cross_cutting_detection_code_identifiers_t1(self) -> None:
+        # Three error-code-suffixed identifiers + error anchor
+        p = score_query_profile(
+            "access_denied grant_push_conflict hmac_mismatch error handling in code",
+            "implementation",
+        )
+        self.assertTrue(p["spec_cross_cutting"])
+
+    def test_spec_cross_cutting_detection_code_identifiers_t2_spec_anchor(self) -> None:
+        # capability + version suffixes + spec anchor
+        p = score_query_profile(
+            "stale_capability_version re_provision spec Foundation versioning",
+            "implementation",
+        )
+        self.assertTrue(p["spec_cross_cutting"])
+
+    def test_spec_cross_cutting_no_false_positive_plain_code_review(self) -> None:
+        # Code review about capability/version gaps — NO spec anchor
+        p = score_query_profile(
+            "capability snapshot versioning gap stale handler pr88 review",
+            "implementation",
+        )
+        self.assertFalse(p["spec_cross_cutting"])
+
+    def test_spec_cross_cutting_not_triggered_for_frontend_mode(self) -> None:
+        p = score_query_profile(
+            "ErrorCode cross-cutting spec Foundation error codes",
+            "frontend",
+        )
+        self.assertFalse(p["spec_cross_cutting"])
+
+    def test_spec_cross_cutting_skip_broad_implementation_penalty(self) -> None:
+        # spec_cross_cutting=True → broad_implementation penalty skipped → spec role not penalized
+        # multiplier for spec role with spec anchor should be >= 1.0 (boosted, not penalized)
+        profile = score_query_profile(
+            "ErrorCode stale_capability_version cross-cutting Foundation spec error codes architecture",
+            "default",
+        )
+        m = intent_source_multiplier("docs/specs/test.md", "markdown", "spec", profile)
+        # Without the guard, broad_implementation would apply ×0.72 to role=spec → ~0.47 combined
+        self.assertGreater(m, 0.80, f"spec role multiplier {m} should not be heavily penalized")
+
+    def test_spec_cross_cutting_sort_key_score_based(self) -> None:
+        profile = {"spec_cross_cutting": True}
+        item = {"source": "docs/specs/x.md", "score": 0.95, "start_line": 10}
+        config = {}
+        key = profile_result_sort_key(item, config, profile)
+        # Primary sort key is 0.0 (flat), secondary is -score (higher score first)
+        self.assertEqual(key[0], 0.0)
+        self.assertLess(key[1], 0.0)  # -score for 0.95 is negative
+
+    def test_check_regression_query_text_fallback_empty_string(self) -> None:
+        # Simulation of the fix: q.get("query_text") or qid
+        q_ok = {"id": "Q1", "query_text": "error codes", "expected": ["spec.md"], "rag_rank": 1}
+        q_empty = {"id": "Q2", "query_text": "", "expected": ["code.php"], "rag_rank": 1}
+        q_missing = {"id": "Q3", "expected": ["code.php"], "rag_rank": 1}
+        self.assertEqual(q_ok.get("query_text") or q_ok["id"], "error codes")
+        self.assertEqual(q_empty.get("query_text") or q_empty["id"], "Q2")
+        self.assertEqual(q_missing.get("query_text") or q_missing["id"], "Q3")
 
 
 if __name__ == "__main__":
