@@ -1423,6 +1423,87 @@ class RagUniversalTest(unittest.TestCase):
         results = search_index(root, None, query, top_k=3, mode="frontend")
         self.assertEqual(results[0]["source"], "uier-spa/src/api/visual-studio-assistant.ts")
 
+    def test_human_task_profile_detects_multilingual_access_problem(self) -> None:
+        query = (
+            "Користувач з роллю viewer проходить SPA route, але отримує 403 на API. "
+            "Схоже, BFF requireRoles відсікає доступ до того, як plugin route policy перевірить roles_any."
+        )
+        profile = score_query_profile(query, "implementation", None)
+        self.assertTrue(profile["human_task"])
+        self.assertIn("access_auth", profile["human_intents"])
+        self.assertIn("routing_api", profile["human_intents"])
+
+    def test_review_profile_takes_precedence_over_human_task(self) -> None:
+        query = (
+            "HIGH actual expected failure route payload race stale line 42. "
+            "Target file: app/Http/Controllers/ControlPlaneNodeController.php. "
+            "resolveExplicitRolloutTargets target_node_ids unbounded N+1 query pattern one rollout submit."
+        )
+        profile = score_query_profile(query, "implementation", None)
+        self.assertTrue(profile["review_comment"])
+        self.assertFalse(profile["human_task"])
+
+    def test_human_task_query_prefers_bff_contract_sources_over_ui_noise(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "uier" / "app" / "Http" / "Controllers").mkdir(parents=True)
+        (root / "plugins" / "data-tables-3").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "router").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "components" / "data-tables").mkdir(parents=True)
+        (root / "uier" / "app" / "Http" / "Controllers" / "AdminPluginProxyController.php").write_text(
+            "<?php\nfinal class AdminPluginProxyController {\n"
+            "private const RUNTIME_ROLES = ['operator', 'admin'];\n"
+            "public function pluginRuntime(): void { $this->requireRoles(self::RUNTIME_ROLES); }\n}\n",
+            encoding="utf-8",
+        )
+        (root / "plugins" / "data-tables-3" / "plugin.yaml").write_text(
+            "http_routes:\n  workbooks.show:\n    roles_any: [viewer, operator, admin]\n",
+            encoding="utf-8",
+        )
+        (root / "uier-spa" / "src" / "router" / "index.ts").write_text(
+            "export const routes = [{ path: '/admin/data-tables-3/workbooks/:workbookId', meta: { roles: ['viewer', 'operator', 'admin'] } }]\n",
+            encoding="utf-8",
+        )
+        (root / "uier-spa" / "src" / "components" / "data-tables" / "WorkbookGrid.vue").write_text(
+            "<template><div>viewer operator admin workbook table visible in UI</div></template>\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = (
+            "viewer проходить SPA route для workbook, але отримує 403 на API. "
+            "Потрібно знайти де BFF або proxy gate відсікає роль до core route policy roles_any."
+        )
+        results = search_index(root, None, query, top_k=5, mode="implementation")
+        self.assertEqual(results[0]["source"], "uier/app/Http/Controllers/AdminPluginProxyController.php")
+        self.assertIn("plugins/data-tables-3/plugin.yaml", {item["source"] for item in results[:4]})
+
+    def test_human_task_query_expands_russian_concurrency_terms(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "app" / "Domain" / "ControlPlane" / "OwnerV2" / "Repositories").mkdir(parents=True)
+        (root / "Docs" / "notes").mkdir(parents=True)
+        (root / "app" / "Domain" / "ControlPlane" / "OwnerV2" / "Repositories" / "OwnerAuditChainRepository.php").write_text(
+            "<?php\nfinal class OwnerAuditChainRepository {\n"
+            "public function verifyChainIntegrity(): bool { return $this->walkByPrevHash('GENESIS_PREV_HASH', 'entry_hash', 'prev_hash'); }\n}\n",
+            encoding="utf-8",
+        )
+        (root / "Docs" / "notes" / "audit.md").write_text(
+            "General audit chain overview for operators.\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = (
+            "При одновременной записи audit chain может быть гонка: проверка идет не по prev_hash "
+            "и entry_hash, поэтому цепочка аудита ложно ломается при одинаковом timestamp."
+        )
+        results = search_index(root, None, query, top_k=3, mode="implementation")
+        self.assertEqual(
+            results[0]["source"],
+            "app/Domain/ControlPlane/OwnerV2/Repositories/OwnerAuditChainRepository.php",
+        )
+
     def test_eval_quality_compares_rag_and_baseline(self) -> None:
         root = self.make_project()
         build_index(root)

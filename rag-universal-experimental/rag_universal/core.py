@@ -2208,6 +2208,195 @@ SPEC_CROSS_MARKERS = {
     "error_literal",
 }
 
+HUMAN_TASK_INTENT_TERMS: dict[str, set[str]] = {
+    "access_auth": {
+        "403", "access", "allow", "allowed", "auth", "authorize", "authorization", "bff", "deny", "denied",
+        "forbidden", "gate", "guard", "permission", "policy", "requireRoles", "role", "roles", "roles_any",
+        "viewer", "operator", "admin", "доступ", "дозволити", "дозволено", "заборонено", "роль", "ролі",
+        "авторизація", "авторизация", "доступа", "разрешить", "разрешено", "запрещено", "роли", "роль",
+        "права", "политика", "політика",
+    },
+    "schema_flow": {
+        "bridge", "context", "create", "direct", "form", "interfaceview", "payload", "redirect", "render",
+        "resolve", "resolveTemplate", "result", "schema", "schemas", "submit", "template", "unwrap", "yaml",
+        "yml", "схема", "схеми", "форма", "редірект", "редирект", "шаблон", "результат", "відправка",
+        "отправка", "развернуть", "розгорнути", "контекст",
+    },
+    "error_contract": {
+        "400", "canonical", "code", "cursor", "enum", "error", "error_code", "errorcode", "errors", "hmac",
+        "invalid", "mismatch", "non-retryable", "path", "query_hash", "retryable", "помилка", "помилки",
+        "код", "коди", "канонічний", "канонический", "несовпадіння", "несоответствие", "невірний",
+        "неверный",
+    },
+    "concurrency_state": {
+        "atomic", "cas", "collision", "concurrent", "consistency", "idempotency", "lock", "ordering",
+        "race", "replay", "revision", "stale", "transaction", "version", "гонка", "конкурентний",
+        "конкурентная", "одночасний", "одновременный", "застарілий", "устаревший", "транзакція",
+        "транзакция", "блокування", "блокировка", "версія", "версия",
+    },
+    "audit_integrity": {
+        "audit", "chain", "entry_hash", "genesis", "hash", "integrity", "prev_hash", "verify", "walker",
+        "аудит", "ланцюг", "цепочка", "хеш", "хэш", "цілісність", "целостность", "перевірка", "проверка",
+    },
+    "routing_api": {
+        "api", "bridge", "controller", "dispatcher", "endpoint", "http", "middleware", "proxy", "route",
+        "router", "routes", "маршрут", "маршрути", "роут", "роути", "контролер", "контроллер",
+        "диспетчер", "проксі", "прокси",
+    },
+    "data_storage": {
+        "column", "constraint", "db", "ddl", "index", "migration", "repository", "schema", "sql", "storage",
+        "table", "unique", "база", "бд", "таблиця", "таблица", "колонка", "міграція", "миграция",
+        "сховище", "хранилище", "репозиторій", "репозиторий", "унікальний", "уникальный",
+    },
+    "frontend_state": {
+        "api", "component", "navigation", "page", "router", "spa", "state", "store", "ui", "view", "widget",
+        "фронт", "фронтенд", "інтерфейс", "интерфейс", "сторінка", "страница", "віджет", "виджет",
+        "компонент", "навігація", "навигация", "стан", "состояние",
+    },
+    "plugin_runtime": {
+        "action", "core_http_bridge", "manifest", "mcp", "msp", "plugin", "plugin.yaml", "target", "workflow",
+        "плагін", "плагин", "маніфест", "манифест", "воркфлоу", "цель", "ціль",
+    },
+    "deploy_runtime": {
+        "compose", "deploy", "docker", "dockerfile", "env", "nginx", "release", "runtime", "script", "systemd",
+        "деплой", "реліз", "релиз", "оточення", "окружение", "скрипт", "рантайм",
+    },
+}
+
+HUMAN_TASK_INTENT_PHRASES: dict[str, tuple[str, ...]] = {
+    "access_auth": (
+        "403",
+        "access denied",
+        "немає доступу",
+        "нет доступа",
+        "заборонено доступ",
+        "доступ запрещен",
+        "доступ заборонено",
+        "role gate",
+        "route-level roles",
+        "roles_any",
+        "require roles",
+        "requireRoles",
+    ),
+    "schema_flow": (
+        "core_http_bridge",
+        "direct submit",
+        "redirect",
+        "після створення",
+        "после создания",
+        "редіректить",
+        "редиректит",
+        "response shape",
+        "resolve template",
+        "resolveTemplate",
+        "template context",
+        "unwrap result",
+    ),
+    "error_contract": (
+        "canonical code",
+        "error code",
+        "код помилки",
+        "код ошибки",
+        "errorcode",
+        "hmac",
+        "non-retryable",
+        "query_hash",
+    ),
+    "concurrency_state": (
+        "race condition",
+        "гонка данных",
+        "гонка даних",
+        "stale response",
+        "застаріла відповідь",
+        "устаревший ответ",
+        "compare-and-swap",
+        "same timestamp",
+        "microsecond collision",
+    ),
+    "audit_integrity": (
+        "audit chain",
+        "ланцюг аудиту",
+        "цепочка аудита",
+        "hash chain",
+        "prev_hash",
+        "entry_hash",
+        "verify chain",
+    ),
+    "routing_api": (
+        "api route",
+        "bff proxy",
+        "http route",
+        "plugin dispatcher",
+        "route policy",
+        "політика маршруту",
+        "политика маршрута",
+    ),
+    "data_storage": (
+        "database schema",
+        "схема бази",
+        "схема базы",
+        "sql migration",
+        "unique constraint",
+    ),
+    "frontend_state": (
+        "spa route",
+        "stale response",
+        "ui flow",
+        "фронтенд флоу",
+        "потік інтерфейсу",
+        "поток интерфейса",
+    ),
+    "plugin_runtime": (
+        "core_http_bridge",
+        "http_routes",
+        "plugin.yaml",
+        "workflow yaml",
+        "маніфест плагіна",
+        "манифест плагина",
+    ),
+    "deploy_runtime": (
+        "docker compose",
+        "runtime env",
+        "systemd unit",
+        "деплой скрипт",
+        "скрипт деплоя",
+    ),
+}
+
+HUMAN_TASK_FOCUS_TERMS: dict[str, tuple[str, ...]] = {
+    "access_auth": (
+        "403", "role", "roles_any", "permission", "policy", "requireRoles", "controller", "proxy", "router",
+        "plugin.yaml",
+    ),
+    "schema_flow": (
+        "schema", "redirect", "template", "result", "submit", "core_http_bridge", "InterfaceView", "yaml",
+    ),
+    "error_contract": (
+        "ErrorCode", "error_code", "Errors", "enum", "controller", "canonical", "mismatch",
+    ),
+    "concurrency_state": (
+        "race", "stale", "idempotency", "revision", "lock", "transaction", "repository", "service",
+    ),
+    "audit_integrity": (
+        "audit", "chain", "prev_hash", "entry_hash", "verify", "repository", "integrity",
+    ),
+    "routing_api": (
+        "route", "controller", "dispatcher", "proxy", "middleware", "http_routes", "api",
+    ),
+    "data_storage": (
+        "migration", "schema", "repository", "sql", "constraint", "table", "unique",
+    ),
+    "frontend_state": (
+        "SPA", "router", "store", "api client", "component", "view", "state",
+    ),
+    "plugin_runtime": (
+        "plugin.yaml", "http_routes", "target", "workflow", "core_http_bridge", "PluginHttpActionDispatcher",
+    ),
+    "deploy_runtime": (
+        "deploy", "runtime", "Dockerfile", "docker-compose", "systemd", "script", "env",
+    ),
+}
+
 DECOMPOSITION_GENERIC_TERMS = {
     "already",
     "because",
@@ -2251,12 +2440,12 @@ def extract_review_comment_terms(query: str) -> list[str]:
     identifiers: list[str] = []
     seen: set[str] = set()
     for match in re.finditer(r"\b[A-Z][A-Za-z0-9]+(?:[A-Z][A-Za-z0-9]+)+\b", query):
-        normalized = match.group(0).lower()
+        normalized = match.group(0).lower().strip(".,;:")
         if normalized not in seen:
             identifiers.append(normalized)
             seen.add(normalized)
     for match in re.finditer(r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b", query):
-        normalized = match.group(0).lower()
+        normalized = match.group(0).lower().strip(".,;:")
         if normalized not in seen:
             identifiers.append(normalized)
             seen.add(normalized)
@@ -2272,7 +2461,7 @@ def extract_review_comment_terms(query: str) -> list[str]:
             identifiers.append(normalized)
             seen.add(normalized)
     for token in tokenize(query):
-        normalized = token.strip("_-")
+        normalized = token.strip("_-.,;:")
         if len(normalized) < 3:
             continue
         if normalized.isdigit():
@@ -2294,6 +2483,53 @@ def extract_review_comment_terms(query: str) -> list[str]:
             identifiers.append(basename)
             seen.add(basename)
     return identifiers[:10]
+
+
+def detect_human_task_intents(query_terms: set[str], lower_query: str, review_terms: list[str]) -> list[str]:
+    all_terms = {str(term).lower() for term in query_terms}
+    all_terms.update(str(term).lower() for term in review_terms)
+    intents: list[str] = []
+    for intent, terms in HUMAN_TASK_INTENT_TERMS.items():
+        normalized_terms = {str(term).lower() for term in terms}
+        token_hits = len(all_terms & normalized_terms)
+        phrase_hit = any(phrase.lower() in lower_query for phrase in HUMAN_TASK_INTENT_PHRASES.get(intent, ()))
+        if phrase_hit or token_hits >= 2:
+            intents.append(intent)
+
+    # Cross-layer symptoms are often phrased without implementation nouns.
+    # Add derived intents so the query decomposer looks at both sides of the seam.
+    intent_set = set(intents)
+    if {"access_auth", "routing_api"} & intent_set:
+        if "frontend_state" not in intent_set and any(term in all_terms for term in {"spa", "ui", "viewer", "route", "router"}):
+            intents.append("frontend_state")
+        if "plugin_runtime" not in intent_set and any(term in all_terms for term in {"plugin", "roles_any", "manifest"}):
+            intents.append("plugin_runtime")
+    if {"schema_flow", "plugin_runtime"} & intent_set and "routing_api" not in intent_set:
+        if any(term in all_terms for term in {"bridge", "core_http_bridge", "submit", "redirect"}):
+            intents.append("routing_api")
+    if {"concurrency_state", "audit_integrity"} & intent_set and "data_storage" not in intent_set:
+        intents.append("data_storage")
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for intent in intents:
+        if intent not in seen:
+            deduped.append(intent)
+            seen.add(intent)
+    return deduped[:5]
+
+
+def human_task_focus_terms(profile: dict[str, Any]) -> list[str]:
+    focus: list[str] = []
+    seen: set[str] = set()
+    for intent in profile.get("human_intents", []):
+        for term in HUMAN_TASK_FOCUS_TERMS.get(str(intent), ()):
+            normalized = str(term).strip()
+            key = normalized.lower()
+            if normalized and key not in seen:
+                focus.append(normalized)
+                seen.add(key)
+    return focus[:18]
 
 
 def score_query_profile(query: str, mode: str, filter_source: str | None = None) -> dict[str, Any]:
@@ -2348,12 +2584,38 @@ def score_query_profile(query: str, mode: str, filter_source: str | None = None)
     self_rag_code_intent = self_rag and normalized_mode == "implementation"
     review_marker_hits = sum(1 for marker in REVIEW_COMMENT_MARKERS if marker in query_terms)
     frontend_review_hits = sum(1 for marker in FRONTEND_REVIEW_MARKERS if marker in query_terms)
+    human_intents = detect_human_task_intents(query_terms, lower_query, review_terms)
+    ambiguous_review_markers = {"canonical", "default", "endpoint", "payload", "route", "scope", "scoped"}
+    strong_review_marker_hits = sum(
+        1 for marker in REVIEW_COMMENT_MARKERS
+        if marker in query_terms and marker not in ambiguous_review_markers
+    )
+    strong_review_identifier = any(
+        "." in term
+        or term in {
+            "allow_self_link",
+            "attributes_merge",
+            "expected_source_revision",
+            "project_id",
+            "target.call",
+            "target_node_ids",
+        }
+        or term.startswith("owner_")
+        or term in {"caller_role", "root_central"}
+        or term.endswith(("_credentials", "_role", "_entry_id", "_chain", "_log"))
+        or term.endswith("_revision")
+        for term in review_terms
+    )
     review_comment = (
         normalized_mode in {"default", "implementation", "frontend", "fdr"}
         and len(query_terms) >= 8
         and (
-            review_marker_hits >= 2
-            or len(review_terms) >= 2
+            strong_review_marker_hits >= 2
+            or (strong_review_marker_hits >= 1 and review_marker_hits >= 2)
+            or (
+                len(review_terms) >= 2
+                and (not human_intents or strong_review_identifier or strong_review_marker_hits >= 1)
+            )
             or "line " in lower_query
             or (normalized_mode == "frontend" and frontend_review_hits >= 2)
         )
@@ -2423,6 +2685,17 @@ def score_query_profile(query: str, mode: str, filter_source: str | None = None)
             ))
         )
     )
+    human_task = (
+        normalized_mode in {"default", "implementation", "architecture", "frontend"}
+        and broad
+        and not explicit_paths
+        and not self_rag
+        and not knowledge_intent
+        and not review_comment
+        and not schema_flow_review
+        and not spec_cross_cutting
+        and bool(human_intents)
+    )
     return {
         "mode": normalized_mode,
         "explicit_paths": explicit_paths,
@@ -2438,6 +2711,8 @@ def score_query_profile(query: str, mode: str, filter_source: str | None = None)
         "schema_flow_marker_hits": schema_flow_marker_hits,
         "spec_cross_cutting": spec_cross_cutting,
         "spec_cross_marker_hits": spec_cross_marker_hits,
+        "human_task": human_task,
+        "human_intents": human_intents,
         "filter_source": filter_source or "",
     }
 
@@ -2447,6 +2722,8 @@ def adaptive_candidate_limit(base_limit: int, profile: dict[str, Any]) -> int:
         return max(350, min(base_limit, 2200))
     if profile.get("schema_flow_review"):
         return max(250, min(base_limit, 1600))
+    if profile.get("human_task"):
+        return max(450, min(base_limit, 2800))
     if profile["review_comment"]:
         return max(300, min(base_limit, 1800))
     if profile["self_rag"]:
@@ -2461,6 +2738,8 @@ def adaptive_candidate_limit(base_limit: int, profile: dict[str, Any]) -> int:
 def adaptive_max_chunks_per_source(base_limit: int, profile: dict[str, Any]) -> int:
     if profile.get("spec_cross_cutting") or profile.get("schema_flow_review"):
         return 1
+    if profile.get("human_task"):
+        return 1
     if profile["review_comment"] or profile["broad"] or profile["knowledge_intent"]:
         return 1
     return base_limit
@@ -2471,6 +2750,8 @@ def adaptive_read_plan_limit(profile: dict[str, Any], default_limit: int = 6) ->
         return min(default_limit, 3)
     if profile.get("schema_flow_review"):
         return min(default_limit, 4)
+    if profile.get("human_task"):
+        return min(default_limit, 6)
     if profile["review_comment"]:
         return min(default_limit, 4)
     if profile["self_rag"] or profile["knowledge_intent"]:
@@ -2560,6 +2841,20 @@ def query_role_bias_multiplier(chunk_role_label: str, profile: dict[str, Any]) -
             return 1.12
         if role == "docs":
             return 0.58
+    if profile.get("human_task"):
+        intents = set(str(intent) for intent in profile.get("human_intents", []))
+        if "access_auth" in intents and role in {"controller", "config", "api_client"}:
+            return 1.16
+        if "schema_flow" in intents and role in {"config", "api_client", "component"}:
+            return 1.14
+        if "error_contract" in intents and role in {"implementation", "controller", "config"}:
+            return 1.14
+        if {"concurrency_state", "audit_integrity", "data_storage"} & intents and role in {"repository", "migration", "sql", "workflow"}:
+            return 1.14
+        if "frontend_state" in intents and role in {"api_client", "store", "component"}:
+            return 1.12
+        if "deploy_runtime" in intents and role in {"build_file", "compose_config", "ignore_config", "implementation"}:
+            return 1.12
     return 1.0
 
 
@@ -2625,6 +2920,96 @@ def intent_source_multiplier(source: str, artifact: str, role: str, profile: dic
             multiplier *= 0.92
         elif role in {"implementation", "config"}:
             multiplier *= 1.14
+    if profile.get("human_task"):
+        intents = set(str(intent) for intent in profile.get("human_intents", []))
+        if is_policy_or_operator_doc(source):
+            multiplier *= 0.24
+        elif role in {"docs", "plan"}:
+            multiplier *= 0.58
+        elif role == "spec":
+            multiplier *= 0.82
+        elif role == "test":
+            multiplier *= 0.62
+        elif role in {"implementation", "config"}:
+            multiplier *= 1.12
+
+        if "access_auth" in intents:
+            if lower.startswith("routes/") or "/routes/" in lower:
+                multiplier *= 1.35
+            if any(part in lower for part in ("/controllers/", "/middleware/", "/policies/", "proxycontroller", "auth", "permission")):
+                multiplier *= 1.45
+            if {"bff", "proxy", "gate"} & query_terms and any(part in lower for part in ("/controllers/", "proxycontroller", "/middleware/")):
+                multiplier *= 1.55
+            if lower.endswith(("plugin.yaml", "plugin.yml")) or "plugin.yaml" in lower:
+                multiplier *= 1.38
+            if lower.startswith("uier-spa/src/router") or "router" in lower:
+                multiplier *= 1.30
+
+        if "schema_flow" in intents:
+            if (lower.endswith((".yaml", ".yml")) and any(part in lower for part in ("/schemas/", "/interfaces/", "/views/"))):
+                multiplier *= 2.40
+            elif lower.endswith((".yaml", ".yml")) and "/plugins/" in lower:
+                multiplier *= 1.75
+            if lower.endswith("interfaceview.vue"):
+                multiplier *= 2.30
+            elif lower.endswith(("schemaform.vue", "schemadashboard.vue")):
+                multiplier *= 1.35
+            if any(part in lower for part in ("redirect", "template", "resolver", "resolve")) and not lower.endswith(".md"):
+                multiplier *= 1.45
+
+        if "error_contract" in intents:
+            if any(part in lower for part in ("errorcode", "errors", "/enums/")):
+                multiplier *= 2.00
+            if "/controllers/" in lower:
+                multiplier *= 1.28
+            if any(part in lower for part in ("cursor", "hmac", "query_hash", "mismatch")):
+                multiplier *= 1.42
+
+        if "routing_api" in intents or "plugin_runtime" in intents:
+            if lower.startswith("routes/") or "/routes/" in lower:
+                multiplier *= 1.35
+            if any(part in lower for part in ("pluginhttpactiondispatcher", "dispatcher", "proxycontroller", "/controllers/")):
+                multiplier *= 1.35
+            if lower.endswith(("plugin.yaml", "plugin.yml")) or "plugin.yaml" in lower or "http_routes" in lower:
+                multiplier *= 1.45
+            if "/workflows/" in lower:
+                multiplier *= 1.18
+
+        if "concurrency_state" in intents:
+            if any(part in lower for part in ("/repositories/", "/services/", "repository.php", "service.php", "dispatcher", "updater")):
+                multiplier *= 1.38
+            if any(part in lower for part in ("lock", "lease", "revision", "idempot", "replay", "atomic", "transaction")):
+                multiplier *= 1.30
+            if lower.startswith("uier-spa/src/stores/") or lower.startswith("uier-spa/src/api/"):
+                multiplier *= 1.18
+
+        if "audit_integrity" in intents:
+            if "audit" in lower:
+                multiplier *= 1.55
+            if any(part in lower for part in ("/repositories/", "repository.php", "chain")):
+                multiplier *= 1.38
+
+        if "data_storage" in intents:
+            if "/migrations/" in lower:
+                multiplier *= 1.45
+            if any(part in lower for part in ("/repositories/", "repository.php", "sql", "schema")):
+                multiplier *= 1.30
+
+        if "frontend_state" in intents:
+            if lower.startswith("uier-spa/src/api/"):
+                multiplier *= 1.34
+            elif lower.startswith("uier-spa/src/stores/"):
+                multiplier *= 1.34
+            elif lower.startswith("uier-spa/src/router"):
+                multiplier *= 1.32
+            elif lower.startswith(("uier-spa/src/components/", "uier-spa/src/views/")):
+                multiplier *= 1.20
+
+        if "deploy_runtime" in intents:
+            if lower.startswith(("deploy/", "bin/")) or "/systemd/" in lower:
+                multiplier *= 1.40
+            if Path(source).name.lower().startswith("dockerfile") or "docker-compose" in lower or lower.endswith((".sh", ".service")):
+                multiplier *= 1.38
     if profile["review_comment"] and not profile.get("spec_cross_cutting"):
         if role in {"implementation", "build_file", "ignore_config", "compose_config"}:
             multiplier *= 1.28
@@ -3116,7 +3501,21 @@ def build_query_variants(query: str, config: dict[str, Any], mode: str, profile:
             if term in query_term_set or term in {value.lower() for value in review_terms}:
                 mode_focus.append(term)
     append_variant((mode_focus[:4] + anchor_terms[:4])[:8])
-    return variants[:3]
+    if active_profile.get("human_task"):
+        focus_terms = human_task_focus_terms(active_profile)
+        if focus_terms:
+            append_variant(focus_terms[:8])
+            append_variant((anchor_terms[:4] + focus_terms[:6])[:10])
+        intent_set = set(str(intent) for intent in active_profile.get("human_intents", []))
+        if "access_auth" in intent_set:
+            append_variant(["403", "roles_any", "requireRoles", "controller", "proxy", "plugin.yaml", "router"])
+        if "schema_flow" in intent_set:
+            append_variant(["redirect", "template", "result", "submit", "InterfaceView", "core_http_bridge", "schema"])
+        if "error_contract" in intent_set:
+            append_variant(["ErrorCode", "error_code", "Errors", "enum", "controller", "canonical"])
+        if {"concurrency_state", "audit_integrity"} & intent_set:
+            append_variant(["repository", "transaction", "lock", "revision", "prev_hash", "entry_hash", "verify"])
+    return variants[:5 if active_profile.get("human_task") else 3]
 
 
 def fuse_ranked_results(result_sets: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
@@ -3169,7 +3568,7 @@ def should_decompose_query(results: list[dict[str, Any]], profile: dict[str, Any
     if not results:
         return True
     if not (profile.get("review_comment") or profile.get("broad") or profile.get("self_rag")
-            or profile.get("schema_flow_review") or profile.get("spec_cross_cutting")):
+            or profile.get("schema_flow_review") or profile.get("spec_cross_cutting") or profile.get("human_task")):
         return False
     top = results[0]
     top_score = float(top.get("score", 0.0))
@@ -4031,11 +4430,36 @@ def allow_frontend_high_confidence_result(result: dict[str, Any], profile: dict[
 
 def read_plan_role_rank(result: dict[str, Any], profile: dict[str, Any]) -> int:
     chunk_role_label = str(result.get("chunk_role", "implementation")).lower()
+    source = str(result.get("source", "")).lower()
     query_terms = {str(term).lower() for term in profile.get("query_terms", set())}
     review_terms = {str(term).lower() for term in profile.get("review_terms", [])}
     mode = str(profile.get("mode", "")).lower()
 
-    if mode == "frontend":
+    if profile.get("human_task"):
+        intents = set(str(intent) for intent in profile.get("human_intents", []))
+        if "access_auth" in intents:
+            priorities = ["controller", "config", "api_client", "workflow", "component", "store", "repository", "sql"]
+            if source.startswith("uier-spa/src/router"):
+                return 1
+            if source.endswith(("plugin.yaml", "plugin.yml")):
+                return 1
+        elif "schema_flow" in intents:
+            priorities = ["config", "component", "api_client", "controller", "workflow", "store", "repository"]
+            if source.endswith("interfaceview.vue"):
+                return 0
+        elif "error_contract" in intents:
+            priorities = ["implementation", "controller", "config", "repository", "workflow", "spec", "test"]
+            if "errorcode" in source or "/enums/" in source:
+                return 0
+        elif {"concurrency_state", "audit_integrity", "data_storage"} & intents:
+            priorities = ["repository", "workflow", "migration", "sql", "controller", "implementation", "store", "api_client"]
+        elif "frontend_state" in intents:
+            priorities = ["api_client", "store", "component", "controller", "workflow", "config", "repository"]
+        elif "deploy_runtime" in intents:
+            priorities = ["build_file", "compose_config", "implementation", "config", "ignore_config", "docs"]
+        else:
+            priorities = ["controller", "repository", "config", "api_client", "store", "component", "workflow", "migration", "sql"]
+    elif mode == "frontend":
         if "target.call" in review_terms or "expected_source_revision" in review_terms:
             priorities = ["api_client", "workflow", "store", "component", "controller", "repository"]
         elif "attributes_merge" in review_terms or {"attributes", "merge"} <= query_terms:
@@ -4101,6 +4525,8 @@ def search_index_with_plan(
             "broad_implementation": profile["broad_implementation"],
             "schema_flow_review": profile.get("schema_flow_review", False),
             "spec_cross_cutting": profile.get("spec_cross_cutting", False),
+            "human_task": profile.get("human_task", False),
+            "human_intents": profile.get("human_intents", []),
         },
     }
     if results == []:
