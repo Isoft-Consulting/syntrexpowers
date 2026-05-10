@@ -8,6 +8,8 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from .core import perf_snapshot as _perf_snapshot
+
 from .core import build_index, close_search_cache_connections, ensure_fresh_index, get_index_dir, load_chunks, load_config, load_json_list, rebuild_search_cache, resolve_root, search_index, search_index_with_plan, tokenize
 
 QUALITY_CHECK_VERSION = "rag.quality-check.v1"
@@ -189,9 +191,12 @@ def estimate_read_plan_tokens(read_plan: dict[str, Any], chunk_lookup: dict[tupl
     return total
 
 
-def estimate_baseline_tokens(root: Path, baseline_sources: list[str]) -> int:
+def estimate_baseline_tokens(root: Path, baseline_sources: list[str], source_texts: dict[str, str] | None = None) -> int:
     total = 0
     for source in baseline_sources:
+        if source_texts is not None and source in source_texts:
+            total += estimate_text_tokens(source_texts[source])
+            continue
         path = root / source
         try:
             total += estimate_text_tokens(path.read_text(encoding="utf-8", errors="replace"))
@@ -317,6 +322,7 @@ def benchmark_quality(
     profile = resolve_benchmark_profile(config, mode, profile_name, min_cases, min_top3_ratio, min_mrr, max_latency_p95_ms, max_tokens_avg)
     thresholds = profile["thresholds"]
     baseline_corpus = load_baseline_corpus(root, index_dir) if include_baseline else []
+    source_texts: dict[str, str] = {src: txt for src, txt in baseline_corpus}
     chunk_lookup = build_chunk_text_lookup(load_chunks(index_dir))
     rebuilt_after_sqlite_error = False
 
@@ -367,7 +373,7 @@ def benchmark_quality(
             baseline_sources = keyword_baseline(baseline_corpus, query, top_k=top_k)
             baseline_elapsed = (time.perf_counter() - started) * 1000.0
             baseline_rank = hit_rank(baseline_sources, expected)
-            baseline_token_cost = estimate_baseline_tokens(root, baseline_sources)
+            baseline_token_cost = estimate_baseline_tokens(root, baseline_sources, source_texts)
             baseline_ranks.append(baseline_rank)
             baseline_latency_ms.append(baseline_elapsed)
             baseline_tokens.append(baseline_token_cost)
@@ -404,6 +410,7 @@ def benchmark_quality(
         }
     else:
         summary["delta"] = None
+    perf = _perf_snapshot()
     return {
         "schema_version": QUALITY_BENCHMARK_VERSION,
         "cases": details,
@@ -417,6 +424,7 @@ def benchmark_quality(
             float(thresholds["max_latency_p95_ms"]),
             float(thresholds["max_tokens_avg"]),
         ),
+        "perf_ms": perf,
     }
 
 
