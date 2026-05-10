@@ -41,6 +41,8 @@ tests/run-tests.sh
 
 After installing or refreshing Codex hooks, start a new Codex CLI session before expecting native lifecycle hooks to fire. Existing sessions may keep the hook configuration loaded at process start even though direct `strict-hook` smoke tests already exercise the installed runtime.
 
+The same restart requirement applies to Claude Code: after installing or refreshing Claude hooks in `~/.claude/settings.json`, start a new Claude Code session before expecting native lifecycle hooks to fire. Existing sessions keep the hook configuration loaded from process start, so direct `strict-hook` smoke tests will succeed while in-session hook events still use the previously loaded configuration.
+
 To inspect the current enforcing blockers as a structured report, run:
 
 ```bash
