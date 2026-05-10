@@ -24,10 +24,11 @@ CHUNKER_VERSION = "lexical-chunker.v1"
 TOKENIZER_VERSION = "unicode-tokenizer.v1"
 SEARCH_VERSION = "hash-vector-bm25.v16"
 
-_SEARCH_CACHE_CONNECTIONS: dict[tuple[str, float, int], sqlite3.Connection] = {}
+_SEARCH_CACHE_CONNECTIONS: dict[tuple[str, float, int, str], sqlite3.Connection] = {}
 _LEXICON_CACHE: dict[tuple[str, float, int], dict[str, Any]] = {}
 _SEARCH_CACHE_METADATA: dict[int, dict[str, str]] = {}
 _SEARCH_CACHE_FAILURES: dict[str, str] = {}
+_SEARCH_CACHE_STORAGE_MODE: str = "disk"
 _FRESHNESS_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _FRESHNESS_CACHE_TTL: float = 60.0  # seconds — safe for benchmark runs, stale within same process
 
@@ -994,6 +995,24 @@ def close_search_cache_connections(index_dir: Path) -> None:
             _SEARCH_CACHE_CONNECTIONS.pop(cache_key, None)
 
 
+def configure_search_cache_storage(mode: str) -> None:
+    global _SEARCH_CACHE_STORAGE_MODE
+    normalized = str(mode or "disk").strip().lower()
+    if normalized not in {"disk", "memory"}:
+        raise ValueError(f"unsupported search cache storage: {mode}")
+    if normalized == _SEARCH_CACHE_STORAGE_MODE:
+        return
+    for connection in list(_SEARCH_CACHE_CONNECTIONS.values()):
+        _SEARCH_CACHE_METADATA.pop(id(connection), None)
+        connection.close()
+    _SEARCH_CACHE_CONNECTIONS.clear()
+    _SEARCH_CACHE_STORAGE_MODE = normalized
+
+
+def search_cache_storage_mode() -> str:
+    return _SEARCH_CACHE_STORAGE_MODE
+
+
 def clear_lexicon_cache(index_dir: Path) -> None:
     index_key = str(index_dir.resolve())
     for cache_key in list(_LEXICON_CACHE.keys()):
@@ -1624,14 +1643,15 @@ def load_search_cache(index_dir: Path) -> sqlite3.Connection | None:
         _SEARCH_CACHE_FAILURES.pop(index_key, None)
         return None
     stat = cache_path.stat()
-    cache_key = (index_key, stat.st_mtime, stat.st_size)
+    storage_mode = search_cache_storage_mode()
+    cache_key = (index_key, stat.st_mtime, stat.st_size, storage_mode)
     cached = _SEARCH_CACHE_CONNECTIONS.get(cache_key)
     if cached is not None:
         return cached
 
     connection: sqlite3.Connection | None = None
     try:
-        connection = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True)
+        connection = open_search_cache_connection(cache_path, storage_mode)
         connection.row_factory = sqlite3.Row
         quick_check = connection.execute("PRAGMA quick_check").fetchone()
         if quick_check is None or str(quick_check[0]).lower() != "ok":
@@ -1662,6 +1682,26 @@ def load_search_cache(index_dir: Path) -> sqlite3.Connection | None:
     _SEARCH_CACHE_METADATA[id(connection)] = metadata
     _SEARCH_CACHE_FAILURES.pop(index_key, None)
     return connection
+
+
+def open_search_cache_connection(cache_path: Path, storage_mode: str) -> sqlite3.Connection:
+    if storage_mode == "memory":
+        source = sqlite3.connect(f"file:{cache_path}?mode=ro&immutable=1", uri=True)
+        connection: sqlite3.Connection | None = None
+        try:
+            connection = sqlite3.connect(":memory:")
+            source.backup(connection)
+        except Exception:
+            if connection is not None:
+                connection.close()
+            raise
+        finally:
+            source.close()
+        connection.execute("PRAGMA query_only=ON")
+        connection.execute("PRAGMA temp_store=MEMORY")
+        connection.execute("PRAGMA cache_size=-262144")
+        return connection
+    return sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True)
 
 
 def search_cache_metadata(connection: sqlite3.Connection) -> dict[str, str]:

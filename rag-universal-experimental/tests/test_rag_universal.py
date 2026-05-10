@@ -20,6 +20,7 @@ from rag_universal.core import (
     build_query_variants,
     chunk_role,
     close_search_cache_connections,
+    configure_search_cache_storage,
     ensure_fresh_index,
     fuse_ranked_results,
     get_index_dir,
@@ -40,6 +41,7 @@ from rag_universal.core import (
     lookup_symbol,
     search_index,
     search_index_with_plan,
+    search_cache_storage_mode,
     split_large_text,
     select_search_results,
     tokenize,
@@ -334,6 +336,30 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(quality_payload["schema_version"], "rag.quality-check.v1")
         self.assertEqual(quality_payload["health"]["baseline"], "keyword")
         self.assertIn("delta", quality_payload["summary"])
+
+    def test_mcp_memory_cache_storage_uses_in_memory_sqlite_replica(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        index_dir = get_index_dir(root, load_config(root, None))
+        try:
+            configure_search_cache_storage("memory")
+            memory_connection = load_search_cache(index_dir)
+            self.assertIsNotNone(memory_connection)
+            memory_databases = [tuple(row) for row in memory_connection.execute("PRAGMA database_list").fetchall()]
+            self.assertEqual(memory_databases[0][2], "")
+            self.assertEqual(search_cache_storage_mode(), "memory")
+            results = search_index(root, None, "strict stop guard", top_k=1)
+            self.assertEqual(results[0]["source"], "README.md")
+
+            configure_search_cache_storage("disk")
+            disk_connection = load_search_cache(index_dir)
+            self.assertIsNotNone(disk_connection)
+            disk_databases = [tuple(row) for row in disk_connection.execute("PRAGMA database_list").fetchall()]
+            self.assertTrue(disk_databases[0][2].endswith("search.sqlite"))
+            self.assertEqual(search_cache_storage_mode(), "disk")
+        finally:
+            configure_search_cache_storage("disk")
+            close_search_cache_connections(index_dir)
 
     def test_auto_reindex_and_watch_refresh_changed_sources(self) -> None:
         root = self.make_project()

@@ -4,7 +4,7 @@ import json
 import sys
 from typing import Any
 
-from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan
+from .core import build_index, configure_search_cache_storage, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan
 from .eval_quality import quality_check
 from .knowledge import build_project_knowledge, generate_project_profile, knowledge_pack_status
 
@@ -266,8 +266,9 @@ def handle_message(message: dict[str, Any], root: str | None = None, config: str
     return error(message_id, -32601, f"method not found: {method}")
 
 
-def run_stdio(root: str | None = None, config: str | None = None) -> int:
-    print("rag-universal MCP server started", file=sys.stderr)
+def run_stdio(root: str | None = None, config: str | None = None, cache_storage: str = "disk") -> int:
+    configure_search_cache_storage(cache_storage)
+    print(f"rag-universal MCP server started (cache_storage={cache_storage})", file=sys.stderr)
     for line in sys.stdin:
         if not line.strip():
             continue

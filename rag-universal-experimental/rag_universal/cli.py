@@ -96,7 +96,13 @@ def build_parser() -> argparse.ArgumentParser:
     profile.add_argument("--output", default="rag.knowledge.json", help="Output rules file relative to root unless absolute.")
     profile.add_argument("--project", default="project", help="Project name used in profile metadata.")
 
-    subparsers.add_parser("serve-mcp", help="Run MCP stdio server")
+    serve_mcp = subparsers.add_parser("serve-mcp", help="Run MCP stdio server")
+    serve_mcp.add_argument(
+        "--cache-storage",
+        choices=["disk", "memory"],
+        default="disk",
+        help="MCP-only SQLite search cache storage. Use memory only for long-lived MCP processes.",
+    )
     return parser
 
 
@@ -209,5 +215,5 @@ def main(argv: list[str] | None = None) -> int:
         emit(generate_project_profile(args.root, args.output, args.project))
         return 0
     if args.command == "serve-mcp":
-        return run_stdio(args.root, args.config)
+        return run_stdio(args.root, args.config, args.cache_storage)
     raise RuntimeError(f"unhandled command: {args.command}")
