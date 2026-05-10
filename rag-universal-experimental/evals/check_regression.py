@@ -121,11 +121,12 @@ def check_manual_queries(baseline: dict[str, Any]) -> list[str]:
 
     for q in baseline["manual_queries_pr88"]["queries"]:
         qid = q["id"]
+        query_text = q.get("query_text", qid)
         expected = q["expected"]
         baseline_rank = q["rag_rank"]
 
         _FRESHNESS_CACHE.clear()
-        rag = search_index_with_plan(ROOT, None, qid, top_k=5, mode="implementation")
+        rag = search_index_with_plan(ROOT, None, query_text, top_k=5, mode="implementation")
         rag_sources = [it["source"] for it in rag["results"]]
         current_rank = next(
             (i + 1 for i, s in enumerate(rag_sources) if any(e in s for e in expected)),
@@ -137,11 +138,11 @@ def check_manual_queries(baseline: dict[str, Any]) -> list[str]:
 
         if qid in ("Q1_error_codes", "Q3_cap_snap"):
             if current_rank is not None and current_rank <= 3:
-                spec_improvements.append(f"{qid}: rank {current_rank} (was null) — IMPROVED")
+                spec_improvements.append(f"{qid}: rank {current_rank} (was {baseline_rank}) — ≤3 OK")
             elif current_rank is None and baseline_rank is None:
-                pass  # neither improved nor regressed
-            elif current_rank is not None and baseline_rank is not None and current_rank <= baseline_rank:
-                pass  # no regression
+                pass
+            elif current_rank is not None and baseline_rank is not None and current_rank > baseline_rank:
+                violations.append(f"[manual] {qid}: regressed rank {current_rank} > baseline {baseline_rank}")
             elif current_rank is None and baseline_rank is not None:
                 violations.append(f"[manual] {qid}: regressed rank null (was {baseline_rank})")
 

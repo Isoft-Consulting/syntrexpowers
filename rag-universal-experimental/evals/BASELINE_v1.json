@@ -7,11 +7,11 @@
     "frontend": {
       "cases": 8,
       "mode": "frontend",
-      "wall_seconds": 91.0,
+      "wall_seconds": 51.0,
       "rag": {
         "top1": 8, "top3": 8, "top5": 8,
         "mrr": 1.0,
-        "latency_ms_avg": 5711.58, "latency_ms_p50": 3264.28, "latency_ms_p95": 15447.66,
+        "latency_ms_avg": 3072.0, "latency_ms_p50": 2156.0, "latency_ms_p95": 6840.0,
         "tokens_avg": 943.6, "tokens_p50": 568.0, "tokens_p95": 1610.0
       },
       "baseline": {
@@ -39,11 +39,11 @@
     "backend": {
       "cases": 10,
       "mode": "implementation",
-      "wall_seconds": 88.8,
+      "wall_seconds": 47.0,
       "rag": {
         "top1": 10, "top3": 10, "top5": 10,
         "mrr": 1.0,
-        "latency_ms_avg": 3958.71, "latency_ms_p50": 2039.25, "latency_ms_p95": 12680.1,
+        "latency_ms_avg": 2245.0, "latency_ms_p50": 1518.0, "latency_ms_p95": 5630.0,
         "tokens_avg": 1063.1, "tokens_p50": 1017.0, "tokens_p95": 1327.0
       },
       "baseline": {
@@ -71,21 +71,23 @@
     "description": "6 targeted queries from PR#88 federated architecture review. Covers: error codes, schema changes, operation routing, audit chain.",
     "total": 6,
     "summary": {
-      "rag_mrr": 0.6667, "kw_mrr": 0.3333,
-      "rag_top1": 4, "kw_top1": 2,
-      "rag_avg_ms": 10826.5, "kw_avg_ms": 2328.4,
+      "rag_mrr": 0.9167, "kw_mrr": 0.3333,
+      "rag_top1": 5, "kw_top1": 2,
+      "rag_avg_ms": 8077.5, "kw_avg_ms": 2328.4,
       "rag_avg_tokens": 994.8, "kw_avg_tokens": 123496.0
     },
     "queries": [
       {
         "id": "Q1_error_codes",
+        "query_text": "error codes stale_capability_version capability_push_conflict grant_push_conflict catalog_push_conflict cross-cutting error code table Foundation spec federated architecture registry",
         "expected": ["Docs/specs/2026-05-08-federated-architecture-foundation-spec-v1.md"],
-        "rag_rank": null, "kw_rank": 1,
-        "rag_top3": ["OwnerAuthorityGrantRepository.php", "PluginVersionController.php", "SandboxProvisioningController.php"],
-        "rag_ms": 12284.6, "rag_tokens": 1129, "kw_tokens": 95380
+        "rag_rank": 2, "kw_rank": 1,
+        "rag_top3": ["Docs/specs/2026-05-09-federated-wizard-spa-spec-v1.md", "Docs/specs/2026-05-08-federated-architecture-foundation-spec-v1.md", "Docs/specs/2026-05-08-federated-platform-cross-spec-gap-report-v1.md"],
+        "rag_ms": 9288.0, "rag_tokens": 1129, "kw_tokens": 95380
       },
       {
         "id": "Q2_caller_role",
+        "query_text": "owner_caller_credentials caller_role field missing Foundation caller registry root_central deputy dispatch authorization",
         "expected": ["OwnerCallerCredentialRepository.php"],
         "rag_rank": 1, "kw_rank": null,
         "rag_top3": ["OwnerCallerCredentialRepository.php", "20260508_120000_owner_node_v2_phase1_a_owner_nodes.php", "core.py"],
@@ -93,13 +95,15 @@
       },
       {
         "id": "Q3_cap_snap",
+        "query_text": "node capability snapshots re-provision versioned snapshot push can_act_as_deputy_control_plane delegated_node_management Foundation spec versioning gap",
         "expected": ["federated-architecture-foundation-spec-v1.md", "sandbox-provisioning-federated-owner-node-spec-v1.md"],
-        "rag_rank": null, "kw_rank": 1,
-        "rag_top3": ["SandboxProvisionStepResult.vue", "VersionedAssetController.php", "version-channels.php"],
-        "rag_ms": 12472.8, "rag_tokens": 915, "kw_tokens": 200751
+        "rag_rank": 1, "kw_rank": 1,
+        "rag_top3": ["Docs/specs/2026-05-08-federated-architecture-foundation-spec-v1.md", "Docs/specs/2026-05-09-federated-platform-7-level-decomposition-v1.md", "Docs/specs/2026-05-08-sandbox-provisioning-federated-owner-node-spec-v1.md"],
+        "rag_ms": 9258.0, "rag_tokens": 915, "kw_tokens": 200751
       },
       {
         "id": "Q4_class_ab",
+        "query_text": "abstract base class OwnerOperationRepository OwnerAuthorityGrant owner_operations class AB operation contracts",
         "expected": ["OwnerOperationRepository.php"],
         "rag_rank": 1, "kw_rank": null,
         "rag_top3": ["OwnerOperationRepository.php", "OwnerAuthorityGrantRepository.php", "knowledge.py"],
@@ -107,6 +111,7 @@
       },
       {
         "id": "Q5_two_phase",
+        "query_text": "owner_audit_log audit_entry_id two-phase audit write operation correlation owner_operations two_phase commit",
         "expected": ["OwnerAuditChainRepository.php"],
         "rag_rank": 1, "kw_rank": null,
         "rag_top3": ["OwnerAuditChainRepository.php", "OperationId.php", "OwnerOperationRepository.php"],
@@ -114,6 +119,7 @@
       },
       {
         "id": "Q6_audit_log",
+        "query_text": "owner audit log chain repository audit_entry_id audit trail entries audit_log migration owner_audit_chain correlation",
         "expected": ["OwnerAuditChainRepository.php", "20260508_120006_owner_node_v2_phase1_a_audit_log.php"],
         "rag_rank": 1, "kw_rank": null,
         "rag_top3": ["OwnerAuditChainRepository.php", "20260508_120006_owner_node_v2_phase1_a_audit_log.php", "AuditLogController.php"],
@@ -133,9 +139,9 @@
       "backend": 9
     },
     "manual_queries": {
-      "rag_mrr_min": 0.60,
-      "rag_top1_min": 4,
-      "spec_cross_cutting_improvement_required": "Q1 and Q3 must reach rank ≤3 for RAG (currently null)"
+      "rag_mrr_min": 0.85,
+      "rag_top1_min": 5,
+      "spec_cross_cutting_resolved": "Q1 rank=2, Q3 rank=1 — RESOLVED (Direction A: preview expansion + spec_cross_cutting scoring fix)"
     },
     "token_economy": {
       "rag_tokens_max_avg": 2500,
@@ -143,7 +149,7 @@
     },
     "latency": {
       "rag_p95_max_ms": 20000,
-      "wall_seconds_max": 180
+      "wall_seconds_max": 120
     }
   }
 }

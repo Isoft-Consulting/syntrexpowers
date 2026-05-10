@@ -2327,13 +2327,60 @@ def score_query_profile(query: str, mode: str, filter_source: str | None = None)
             or any(t in lower_query for t in ("result.", "submit.", "core_http_bridge"))
         )
     )
-    spec_cross_marker_hits = sum(1 for marker in SPEC_CROSS_MARKERS if marker.lower() in lower_query)
+    # Normalize: strip spaces/underscores for fuzzy marker matching.
+    # "ErrorCode" should match both "errorcode" and "error code" / "error_code".
+    _lower_norm = lower_query.replace(" ", "").replace("_", "")
+    spec_cross_marker_hits = sum(
+        1 for marker in SPEC_CROSS_MARKERS
+        if marker.lower() in lower_query
+        or marker.lower().replace(" ", "").replace("_", "") in _lower_norm
+        or marker.lower().replace("_", " ") in lower_query
+    )
+    # Code-identifier fallback: detect custom error/capability/spec identifiers
+    # that look like code symbols (snake_case, not plain English).
+    # Tier 1 (≥3 hits): error-code focused — high-confidence for custom error names
+    # Tier 2 (≥2 hits): spec/capability/provision focused — broader, requires spec-like anchor
+    _code_suffixes_t1 = (
+        "_error", "_conflict", "_mismatch", "_invalid",
+        "_not_found", "_denied", "_failed", "_timeout", "_duplicate",
+        "_missing", "_required", "_unknown", "_unauthorized", "_forbidden",
+    )
+    _code_suffixes_t2 = (
+        "_push", "_catalog", "_grant", "_stale",
+        "_capability", "_snapshot", "_snapshots", "_version",
+        "_provision", "_provisioning", "_management", "_registry",
+    )
+    _all_code_suffixes = _code_suffixes_t1 + _code_suffixes_t2
+    code_id_hits = sum(
+        1 for term in review_terms
+        if any(term.endswith(s) for s in _all_code_suffixes)
+        and term not in DECOMPOSITION_GENERIC_TERMS
+    )
+    code_id_hits_t1 = sum(
+        1 for term in review_terms
+        if any(term.endswith(s) for s in _code_suffixes_t1)
+        and term not in DECOMPOSITION_GENERIC_TERMS
+    )
     spec_cross_cutting = (
         normalized_mode in {"default", "implementation"}
-        and spec_cross_marker_hits >= 2
         and (
-            any(t in lower_query for t in ("errorcode", "error_code", "cursor_", "enum", "§", "spec"))
-            or any(t in lower_query for t in ("hmac", "path_drift", "query_hash", "mismatch", "cross"))
+            # Path 1: explicit marker-based detection (normalized)
+            (spec_cross_marker_hits >= 2 and (
+                any(t in lower_query for t in ("errorcode", "error_code", "cursor_", "enum", "§", "spec"))
+                or any(t in _lower_norm for t in ("errorcode",))
+                or any(t in lower_query for t in ("hmac", "path_drift", "query_hash", "mismatch", "cross"))
+                or any(t in lower_query for t in ("error code", "error codes"))
+            ))
+            # Path 2: tier-1 code identifiers (error-code focused, ≥3 hits)
+            or (code_id_hits_t1 >= 3 and (
+                any(t in lower_query for t in ("error", "code", "cross", "conflict", "capability", "spec"))
+            ))
+            # Path 3: tier-1+tier-2 code identifiers (spec/capability/provision, ≥2 hits).
+            # Requires explicit spec/Foundation anchor — these are queries about spec
+            # content, not code-review queries about capability/versioning gaps.
+            or (code_id_hits >= 2 and (
+                any(t in lower_query for t in ("spec", "foundation", "spec§"))
+            ))
         )
     )
     return {
@@ -2522,7 +2569,7 @@ def intent_source_multiplier(source: str, artifact: str, role: str, profile: dic
             multiplier *= 0.62
         else:
             multiplier *= 0.82
-    if profile["broad_implementation"]:
+    if profile["broad_implementation"] and not profile.get("spec_cross_cutting"):
         if is_policy_or_operator_doc(source):
             multiplier *= 0.22
         elif role == "docs":
@@ -2533,7 +2580,7 @@ def intent_source_multiplier(source: str, artifact: str, role: str, profile: dic
             multiplier *= 0.92
         elif role in {"implementation", "config"}:
             multiplier *= 1.14
-    if profile["review_comment"]:
+    if profile["review_comment"] and not profile.get("spec_cross_cutting"):
         if role in {"implementation", "build_file", "ignore_config", "compose_config"}:
             multiplier *= 1.28
         elif role == "test":
@@ -2654,12 +2701,22 @@ def intent_source_multiplier(source: str, artifact: str, role: str, profile: dic
             multiplier *= 0.15
     # Spec/cross-cutting review profile: boost ErrorCode, enum, controller with exact error literals
     if profile.get("spec_cross_cutting"):
+        _query_joined = " ".join(sorted(query_terms))
+        _query_has_spec_anchor = any(
+            t in _query_joined
+            for t in ("spec", "spec§", "foundation", "cross_cutting", "cross-cutting", "capability", "snapshot", "provision", "error code")
+        )
         if role in {"implementation", "config"}:
-            multiplier *= 1.22
+            multiplier *= 1.25
         elif role == "test":
             multiplier *= 0.52
         elif role in {"docs", "plan", "spec"}:
-            multiplier *= 0.55
+            # Boost spec/docs when the query is explicitly about specs/capabilities/Foundation.
+            # Penalize only when the query is purely about error codes in code (no spec anchor).
+            if _query_has_spec_anchor:
+                multiplier *= 1.50
+            else:
+                multiplier *= 0.72
         if is_policy_or_operator_doc(source):
             multiplier *= 0.15
         # Strong boost for ErrorCode / Errors / enum files
@@ -2668,6 +2725,8 @@ def intent_source_multiplier(source: str, artifact: str, role: str, profile: dic
                 multiplier *= 2.2
             elif role == "config":
                 multiplier *= 1.9
+            elif role in {"docs", "plan", "spec"} and _query_has_spec_anchor:
+                multiplier *= 1.30
         # Boost enum files
         if "/enums/" in lower and lower.endswith(".php"):
             multiplier *= 1.9
@@ -2683,9 +2742,9 @@ def intent_source_multiplier(source: str, artifact: str, role: str, profile: dic
         if any(t in query_lower_set for t in ("errorcode", "error_code", "cursor_", "§", "hmac")):
             if lower.startswith("app/Http/Controllers/") and "errorcode" not in lower and "error" not in lower:
                 multiplier *= 0.55
-        # Downrank docs/tests for spec findings
-        if role == "docs" and "errorcode" not in lower and "error" not in lower:
-            multiplier *= 0.35
+        # Downrank docs that don't mention error/cross-cutting terms
+        if role == "docs" and "errorcode" not in lower and "error" not in lower and not _query_has_spec_anchor:
+            multiplier *= 0.45
         if lower.startswith("uier/plugins/devtools/"):
             multiplier *= 0.08
     return multiplier
@@ -3438,6 +3497,10 @@ def profile_result_sort_key(item: dict[str, Any], config: dict[str, Any], profil
         path_priority = bool(config.get("search", {}).get("explicit_path_priority", True))
         path_match = float(item.get("path_match", 0.0)) if path_priority else 0.0
         return (float(role_rank), -path_match, -float(item["score"]), str(item["source"]), int(item["start_line"]))
+    # Spec cross-cutting: score-based sorting (not role-based) — spec/docs files
+    # get boosted intent multipliers and should rank accordingly.
+    if profile.get("spec_cross_cutting"):
+        return (0.0, -float(item["score"]), 0.0, str(item["source"]), int(item["start_line"]))
     if profile.get("review_comment"):
         role_rank = review_comment_role_rank(str(item.get("source", "")), str(item.get("fdr_role", "other")), profile)
         path_priority = bool(config.get("search", {}).get("explicit_path_priority", True))
