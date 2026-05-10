@@ -105,7 +105,8 @@ def evaluate_case_rows(
     details: list[dict[str, Any]] = []
     for case in cases:
         expected = [str(item) for item in case["expected_sources"]]
-        rag_results = search_index(root, config_path, str(case["query"]), top_k=top_k, mode=mode)
+        case_mode = str(case.get("mode") or mode)
+        rag_results = search_index(root, config_path, str(case["query"]), top_k=top_k, mode=case_mode)
         rag_sources = [str(item["source"]) for item in rag_results]
         baseline_sources = keyword_baseline(baseline_corpus, str(case["query"]), top_k=top_k) if include_baseline else []
         rag_rank = hit_rank(rag_sources, expected)
@@ -118,6 +119,7 @@ def evaluate_case_rows(
                 {
                     "id": case.get("id"),
                     "query": case["query"],
+                    "mode": case_mode,
                     "expected_sources": expected,
                     "rag_rank": rag_rank,
                     "baseline_rank": baseline_rank,
@@ -438,6 +440,22 @@ def unique_ordered(items: list[str]) -> list[str]:
     return out
 
 
+def generated_query_source_anchor(source: str) -> list[str]:
+    if not source:
+        return []
+    basename = Path(source).name.lower()
+    if (
+        source.startswith(".mcp/")
+        or source.startswith(".github/")
+        or source.startswith("Docs/")
+        or "/schemas/" in source
+        or "/examples/" in source
+        or basename in {"readme.md", "spec.md", "requirements.txt", "run-tests.sh"}
+    ):
+        return [source]
+    return []
+
+
 def generated_query_terms(chunk: dict[str, Any], stopwords: set[str]) -> list[str]:
     source = str(chunk.get("source", ""))
     heading = str(chunk.get("heading", ""))
@@ -446,7 +464,7 @@ def generated_query_terms(chunk: dict[str, Any], stopwords: set[str]) -> list[st
     heading_terms = [term for term in tokenize(heading) if len(term) > 2]
     counts = Counter(term for term in tokenize(text) if len(term) > 2 and term not in stopwords and not term.isdigit())
     common_terms = [term for term, _ in counts.most_common(12)]
-    return unique_ordered(path_terms[-4:] + heading_terms[:6] + common_terms)
+    return unique_ordered(generated_query_source_anchor(source) + path_terms[-4:] + heading_terms[:6] + common_terms)
 
 
 def generate_quality_cases(

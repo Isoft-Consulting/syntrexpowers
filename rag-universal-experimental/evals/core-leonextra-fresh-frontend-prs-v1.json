@@ -4,6 +4,7 @@
     "pr": 77,
     "author": "leonextra",
     "kind": "review",
+    "mode": "frontend",
     "query": "project scoped Automation Builder still calls nonexistent UIer route /v1/internal/core/projects/{projectId}/automations and project facade paths get 404 denied",
     "expected_sources": [
       "uier-spa/src/api/visual-studio-automations.ts",
@@ -15,6 +16,7 @@
     "pr": 77,
     "author": "leonextra",
     "kind": "review",
+    "mode": "frontend",
     "query": "Entity Builder can show data for the wrong entity after fast switching because stale response from entity A overwrites selection B",
     "expected_sources": [
       "uier-spa/src/stores/visual-studio/entity-builder.ts",
@@ -26,6 +28,7 @@
     "pr": 77,
     "author": "leonextra",
     "kind": "review",
+    "mode": "frontend",
     "query": "Entity Builder shows unsaved changes confirm after already persisted CRUD operations because persisted mutations still mark dirty",
     "expected_sources": [
       "uier-spa/src/views/visual-studio/EntityBuilderView.vue",
@@ -37,6 +40,7 @@
     "pr": 77,
     "author": "leonextra",
     "kind": "review",
+    "mode": "frontend",
     "query": "project scoped Automation Builder can still show sandbox wide run evidence because loadRuns and automation runs API ignore project_id",
     "expected_sources": [
       "uier-spa/src/views/visual-studio/AutomationBuilderView.vue",
@@ -51,6 +55,7 @@
     "pr": 77,
     "author": "leonextra",
     "kind": "review",
+    "mode": "frontend",
     "query": "same type relation automatically enabled record self link and createRelationType should save allow_self_link 0 by default",
     "expected_sources": [
       "uier-spa/src/views/visual-studio/EntityBuilderView.vue",
@@ -63,6 +68,7 @@
     "pr": 81,
     "author": "leonextra",
     "kind": "review",
+    "mode": "frontend",
     "query": "dashboard to dashboard SPA navigation reuses widget ids and stale response race accepts previous dashboard data for summary stats table widgets",
     "expected_sources": [
       "uier-spa/src/components/schema/SchemaDashboard.vue"
@@ -73,6 +79,7 @@
     "pr": 83,
     "author": "leonextra",
     "kind": "review",
+    "mode": "frontend",
     "query": "repair AI normalization mixes explicit attributes with flat keys and can mask full attributes replace risk instead of safe attributes_merge",
     "expected_sources": [
       "uier-spa/src/api/visual-studio-assistant.ts",
@@ -87,6 +94,7 @@
     "pr": 83,
     "author": "leonextra",
     "kind": "review",
+    "mode": "frontend",
     "query": "local CAS validation warns for core.update but misses canonical target.call entity_operation update with expected_source_revision and later conflict handler",
     "expected_sources": [
       "uier-spa/src/api/visual-studio-assistant.ts",

@@ -48,7 +48,9 @@ from rag_universal.core import (
     watch_index,
 )
 from rag_universal.eval_quality import benchmark_quality
+from rag_universal.eval_quality import evaluate_case_rows
 from rag_universal.eval_quality import evaluate_quality
+from rag_universal.eval_quality import generated_query_terms
 from rag_universal.eval_quality import quality_check
 from rag_universal.eval_quality import resolve_benchmark_profile
 from rag_universal.knowledge import build_project_knowledge
@@ -988,6 +990,27 @@ class RagUniversalTest(unittest.TestCase):
         self.assertTrue(results[0]["source"].startswith(".mcp/rag-server/"))
         self.assertNotEqual(results[0]["source"], "AGENTS.md")
 
+    def test_non_rag_frontend_review_query_penalizes_local_rag_fixtures(self) -> None:
+        profile = score_query_profile(
+            "dashboard to dashboard SPA navigation reuses widget ids and stale response race accepts previous dashboard data",
+            "frontend",
+        )
+        rag_fixture_multiplier = intent_source_multiplier(
+            ".mcp/rag-server/tests/test_rag_universal.py",
+            "python_file",
+            "implementation",
+            profile,
+        )
+        schema_dashboard_multiplier = intent_source_multiplier(
+            "uier-spa/src/components/schema/SchemaDashboard.vue",
+            "vue_file",
+            "implementation",
+            profile,
+        )
+
+        self.assertLess(rag_fixture_multiplier, 0.1)
+        self.assertGreater(schema_dashboard_multiplier, 1.0)
+
     def test_knowledge_mode_prefers_curated_knowledge_pack(self) -> None:
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -1398,6 +1421,36 @@ class RagUniversalTest(unittest.TestCase):
         self.assertIsNone(rag_only["summary"]["baseline"])
         self.assertEqual(rag_only["cases"], [])
 
+    def test_evaluate_case_rows_uses_case_specific_mode(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        cases = [
+            {
+                "id": "frontend-widget-race",
+                "query": "dashboard widget stale response race",
+                "mode": "frontend",
+                "expected_sources": ["uier-spa/src/components/schema/SchemaDashboard.vue"],
+            }
+        ]
+
+        def fake_search(
+            _root: Path,
+            _config_path: str | Path | None,
+            _query: str,
+            top_k: int = 10,
+            mode: str = "default",
+        ) -> list[dict[str, object]]:
+            if mode == "frontend":
+                return [{"source": "uier-spa/src/components/schema/SchemaDashboard.vue"}]
+            return [{"source": "Docs/README.md"}]
+
+        with mock.patch("rag_universal.eval_quality.search_index", side_effect=fake_search):
+            report = evaluate_case_rows(root, None, cases, [], include_baseline=False)
+
+        self.assertEqual(report["summary"]["rag"]["top1"], 1)
+        self.assertEqual(report["cases"][0]["mode"], "frontend")
+
     def test_benchmark_quality_reports_latency_and_token_metrics(self) -> None:
         root = self.make_project()
         build_index(root)
@@ -1574,6 +1627,36 @@ class RagUniversalTest(unittest.TestCase):
         payload = json.loads(cli.stdout)
         self.assertEqual(payload["health"]["cases"], 3)
         self.assertEqual(payload["cases"], [])
+
+    def test_generated_query_terms_anchor_ambiguous_support_artifacts(self) -> None:
+        rag_readme = generated_query_terms(
+            {
+                "source": ".mcp/rag-server/README.md",
+                "heading": "Universal RAG Experimental",
+                "text": "Reusable local RAG toolkit with quality checks and MCP server.",
+            },
+            set(),
+        )
+        docs_readme = generated_query_terms(
+            {
+                "source": "Docs/README.md",
+                "heading": "Project documentation",
+                "text": "Documentation overview and generated indexes.",
+            },
+            set(),
+        )
+        app_code = generated_query_terms(
+            {
+                "source": "app/Services/SearchPlanner.php",
+                "heading": "SearchPlanner",
+                "text": "Search planner builds weighted query candidates for application code.",
+            },
+            set(),
+        )
+
+        self.assertEqual(rag_readme[0], ".mcp/rag-server/README.md")
+        self.assertEqual(docs_readme[0], "Docs/README.md")
+        self.assertNotEqual(app_code[0], "app/Services/SearchPlanner.php")
 
     def test_cyrillic_query_expansion(self) -> None:
         temp = tempfile.TemporaryDirectory()

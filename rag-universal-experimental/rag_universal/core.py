@@ -2530,6 +2530,11 @@ def intent_source_multiplier(source: str, artifact: str, role: str, profile: dic
     review_terms = {str(term).lower() for term in profile.get("review_terms", [])}
     if profile["filter_source"] and profile["filter_source"] in source:
         multiplier *= 1.35
+    # The local RAG server can be force-included for self-debugging, but its
+    # tests/evals contain real review prompts. Keep those fixtures from
+    # polluting normal project searches unless the query is explicitly about RAG.
+    if is_local_rag_source(source) and not profile["self_rag"]:
+        multiplier *= 0.04
     if profile["self_rag"]:
         if is_local_rag_source(source):
             multiplier *= 2.4
