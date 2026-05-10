@@ -2397,6 +2397,45 @@ HUMAN_TASK_FOCUS_TERMS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+BEHAVIORAL_DEPLOY_REVIEW_TERMS = {
+    "break",
+    "broken",
+    "drop",
+    "drops",
+    "fail",
+    "fails",
+    "failure",
+    "invalid",
+    "lack",
+    "lacks",
+    "lose",
+    "loses",
+    "lost",
+    "missing",
+    "never",
+    "overwrite",
+    "overwrites",
+    "preserve",
+    "preserved",
+    "regenerate",
+    "regeneration",
+    "reject",
+    "skip",
+    "skips",
+    "wrong",
+}
+
+DEPLOY_IMPLEMENTATION_SOURCE_ANCHORS = (
+    "/controlplane/",
+    "controller",
+    "dispatcher",
+    "generator",
+    "nodeprovisioner",
+    "nodeupdater",
+    "provisioner",
+    "updater",
+)
+
 DECOMPOSITION_GENERIC_TERMS = {
     "already",
     "because",
@@ -2434,6 +2473,15 @@ DECOMPOSITION_GENERIC_TERMS = {
     "summary",
     "update",
 }
+
+
+def is_behavioral_deploy_query(profile: dict[str, Any]) -> bool:
+    intents = set(str(intent) for intent in profile.get("human_intents", []))
+    if "deploy_runtime" not in intents:
+        return False
+    query_terms = {str(term).lower() for term in profile.get("query_terms", set())}
+    review_terms = {str(term).lower() for term in profile.get("review_terms", [])}
+    return bool(review_terms) and bool(query_terms & BEHAVIORAL_DEPLOY_REVIEW_TERMS)
 
 
 def extract_review_comment_terms(query: str) -> list[str]:
@@ -3006,6 +3054,13 @@ def intent_source_multiplier(source: str, artifact: str, role: str, profile: dic
                 multiplier *= 1.20
 
         if "deploy_runtime" in intents:
+            if is_behavioral_deploy_query(profile):
+                if role == "implementation":
+                    multiplier *= 1.70
+                if any(anchor in lower for anchor in DEPLOY_IMPLEMENTATION_SOURCE_ANCHORS):
+                    multiplier *= 1.35
+                if role == "compose_config" and "docker-compose" in lower:
+                    multiplier *= 0.48
             if lower.startswith(("deploy/", "bin/")) or "/systemd/" in lower:
                 multiplier *= 1.40
             if Path(source).name.lower().startswith("dockerfile") or "docker-compose" in lower or lower.endswith((".sh", ".service")):
@@ -4430,10 +4485,14 @@ def allow_frontend_high_confidence_result(result: dict[str, Any], profile: dict[
 
 def read_plan_role_rank(result: dict[str, Any], profile: dict[str, Any]) -> int:
     chunk_role_label = str(result.get("chunk_role", "implementation")).lower()
+    fdr_role_label = str(result.get("fdr_role", "other")).lower()
     source = str(result.get("source", "")).lower()
     query_terms = {str(term).lower() for term in profile.get("query_terms", set())}
     review_terms = {str(term).lower() for term in profile.get("review_terms", [])}
     mode = str(profile.get("mode", "")).lower()
+
+    if profile.get("self_rag_code_intent"):
+        return self_rag_role_rank(source, str(result.get("fdr_role", "other")), profile)
 
     if profile.get("human_task"):
         intents = set(str(intent) for intent in profile.get("human_intents", []))
@@ -4456,7 +4515,10 @@ def read_plan_role_rank(result: dict[str, Any], profile: dict[str, Any]) -> int:
         elif "frontend_state" in intents:
             priorities = ["api_client", "store", "component", "controller", "workflow", "config", "repository"]
         elif "deploy_runtime" in intents:
-            priorities = ["build_file", "compose_config", "implementation", "config", "ignore_config", "docs"]
+            if is_behavioral_deploy_query(profile):
+                priorities = ["implementation", "build_file", "compose_config", "config", "ignore_config", "docs"]
+            else:
+                priorities = ["build_file", "compose_config", "implementation", "config", "ignore_config", "docs"]
         else:
             priorities = ["controller", "repository", "config", "api_client", "store", "component", "workflow", "migration", "sql"]
     elif mode == "frontend":
@@ -4481,8 +4543,9 @@ def read_plan_role_rank(result: dict[str, Any], profile: dict[str, Any]) -> int:
             priorities = ["repository", "controller", "migration", "workflow", "sql"]
         else:
             priorities = ["repository", "controller", "workflow", "migration", "sql"]
+    prioritized_role = fdr_role_label if fdr_role_label in priorities else chunk_role_label
     try:
-        return priorities.index(chunk_role_label)
+        return priorities.index(prioritized_role)
     except ValueError:
         return len(priorities) + 2
 

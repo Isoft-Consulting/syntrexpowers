@@ -918,6 +918,56 @@ class RagUniversalTest(unittest.TestCase):
         plan = build_read_plan(results, mode="implementation", profile=profile)
         self.assertEqual(plan["items"][0]["chunk_role"], "repository")
 
+    def test_behavioral_deploy_task_prefers_runtime_implementation_over_compose_file(self) -> None:
+        query = (
+            "uploadComposeUpdate loses compose_override clickhouse_s3_mode bootstrap profiles "
+            "and first rollout can overwrite runtime topology"
+        )
+        profile = score_query_profile(query, "implementation", None)
+        implementation_boost = intent_source_multiplier(
+            "app/Domain/ControlPlane/NodeUpdater.php",
+            "php_file",
+            "implementation",
+            profile,
+        )
+        compose_boost = intent_source_multiplier(
+            "docker-compose.override.yml",
+            "yaml_config",
+            "compose_config",
+            profile,
+        )
+        results = [
+            {
+                "source": "docker-compose.override.yml",
+                "read_hint": "docker-compose.override.yml:1 [implementation]",
+                "fdr_role": "compose_config",
+                "chunk_role": "implementation",
+                "section": "docker-compose.override.yml",
+                "document_status": "normal",
+                "score": 0.90,
+                "start_line": 1,
+                "heading": "docker-compose.override.yml",
+            },
+            {
+                "source": "app/Domain/ControlPlane/NodeUpdater.php",
+                "read_hint": "app/Domain/ControlPlane/NodeUpdater.php:361 [implementation]",
+                "fdr_role": "implementation",
+                "chunk_role": "implementation",
+                "section": "NodeUpdater.php",
+                "document_status": "normal",
+                "score": 0.60,
+                "start_line": 361,
+                "heading": "NodeUpdater.php",
+            },
+        ]
+
+        plan = build_read_plan(results, mode="implementation", profile=profile)
+
+        self.assertTrue(profile["human_task"])
+        self.assertIn("deploy_runtime", profile["human_intents"])
+        self.assertGreater(implementation_boost, compose_boost)
+        self.assertEqual(plan["items"][0]["source"], "app/Domain/ControlPlane/NodeUpdater.php")
+
     def test_section_anchor_multiplier_prefers_preview_with_exact_anchor(self) -> None:
         profile = {
             "mode": "frontend",
@@ -1125,6 +1175,40 @@ class RagUniversalTest(unittest.TestCase):
         payload = search_index_with_plan(root, None, "chunking overlap read plan budget", top_k=4, mode="implementation")
         self.assertTrue(payload["results"][0]["source"].startswith(".mcp/rag-server/rag_universal/"))
         self.assertTrue(payload["read_plan"]["items"][0]["source"].startswith(".mcp/rag-server/rag_universal/"))
+
+    def test_self_rag_read_plan_does_not_promote_low_score_entrypoint_over_runtime(self) -> None:
+        profile = score_query_profile("RAG search ranking read plan quality", "implementation", None)
+        results = [
+            {
+                "source": ".mcp/rag-server/tools/rag.py",
+                "read_hint": ".mcp/rag-server/tools/rag.py:1 [sql]",
+                "fdr_role": "implementation",
+                "chunk_role": "sql",
+                "section": "rag.py",
+                "document_status": "normal",
+                "score": 0.25,
+                "start_line": 1,
+                "heading": "rag.py",
+            },
+            {
+                "source": ".mcp/rag-server/rag_universal/core.py",
+                "read_hint": ".mcp/rag-server/rag_universal/core.py:4438 [implementation]",
+                "fdr_role": "implementation",
+                "chunk_role": "implementation",
+                "section": "core.py",
+                "document_status": "normal",
+                "score": 2.0,
+                "start_line": 4438,
+                "heading": "core.py",
+            },
+        ]
+
+        plan = build_read_plan(results, mode="implementation", profile=profile)
+
+        self.assertTrue(profile["self_rag_code_intent"])
+        self.assertEqual(plan["items"][0]["source"], ".mcp/rag-server/rag_universal/core.py")
+        self.assertEqual(plan["confidence"]["top_score"], 2.0)
+        self.assertGreaterEqual(plan["confidence"]["gap"], 0.0)
 
     def test_review_comment_query_prefers_shell_script_over_plan_noise(self) -> None:
         temp = tempfile.TemporaryDirectory()
