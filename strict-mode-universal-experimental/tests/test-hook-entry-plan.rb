@@ -252,6 +252,21 @@ run_case do
 end
 
 run_case do
+  name = "validation rejects unquoted managed hook command paths for claude"
+  entry = entry_for("claude", "stop", output_contract_id: "claude.stop.block", enforcing: true)
+  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 STRICT_STATE_ROOT=/tmp/strict-state STRICT_ENFORCING_HOOK=1 STRICT_OUTPUT_CONTRACT_ID=claude.stop.block /tmp/strict-root/active/bin/strict-hook --provider claude stop"
+  entry["removal_selector"] = StrictModeHookEntryPlan.removal_selector_for(entry)
+  errors = StrictModeHookEntryPlan.validate(
+    [entry],
+    selected_output_contracts: [selected_output("claude", "stop", "claude.stop.block")],
+    enforce: true,
+    install_root: "/tmp/strict-root",
+    state_root: "/tmp/strict-state"
+  )
+  assert(name, errors.any? { |error| error.include?("command must be STRICT_HOOK_TIMEOUT_MS") }, "missing unquoted command shape diagnostic", errors.join("\n"))
+end
+
+run_case do
   name = "validation rejects enforcing hook with wrong output contract id"
   selected = [
     selected_output("codex", "pre-tool-use", "codex.pre.block"),

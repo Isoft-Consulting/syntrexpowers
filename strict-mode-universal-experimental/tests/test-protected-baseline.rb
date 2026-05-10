@@ -149,6 +149,19 @@ with_install(provider: "codex") do |_root, home, install_root, _state_root, proj
   assert(name, loaded.fetch("errors").any? { |message| message.include?("content_sha256 mismatch") }, "missing Codex stable content diagnostic", loaded.fetch("errors").join("\n"))
 end
 
+with_install(provider: "claude") do |_root, home, install_root, _state_root, project|
+  name = "claude settings.json content drift makes protected baseline untrusted"
+  settings = home.join(".claude/settings.json")
+  parsed = JSON.parse(settings.read)
+  parsed["theme"] = "tampered-theme-value"
+  atomic_rewrite(settings, JSON.pretty_generate(parsed) + "\n")
+
+  loaded = StrictModeProtectedBaseline.load(install_root: install_root, project_dir: project, home: home)
+  assert(name, !loaded.fetch("trusted"), "Claude settings.json drift must invalidate trust — Claude has no mutable trust-state carrier analog to Codex [hooks.state]")
+  assert(name, loaded.fetch("errors").any? { |message| message.include?("content_sha256 mismatch") }, "missing Claude content hash diagnostic", loaded.fetch("errors").join("\n"))
+  assert(name, !loaded.fetch("protected_inodes").any? { |entry| entry.fetch("path") == settings.to_s && entry["mutable_provider_state"] == true }, "Claude settings.json must not carry mutable_provider_state flag")
+end
+
 custom_config = lambda do |_root, _home, install_root, project|
   config_root = install_root.join("config")
   protected_tree = project.join("protected-tree")

@@ -88,6 +88,33 @@ end
 assert(name, stderr.empty?, "expected no stderr", stderr)
 
 $cases += 1
+name = "claude fixture-gated judge response binds reviewed scope and artifact hashes"
+claude_scope_hash = "3" * 64
+claude_artifact_hash = "4" * 64
+stdout, stderr, status = run_judge("--provider", "claude", "--reviewed-scope-digest", claude_scope_hash, "--reviewed-artifact-hash", claude_artifact_hash)
+assert(name, status.exitstatus == 0, "expected successful fixture-gated response, got #{status.exitstatus}", stdout + stderr)
+record = parse_json(name, stdout)
+unless record.empty?
+  assert_unknown_response(name, record, backend: "claude", model: "claude-haiku-4-5-20251001", reviewed_scope_digest: claude_scope_hash, reviewed_artifact_hash: claude_artifact_hash)
+  assert_canonical_stdout(name, stdout, record)
+end
+assert(name, stderr.empty?, "expected no stderr", stderr)
+
+$cases += 1
+name = "invalid reviewed hash exits as usage error for claude"
+stdout, stderr, status = run_judge("--provider", "claude", "--reviewed-scope-digest", "ABC")
+assert(name, status.exitstatus == 2, "expected usage failure, got #{status.exitstatus}", stdout + stderr)
+assert(name, stdout.empty?, "usage failure should not emit JSON", stdout)
+assert(name, stderr.include?("--reviewed-scope-digest must be a lowercase SHA-256 hash"), "missing hash diagnostic", stderr)
+
+$cases += 1
+name = "unexpected positional arguments exit as usage error for claude"
+stdout, stderr, status = run_judge("--provider", "claude", "extra")
+assert(name, status.exitstatus == 2, "expected usage failure, got #{status.exitstatus}", stdout + stderr)
+assert(name, stdout.empty?, "usage failure should not emit JSON", stdout)
+assert(name, stderr.include?("unexpected positional arguments"), "missing positional-argument diagnostic", stderr)
+
+$cases += 1
 name = "missing provider returns schema-shaped unknown with nonzero status"
 stdout, _stderr, status = run_judge
 assert(name, status.exitstatus == 1, "expected missing provider to exit 1, got #{status.exitstatus}", stdout)
