@@ -108,6 +108,7 @@
     "candidate_limit": 5000,
     "max_query_terms": 96,
     "explicit_path_boost": 0.75,
+    "exact_filename_boost": 1.05,
     "explicit_path_priority": true,
     "query_stopwords": [
       "and",

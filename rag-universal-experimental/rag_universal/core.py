@@ -22,7 +22,7 @@ SOURCE_STATE_VERSION = "rag.source-state.v1"
 SEARCH_CACHE_VERSION = "rag.search-cache.v1"
 CHUNKER_VERSION = "lexical-chunker.v1"
 TOKENIZER_VERSION = "unicode-tokenizer.v1"
-SEARCH_VERSION = "hash-vector-bm25.v16"
+SEARCH_VERSION = "hash-vector-bm25.v18"
 
 _SEARCH_CACHE_CONNECTIONS: dict[tuple[str, float, int, str], sqlite3.Connection] = {}
 _LEXICON_CACHE: dict[tuple[str, float, int], dict[str, Any]] = {}
@@ -233,6 +233,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "candidate_limit": 5000,
         "max_query_terms": 96,
         "explicit_path_boost": 0.75,
+        "exact_filename_boost": 1.05,
         "explicit_path_priority": True,
         "query_stopwords": [
             "and",
@@ -2819,8 +2820,24 @@ def assess_read_plan_confidence(results: list[dict[str, Any]], profile: dict[str
     top_role = str(top.get("fdr_role", "other"))
     second = next((item for item in ranked[1:] if str(item.get("source", "")) != top_source), None)
     second_score = float(second.get("score", 0.0)) if second is not None else 0.0
+    top_path_match = float(top.get("path_match", 0.0))
+    second_path_match = float(second.get("path_match", 0.0)) if second is not None else 0.0
+    top_filename_match = float(top.get("filename_match", 0.0))
+    second_filename_match = float(second.get("filename_match", 0.0)) if second is not None else 0.0
     gap = top_score - second_score
     ratio = (second_score / top_score) if top_score > 0 else 1.0
+
+    if top_path_match > 0.0:
+        exact_gap = top_path_match - second_path_match
+        level = "high" if second is None or exact_gap >= 0.08 else "medium"
+        recommended = 1 if level == "high" else 2
+        return {"level": level, "recommended_limit": recommended, "top_score": round(top_score, 6), "gap": round(gap, 6)}
+
+    if top_filename_match > 0.0:
+        exact_gap = top_filename_match - second_filename_match
+        level = "high" if second is None or exact_gap >= 0.08 else "medium"
+        recommended = 1 if level == "high" else 2
+        return {"level": level, "recommended_limit": recommended, "top_score": round(top_score, 6), "gap": round(gap, 6)}
 
     high_confidence = (
         top_score >= 1.2
@@ -3592,11 +3609,17 @@ def fuse_ranked_results(result_sets: list[list[dict[str, Any]]]) -> list[dict[st
             current["_fusion_hits"] = int(current.get("_fusion_hits", 0)) + 1
             best_score = max(float(current.get("_fusion_best_score", 0.0)), float(item.get("score", 0.0)))
             current["_fusion_best_score"] = best_score
+            current["path_match"] = max(float(current.get("path_match", 0.0)), float(item.get("path_match", 0.0)))
+            current["filename_match"] = max(float(current.get("filename_match", 0.0)), float(item.get("filename_match", 0.0)))
+            current["lexicon_match"] = max(float(current.get("lexicon_match", 0.0)), float(item.get("lexicon_match", 0.0)))
             if float(item.get("score", 0.0)) > float(current.get("score", 0.0)):
                 preserved = {
                     "_fusion_rrf": current["_fusion_rrf"],
                     "_fusion_hits": current["_fusion_hits"],
                     "_fusion_best_score": current["_fusion_best_score"],
+                    "path_match": current["path_match"],
+                    "filename_match": current["filename_match"],
+                    "lexicon_match": current["lexicon_match"],
                 }
                 current.clear()
                 current.update(item)
@@ -3757,6 +3780,13 @@ PATH_QUERY_RE = re.compile(
     r"|(?<![A-Za-z0-9_./-])(?:Dockerfile(?:\\.[A-Za-z0-9_.-]+)?|docker-compose\\.(?:ya?ml)|\\.dockerignore)(?![A-Za-z0-9_./-])"
     r"|(?<!\\S)\\.[A-Za-z0-9_.-]+"
 )
+FILENAME_TOKEN_RE = re.compile(
+    r"(?<![A-Za-z0-9_./-])"
+    r"[A-Za-z0-9_.-]+\\.(?:php|vue|tsx?|jsx?|ya?ml|json|md|py|sh|css|scss|sql|xml|html|service)"
+    r"(?![A-Za-z0-9_./-])",
+    re.IGNORECASE,
+)
+CAMEL_FILENAME_ANCHOR_RE = re.compile(r"\b[A-Z][A-Za-z0-9]+(?:[A-Z][A-Za-z0-9]+)+\b")
 
 
 def extract_query_paths(query: str) -> list[str]:
@@ -3784,6 +3814,46 @@ def extract_query_paths(query: str) -> list[str]:
             paths.append(normalized)
             seen.add(normalized)
     return paths
+
+
+def extract_query_filename_anchors(query: str, profile: dict[str, Any] | None = None) -> list[str]:
+    active_profile = profile or score_query_profile(query, "default", None)
+    anchors: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw: str) -> None:
+        candidate = raw.strip("`'\"()[]{}:,;")
+        while len(candidate) > 1 and candidate[-1] in ".,;:":
+            candidate = candidate[:-1]
+        if not candidate:
+            return
+        name = Path(candidate).name
+        if not name:
+            return
+        normalized = name.lower()
+        if len(normalized) < 4 or normalized in seen:
+            return
+        anchors.append(normalized)
+        seen.add(normalized)
+
+    for path in active_profile.get("explicit_paths", []):
+        name = Path(str(path)).name
+        add(name)
+        if Path(name).suffix:
+            add(Path(name).stem)
+
+    for match in FILENAME_TOKEN_RE.finditer(query):
+        name = match.group(0)
+        add(name)
+        add(Path(name).stem)
+
+    for match in CAMEL_FILENAME_ANCHOR_RE.finditer(query):
+        name = match.group(0)
+        # Avoid treating all-caps acronyms such as RAG/MCP/SPA as filenames.
+        if any(char.islower() for char in name) and any(char.isupper() for char in name[1:]):
+            add(name)
+
+    return anchors[:16]
 
 
 def escape_like(value: str) -> str:
@@ -3820,6 +3890,91 @@ def cached_path_candidates(
     if cached is not None:
         return cached
     matches = fetch_path_candidates(connection, query_paths)
+    cache[key] = matches
+    return matches
+
+
+def filename_anchor_match_score(source: str, anchors: list[str]) -> float:
+    name = Path(source).name.lower()
+    suffix = Path(name).suffix.lower()
+    stem = Path(name).stem.lower() if suffix else name
+    best = 0.0
+    for order, anchor in enumerate(anchors):
+        base = max(0.72, 1.0 - order * 0.035)
+        anchor_name = Path(anchor).name.lower()
+        anchor_suffix = Path(anchor_name).suffix.lower()
+        anchor_stem = Path(anchor_name).stem.lower() if anchor_suffix else anchor_name
+        if anchor_suffix:
+            if name == anchor_name:
+                best = max(best, base)
+            elif stem == anchor_stem:
+                best = max(best, base * 0.94)
+        elif stem == anchor_name or name == anchor_name:
+            best = max(best, base)
+    return best
+
+
+def fetch_filename_candidates(connection: sqlite3.Connection, anchors: list[str]) -> dict[int, float]:
+    matches: dict[int, float] = {}
+    if not anchors:
+        return matches
+    source_scores: dict[str, float] = {}
+    for anchor in anchors[:12]:
+        anchor_name = Path(anchor).name.lower()
+        if not anchor_name:
+            continue
+        anchor_suffix = Path(anchor_name).suffix.lower()
+        terms = [anchor_name]
+        if anchor_suffix:
+            terms.append(Path(anchor_name).stem.lower())
+        placeholders = ",".join("?" for _ in terms)
+        try:
+            rows = connection.execute(
+                f"SELECT source FROM lexicon WHERE term IN ({placeholders}) ORDER BY source LIMIT 96",
+                tuple(terms),
+            ).fetchall()
+        except sqlite3.DatabaseError:
+            return {}
+        for row in rows:
+            source = str(row["source"])
+            score = filename_anchor_match_score(source, anchors)
+            if score > 0.0:
+                source_scores[source] = max(source_scores.get(source, 0.0), score)
+    if not source_scores:
+        return matches
+    ordered_sources = sorted(source_scores, key=lambda item: (-source_scores[item], item))[:96]
+    for offset in range(0, len(ordered_sources), 64):
+        batch = ordered_sources[offset : offset + 64]
+        placeholders = ",".join("?" for _ in batch)
+        try:
+            rows = connection.execute(
+                f"SELECT MIN(id) AS id, source FROM docs WHERE source IN ({placeholders}) GROUP BY source",
+                tuple(batch),
+            ).fetchall()
+        except sqlite3.DatabaseError:
+            return {}
+        for row in rows:
+            doc_id = int(row["id"])
+            source = str(row["source"])
+            matches[doc_id] = max(matches.get(doc_id, 0.0), source_scores.get(source, 0.0))
+    return matches
+
+
+def cached_filename_candidates(
+    connection: sqlite3.Connection,
+    query: str,
+    profile: dict[str, Any] | None = None,
+    cache: dict[tuple[str, tuple[str, ...]], dict[int, float]] | None = None,
+) -> dict[int, float]:
+    active_profile = profile or score_query_profile(query, "default", None)
+    anchors = extract_query_filename_anchors(query, active_profile)
+    key = (str(query), tuple(anchors))
+    if cache is None:
+        return fetch_filename_candidates(connection, anchors)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    matches = fetch_filename_candidates(connection, anchors)
     cache[key] = matches
     return matches
 
@@ -3918,10 +4073,11 @@ def cached_lexicon_candidates(
     return matches
 
 
-def search_sort_key(item: dict[str, Any], config: dict[str, Any]) -> tuple[float, float, str, int]:
+def search_sort_key(item: dict[str, Any], config: dict[str, Any]) -> tuple[float, float, float, str, int]:
     path_priority = bool(config.get("search", {}).get("explicit_path_priority", True))
     path_match = float(item.get("path_match", 0.0)) if path_priority else 0.0
-    return (-path_match, -float(item["score"]), str(item["source"]), int(item["start_line"]))
+    filename_match = float(item.get("filename_match", 0.0)) if path_priority else 0.0
+    return (-path_match, -filename_match, -float(item["score"]), str(item["source"]), int(item["start_line"]))
 
 
 def self_rag_role_rank(source: str, role: str, profile: dict[str, Any]) -> int:
@@ -3990,21 +4146,20 @@ def review_comment_role_rank(source: str, role: str, profile: dict[str, Any]) ->
     return 6
 
 
-def profile_result_sort_key(item: dict[str, Any], config: dict[str, Any], profile: dict[str, Any]) -> tuple[float, float, float, str, int]:
+def profile_result_sort_key(item: dict[str, Any], config: dict[str, Any], profile: dict[str, Any]) -> tuple[Any, ...]:
+    path_priority = bool(config.get("search", {}).get("explicit_path_priority", True))
+    path_match = float(item.get("path_match", 0.0)) if path_priority else 0.0
+    filename_match = float(item.get("filename_match", 0.0)) if path_priority else 0.0
     if profile.get("self_rag_code_intent"):
         role_rank = self_rag_role_rank(str(item.get("source", "")), str(item.get("fdr_role", "other")), profile)
-        path_priority = bool(config.get("search", {}).get("explicit_path_priority", True))
-        path_match = float(item.get("path_match", 0.0)) if path_priority else 0.0
-        return (float(role_rank), -path_match, -float(item["score"]), str(item["source"]), int(item["start_line"]))
+        return (-path_match, -filename_match, float(role_rank), -float(item["score"]), str(item["source"]), int(item["start_line"]))
     # Spec cross-cutting: score-based sorting (not role-based) — spec/docs files
     # get boosted intent multipliers and should rank accordingly.
     if profile.get("spec_cross_cutting"):
-        return (0.0, -float(item["score"]), 0.0, str(item["source"]), int(item["start_line"]))
+        return (-path_match, -filename_match, 0.0, -float(item["score"]), str(item["source"]), int(item["start_line"]))
     if profile.get("review_comment"):
         role_rank = review_comment_role_rank(str(item.get("source", "")), str(item.get("fdr_role", "other")), profile)
-        path_priority = bool(config.get("search", {}).get("explicit_path_priority", True))
-        path_match = float(item.get("path_match", 0.0)) if path_priority else 0.0
-        return (float(role_rank), -path_match, -float(item["score"]), str(item["source"]), int(item["start_line"]))
+        return (-path_match, -filename_match, float(role_rank), -float(item["score"]), str(item["source"]), int(item["start_line"]))
     default_key = search_sort_key(item, config)
     return (0.0, *default_key)
 
@@ -4150,6 +4305,7 @@ def search_precomputed_cache_once(
     candidate_limit_override: int | None = None,
     bm25_token_cache: dict[str, list[sqlite3.Row]] | None = None,
     path_candidate_cache: dict[tuple[str, ...], dict[int, float]] | None = None,
+    filename_candidate_cache: dict[tuple[str, tuple[str, ...]], dict[int, float]] | None = None,
     lexicon_candidate_cache: dict[tuple[str, tuple[str, ...]], dict[int, float]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any], int]:
     metadata = search_cache_metadata(connection)
@@ -4160,6 +4316,7 @@ def search_precomputed_cache_once(
     bm25_weight = float(search_cfg.get("bm25_weight", 0.35))
     source_weight = float(search_cfg.get("source_weight", 0.14))
     heading_weight = float(search_cfg.get("heading_weight", 0.06))
+    exact_filename_boost = float(search_cfg.get("exact_filename_boost", 1.05))
     base_max_chunks_per_source = max(1, int(search_cfg.get("max_chunks_per_source", 2)))
     base_candidate_limit = max(50, int(search_cfg.get("candidate_limit", 5000)))
     explicit_path_boost = float(search_cfg.get("explicit_path_boost", 0.75))
@@ -4178,6 +4335,7 @@ def search_precomputed_cache_once(
         query_vector = hashed_vector(query_counts, dim)
     with PerfTimer("cache.path_lexicon"):
         path_matches = cached_path_candidates(connection, extract_query_paths(query), path_candidate_cache)
+        filename_matches = cached_filename_candidates(connection, query, profile, filename_candidate_cache)
         lexicon_matches = cached_lexicon_candidates(connection, query, profile, lexicon_candidate_cache)
     if path_matches and bool(search_cfg.get("explicit_path_priority", True)):
         with PerfTimer("cache.path_priority"):
@@ -4199,6 +4357,7 @@ def search_precomputed_cache_once(
             ranked_candidates = sorted(raw_bm25_by_doc, key=lambda item: raw_bm25_by_doc[item], reverse=True)
             candidate_indexes = set(ranked_candidates[:candidate_limit])
         candidate_indexes.update(path_matches)
+        candidate_indexes.update(filename_matches)
         candidate_indexes.update(lexicon_matches)
         docs_by_id = fetch_cached_docs(connection, candidate_indexes)
 
@@ -4221,6 +4380,7 @@ def search_precomputed_cache_once(
             source_match = overlap_terms(query_terms, doc["source_terms"])
             heading_match = overlap_terms(query_terms, doc["heading_terms"])
             path_match = path_matches.get(index, 0.0)
+            filename_match = filename_matches.get(index, 0.0)
             lexicon_match = lexicon_matches.get(index, 0.0)
             score = (
                 vector_weight * vector_score
@@ -4228,6 +4388,7 @@ def search_precomputed_cache_once(
                 + source_weight * source_match
                 + heading_weight * heading_match
                 + explicit_path_boost * path_match
+                + exact_filename_boost * filename_match
                 + lexicon_weight * lexicon_match
             )
             penalty = source_penalty(source, config)
@@ -4257,6 +4418,7 @@ def search_precomputed_cache_once(
                     "source_match": round(source_match, 6),
                     "heading_match": round(heading_match, 6),
                     "path_match": round(path_match, 6),
+                    "filename_match": round(filename_match, 6),
                     "lexicon_match": round(lexicon_match, 6),
                     "source_penalty": round(penalty, 6),
                     "status_boost": round(doc_status_boost, 6),
@@ -4292,6 +4454,7 @@ def search_precomputed_cache(
 ) -> list[dict[str, Any]]:
     bm25_token_cache: dict[str, list[sqlite3.Row]] = {}
     path_candidate_cache: dict[tuple[str, ...], dict[int, float]] = {}
+    filename_candidate_cache: dict[tuple[str, tuple[str, ...]], dict[int, float]] = {}
     lexicon_candidate_cache: dict[tuple[str, tuple[str, ...]], dict[int, float]] = {}
     with PerfTimer("cache.primary"):
         primary_results, profile, max_chunks_per_source = search_precomputed_cache_once(
@@ -4303,6 +4466,7 @@ def search_precomputed_cache(
             mode,
             bm25_token_cache=bm25_token_cache,
             path_candidate_cache=path_candidate_cache,
+            filename_candidate_cache=filename_candidate_cache,
             lexicon_candidate_cache=lexicon_candidate_cache,
         )
     if profile.get("mode") != "frontend" and not profile.get("schema_flow_review") and not profile.get("spec_cross_cutting"):
@@ -4330,6 +4494,7 @@ def search_precomputed_cache(
                 candidate_limit_override=variant_candidate_limit,
                 bm25_token_cache=bm25_token_cache,
                 path_candidate_cache=path_candidate_cache,
+                filename_candidate_cache=filename_candidate_cache,
                 lexicon_candidate_cache=lexicon_candidate_cache,
             )
             if variant_results:
@@ -4550,12 +4715,13 @@ def read_plan_role_rank(result: dict[str, Any], profile: dict[str, Any]) -> int:
         return len(priorities) + 2
 
 
-def read_plan_sort_key(item: dict[str, Any], config: dict[str, Any], profile: dict[str, Any]) -> tuple[float, float, float, str, int]:
+def read_plan_sort_key(item: dict[str, Any], config: dict[str, Any], profile: dict[str, Any]) -> tuple[Any, ...]:
     role_rank = read_plan_role_rank(item, profile)
     path_priority = bool(config.get("search", {}).get("explicit_path_priority", True))
     path_match = float(item.get("path_match", 0.0)) if path_priority else 0.0
+    filename_match = float(item.get("filename_match", 0.0)) if path_priority else 0.0
     score = float(item.get("score", 0.0))
-    return (float(role_rank), -score, -path_match, str(item.get("source", "")), int(item.get("start_line", 1)))
+    return (-path_match, -filename_match, float(role_rank), -score, str(item.get("source", "")), int(item.get("start_line", 1)))
 
 
 def search_index_with_plan(
@@ -4656,6 +4822,7 @@ def search_index(
     bm25_weight = float(search_cfg.get("bm25_weight", 0.35))
     source_weight = float(search_cfg.get("source_weight", 0.14))
     heading_weight = float(search_cfg.get("heading_weight", 0.06))
+    exact_filename_boost = float(search_cfg.get("exact_filename_boost", 1.05))
     base_max_chunks_per_source = max(1, int(search_cfg.get("max_chunks_per_source", 2)))
 
     search_mode = normalize_search_mode(mode)
@@ -4665,6 +4832,7 @@ def search_index(
     query_counts = trim_query_counts(token_counts(expanded_query), config)
     query_terms = set(query_counts)
     query_vector = hashed_vector(query_counts, dim)
+    filename_anchors = extract_query_filename_anchors(query, profile)
     doc_counts = [token_counts(weighted_document_text(chunk)) for chunk in chunks]
     raw_bm25 = bm25_scores(query_counts, doc_counts)
     max_bm25 = max(raw_bm25) if raw_bm25 else 0.0
@@ -4683,11 +4851,13 @@ def search_index(
         bm25 = raw_bm25[index] / max_bm25 if max_bm25 > 0 else 0.0
         source_match = overlap_score(query_terms, source)
         heading_match = overlap_score(query_terms, str(chunk.get("heading", "")))
+        filename_match = filename_anchor_match_score(source, filename_anchors)
         score = (
             vector_weight * vector_score
             + bm25_weight * bm25
             + source_weight * source_match
             + heading_weight * heading_match
+            + exact_filename_boost * filename_match
         )
         penalty = source_penalty(source, config)
         doc_status_boost = status_boost(doc_status, config)
@@ -4717,6 +4887,7 @@ def search_index(
                 "source_match": round(source_match, 6),
                 "heading_match": round(heading_match, 6),
                 "path_match": 0.0,
+                "filename_match": round(filename_match, 6),
                 "source_penalty": round(penalty, 6),
                 "status_boost": round(doc_status_boost, 6),
                 "intent_boost": round(intent_multiplier, 6),

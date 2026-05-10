@@ -1066,6 +1066,38 @@ class RagUniversalTest(unittest.TestCase):
         self.assertTrue(results[0]["source"].startswith(".mcp/rag-server/"))
         self.assertNotEqual(results[0]["source"], "AGENTS.md")
 
+    def test_exact_filename_anchor_beats_semantic_frontend_neighbor(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / "uier-spa" / "src" / "components" / "admin" / "plugin-templates").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "components" / "schema").mkdir(parents=True)
+        (root / "uier-spa" / "src" / "components" / "admin" / "plugin-templates" / "WidgetInstantiate.vue").write_text(
+            "<script setup lang=\"ts\">\n"
+            "const showPreview = true\n"
+            "const generatedWidgetSchema = { component: 'PluginWidgetRenderer' }\n"
+            "</script>\n",
+            encoding="utf-8",
+        )
+        (root / "uier-spa" / "src" / "components" / "schema" / "SchemaDashboard.vue").write_text(
+            "<script setup lang=\"ts\">\n"
+            "const words = 'SchemaDashboard widget preview renderer dashboard schema pipeline '.repeat(20)\n"
+            "</script>\n",
+            encoding="utf-8",
+        )
+        build_index(root)
+        query = "WidgetInstantiate preview SchemaDashboard widget preview renderer pipeline"
+        results = search_index(root, None, query, top_k=3, mode="frontend")
+        self.assertEqual(results[0]["source"], "uier-spa/src/components/admin/plugin-templates/WidgetInstantiate.vue")
+        self.assertGreater(results[0]["filename_match"], 0.0)
+
+        planned = search_index_with_plan(root, None, query, top_k=3, mode="frontend")
+        self.assertEqual(
+            planned["read_plan"]["items"][0]["source"],
+            "uier-spa/src/components/admin/plugin-templates/WidgetInstantiate.vue",
+        )
+        self.assertIn(planned["read_plan"]["confidence"]["level"], {"medium", "high"})
+
     def test_non_rag_frontend_review_query_penalizes_local_rag_fixtures(self) -> None:
         profile = score_query_profile(
             "dashboard to dashboard SPA navigation reuses widget ids and stale response race accepts previous dashboard data",
@@ -2024,9 +2056,10 @@ class RagUniversalTest(unittest.TestCase):
         item = {"source": "docs/specs/x.md", "score": 0.95, "start_line": 10}
         config = {}
         key = profile_result_sort_key(item, config, profile)
-        # Primary sort key is 0.0 (flat), secondary is -score (higher score first)
+        # Exact path/filename priority is flat, then spec sorting remains score-based.
         self.assertEqual(key[0], 0.0)
-        self.assertLess(key[1], 0.0)  # -score for 0.95 is negative
+        self.assertEqual(key[1], 0.0)
+        self.assertLess(key[3], 0.0)  # -score for 0.95 is negative
 
     def test_check_regression_query_text_fallback_empty_string(self) -> None:
         # Simulation of the fix: q.get("query_text") or qid

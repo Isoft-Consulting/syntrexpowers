@@ -40,6 +40,7 @@
         "candidate_limit": { "type": "integer", "minimum": 1 },
         "max_query_terms": { "type": "integer", "minimum": 16 },
         "explicit_path_boost": { "type": "number", "minimum": 0 },
+        "exact_filename_boost": { "type": "number", "minimum": 0 },
         "explicit_path_priority": { "type": "boolean" },
         "query_stopwords": { "type": "array", "items": { "type": "string" } },
         "source_penalties": {
