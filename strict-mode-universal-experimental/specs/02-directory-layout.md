@@ -64,10 +64,8 @@ universal-experimental/
     strict-fdr
   lib/
     detect-provider.sh
-    normalize-event.sh
-    emit-decision.sh
-    state.sh
     json.sh
+    require-ruby.sh
   schemas/
     schema-registry.json
     *.schema.json
@@ -95,24 +93,26 @@ universal-experimental/
     destructive_gate_lib.rb
     stub_detection_lib.rb
     protected_baseline_lib.rb
+    provider_config_fingerprint_lib.rb
     fixture_manifest_lib.rb
     generate-fixture-manifests.rb
     validate-fixtures.rb
     import-discovery-fixture.rb
+    import-contract-fixture.rb
+    import-raw-captures.rb
+    plan-fixture-capture.rb
+    report-enforcement-readiness.rb
     fixture_readiness_lib.rb
     check-fixture-readiness.rb
     hook_entry_plan_lib.rb
+    install_hook_plan_lib.rb
+    install_runtime.rb
+    rollback_runtime.rb
+    uninstall_runtime.rb
+    global_ledger_lib.rb
+    global_lock_lib.rb
+    transaction_marker_lib.rb
   core/
-    stub-scan.sh
-    pre-write-scan.sh
-    record-edit.sh
-    stop-guard.sh
-    fdr-challenge.sh
-    fdr-validate.sh
-    is-trivial-diff.sh
-    destructive-gate.sh
-    static-prepass.sh
-    prompt-inject.sh
     health-check.sh
   providers/
     claude/
