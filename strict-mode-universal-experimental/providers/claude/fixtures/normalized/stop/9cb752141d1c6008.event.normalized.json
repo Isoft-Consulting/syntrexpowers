@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "provider": "claude",
+  "logical_event": "stop",
+  "raw_event": "Stop",
+  "session_id": "c23308e5-f909-4b33-965e-ed7b5ca2cc94",
+  "parent_session_id": "",
+  "turn_id": "",
+  "cwd": "/Users/andrey",
+  "project_dir": "/Users/andrey",
+  "transcript_path": "/Users/andrey/.claude/projects/-Users-andrey/c23308e5-f909-4b33-965e-ed7b5ca2cc94.jsonl",
+  "turn": {
+    "assistant_text": "",
+    "assistant_text_bytes": 0,
+    "assistant_text_truncated": 0,
+    "edit_count": 0,
+    "has_fdr_context": false
+  },
+  "tool": {
+    "name": "",
+    "kind": "unknown",
+    "write_intent": "none",
+    "command": "",
+    "file_path": "",
+    "file_paths": [
+
+    ],
+    "file_changes": [
+
+    ],
+    "content": "",
+    "old_string": "",
+    "new_string": "",
+    "patch": ""
+  },
+  "permission": {
+    "request_id": "",
+    "operation": "unknown",
+    "access_mode": "unknown",
+    "requested_tool_kind": "unknown",
+    "requested_command": "",
+    "requested_paths": [
+      "unknown"
+    ],
+    "filesystem": {
+      "access_mode": "unknown",
+      "paths": [
+        "unknown"
+      ],
+      "recursive": "unknown",
+      "scope": "unknown"
+    },
+    "network": {
+      "scheme": "unknown",
+      "host": "unknown",
+      "port": "unknown",
+      "operation": "unknown",
+      "url": "unknown"
+    },
+    "can_approve": "unknown"
+  },
+  "prompt": {
+    "text": ""
+  },
+  "assistant": {
+    "last_message": ""
+  },
+  "raw": {
+    "payload_sha256": "9cb752141d1c600815d40f62144bcd562c4186384533ae2febf8c985e44b98d5",
+    "event_name": "Stop",
+    "logical_event_mismatch": false,
+    "provider_indicators": [
+      "claude.transcript_path",
+      "shared.hook_event_name",
+      "shared.session_id"
+    ]
+  }
+}

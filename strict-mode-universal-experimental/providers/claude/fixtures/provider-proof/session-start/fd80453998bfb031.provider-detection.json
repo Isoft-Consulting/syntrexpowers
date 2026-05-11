@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "provider_arg": "claude",
+  "provider_arg_source": "fixture-import",
+  "payload_sha256": "fd80453998bfb0312c3614e8976784f5c670edc936813eab62909f04c2728a21",
+  "detected_provider": "claude",
+  "decision": "match",
+  "claude_indicators": [
+    "path:claude-transcript"
+  ],
+  "codex_indicators": [
+
+  ],
+  "conflict_indicators": [
+
+  ],
+  "fixture_usable": true,
+  "enforcement_usable": false,
+  "diagnostic": "provider claude matched payload indicators",
+  "provider_proof_hash": "41c1fcb8d6665fa7cede6f78bd6c770643f10fec3e49b866e4a9c811b54dbbd7"
+}
