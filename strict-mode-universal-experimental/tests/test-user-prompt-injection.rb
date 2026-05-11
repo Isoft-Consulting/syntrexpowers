@@ -88,18 +88,33 @@ end
 # --- Case 1: injection populated → stdout contains content ---
 INJECTION_CONTENT = "TEST INJECTION RULES\n1. Marker line one\n2. Marker line two\n"
 
-# Explicit STRICT_MODE_NESTED unset so cases that rely on it being absent
-# don't false-pass when the test driver session happens to have it set.
-# Open3.capture3 treats a nil value in env hash as "remove from subprocess
-# environment", so subprocess sees no STRICT_MODE_NESTED regardless of
-# parent env.
+# Explicit isolation of strict-mode env so cases don't inherit pollution
+# from the driver shell. Open3.capture3 treats a nil value in the env
+# hash as "remove from subprocess environment", so the subprocess sees
+# the canonical test-defined STRICT_* state regardless of parent shell.
+# Beyond STRICT_MODE_NESTED (the recursion guard that case 2 sets to
+# "1"), other strict-hook-meaningful env vars are nulled out so a CI
+# runner pre-setting STRICT_ENFORCING_HOOK=1 or STRICT_OUTPUT_CONTRACT_ID
+# does not silently flip a discovery hook into enforcing emission and
+# false-fail the injection assertions.
+STRICT_ENV_ISOLATION_KEYS = %w[
+  STRICT_MODE_NESTED
+  STRICT_ENFORCING_HOOK
+  STRICT_OUTPUT_CONTRACT_ID
+  STRICT_CAPTURE_RAW_PAYLOADS
+  STRICT_CAPTURE_FULL_TEXT
+  STRICT_HOOK_TIMEOUT_MS
+  STRICT_INSTALL_ROOT
+].freeze
+
 def base_env(home, state_root, project)
-  {
+  env = {
     "HOME" => home.to_s,
     "STRICT_STATE_ROOT" => state_root.to_s,
-    "STRICT_PROJECT_DIR" => project.to_s,
-    "STRICT_MODE_NESTED" => nil
+    "STRICT_PROJECT_DIR" => project.to_s
   }
+  STRICT_ENV_ISOLATION_KEYS.each { |key| env[key] = nil }
+  env
 end
 
 with_install_claude do |phase, *args|
