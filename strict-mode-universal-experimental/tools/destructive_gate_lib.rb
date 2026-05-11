@@ -5,6 +5,8 @@ require "digest"
 require "json"
 require "pathname"
 
+require_relative "stub_detection_lib"
+
 module StrictModeDestructiveGate
   extend self
 
@@ -16,7 +18,7 @@ module StrictModeDestructiveGate
   REDIRECT_OPS = %w[> >> 1> 1>> 2> 2>> &> &>>].freeze
   MAX_SUBSTITUTION_DEPTH = 8
 
-  def classify_tool(tool, cwd:, project_dir:, protected_roots:, protected_inodes: [], destructive_patterns: [], home: Dir.home, install_root: nil)
+  def classify_tool(tool, cwd:, project_dir:, protected_roots:, protected_inodes: [], destructive_patterns: [], stub_allowlist: [], home: Dir.home, install_root: nil)
     errors = []
     cwd_path = normalize_identity_path(cwd, "cwd", errors)
     project_path = normalize_identity_path(project_dir, "project_dir", errors)
@@ -27,7 +29,33 @@ module StrictModeDestructiveGate
     return classify_shell(tool, cwd: cwd_path, project_dir: project_path, protected_roots: protected_roots, protected_inodes: protected_inodes, destructive_patterns: destructive_patterns, home: home, install_root: install_root) if kind == "shell"
     return allow("non-write-tool") unless write_like_tool?(tool)
 
-    classify_direct_paths(tool, cwd: cwd_path, protected_roots: protected_roots, protected_inodes: protected_inodes)
+    path_decision = classify_direct_paths(tool, cwd: cwd_path, protected_roots: protected_roots, protected_inodes: protected_inodes)
+    return path_decision unless path_decision.fetch("decision") == "allow"
+
+    classify_stub_content(tool, stub_allowlist: stub_allowlist)
+  end
+
+  def classify_stub_content(tool, stub_allowlist:)
+    return allow("write-targets-disjoint") if stub_allowlist.nil?
+
+    targets = StrictModeStubDetection.extract_scannable_targets(tool)
+    return allow("write-targets-disjoint") if targets.empty?
+
+    allowlist = StrictModeStubDetection.parse_allowlist_records(stub_allowlist)
+    targets.each do |target|
+      findings = StrictModeStubDetection.scan(
+        content: target.fetch("content"),
+        file_path: target.fetch("file_path"),
+        allowlist: allowlist
+      )
+      next if findings.empty?
+
+      first = findings.first
+      summary = "stub detected: #{first.fetch("label")} at #{first.fetch("file_path")}:#{first.fetch("line_number")} (sha256=#{first.fetch("line_sha256")[0, 12]})"
+      return block("stub-detected", summary)
+    end
+
+    allow("write-targets-disjoint")
   end
 
   def classify_shell(tool, cwd:, project_dir:, protected_roots:, protected_inodes:, destructive_patterns:, home:, install_root:, substitution_depth: 0)

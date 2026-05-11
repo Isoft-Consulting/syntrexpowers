@@ -132,6 +132,7 @@ def classify_preflight(payload:, provider:, logical_event:, payload_hash:, state
     protected_roots: baseline.fetch("protected_roots"),
     protected_inodes: baseline.fetch("protected_inodes"),
     destructive_patterns: baseline.fetch("destructive_patterns"),
+    stub_allowlist: baseline.fetch("stub_allowlist"),
     home: baseline.fetch("home"),
     install_root: baseline.fetch("install_root")
   )

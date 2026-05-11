@@ -174,6 +174,7 @@ module StrictModeProtectedBaseline
     config_results = parse_config_files(config_root, builtin_roots, protected_inodes, errors, config_errors)
     configured_roots = protected_path_roots(config_results.fetch("protected-paths.txt", nil))
     destructive_patterns = config_results.fetch("destructive-patterns.txt", { "records" => [] }).fetch("records")
+    stub_allowlist_records = config_results.fetch("stub-allowlist.txt", { "records" => [] }).fetch("records")
 
     roots = canonical_paths(builtin_roots + configured_roots)
     result(errors.empty?, errors, config_errors).merge(
@@ -187,6 +188,7 @@ module StrictModeProtectedBaseline
       "protected_roots" => roots,
       "protected_inodes" => protected_inodes,
       "destructive_patterns" => destructive_patterns,
+      "stub_allowlist" => stub_allowlist_records,
       "config_results" => config_results
     )
   end
@@ -208,6 +210,7 @@ module StrictModeProtectedBaseline
       "protected_roots" => [],
       "protected_inodes" => [],
       "destructive_patterns" => [],
+      "stub_allowlist" => [],
       "config_results" => {}
     }
   end

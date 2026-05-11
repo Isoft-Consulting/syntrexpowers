@@ -63,6 +63,7 @@ module StrictModePreflightRecord
     protected-target-unknown
     trusted-import-invalid
     trusted-import-unavailable
+    stub-detected
   ].freeze
   CLASSIFIER_REASON_CODES = (CLASSIFIER_ALLOW_REASON_CODES + CLASSIFIER_BLOCK_REASON_CODES).freeze
   REASON_CODES = (NOT_ATTEMPTED_REASON_CODES + UNTRUSTED_REASON_CODES + CLASSIFIER_REASON_CODES).freeze

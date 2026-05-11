@@ -45,6 +45,6 @@
     "worker.invocation.v1",
     "worker.result.v1"
   ],
-  "generated_from_spec_hash": "a5f9a91967d4890a13a3d327420454f0b9f526ddbe1dbc4928691378c5f869f2",
-  "registry_hash": "27e2e669d415c280d2ded401e9aeab71bde1c89733f838d747125b5beda359cd"
+  "generated_from_spec_hash": "ac6f21935efc847b41ce07cb9f1c19dd37f831b42ee2af8f17825fd322fb4639",
+  "registry_hash": "13e9fb3febc935e434a71e22299db04a304879700999f589549be41a08cbb22f"
 }

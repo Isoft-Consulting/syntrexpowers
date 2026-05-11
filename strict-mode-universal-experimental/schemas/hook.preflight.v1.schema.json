@@ -117,7 +117,8 @@
       "unknown-write-target",
       "protected-target-unknown",
       "trusted-import-invalid",
-      "trusted-import-unavailable"
+      "trusted-import-unavailable",
+      "stub-detected"
     ],
     "tool_kind": [
       "shell",
@@ -269,5 +270,5 @@
   "fixture_requirements": [
     "preflight record parser, hash binder, and attempt/trust/decision coupling validator"
   ],
-  "profile_hash": "88b0a01754b1c1b471647109bb9f821ec5a43b9cf50ce3d39bb7f8bece708949"
+  "profile_hash": "a4d0e69555b678dabc48073157a7bbd72a975f17cbb5a596ee33a8a63588e184"
 }

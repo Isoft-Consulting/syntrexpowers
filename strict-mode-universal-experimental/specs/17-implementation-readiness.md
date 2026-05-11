@@ -422,7 +422,7 @@ Every enum family named in 17.2.2 must have exactly one row here. `enum_values` 
 | `decision.provider-output.v1` | `stderr_mode` | `empty`, `plain-text`, `json`, `provider-native-json` |
 | `hook.preflight.v1` | `logical_event` | `session-start`, `user-prompt-submit`, `pre-tool-use`, `post-tool-use`, `stop`, `subagent-stop`, `permission-request`, `unknown` |
 | `hook.preflight.v1` | `decision` | `allow`, `block`, `unknown` |
-| `hook.preflight.v1` | `reason_code` | `not-applicable`, `payload-untrusted`, `provider-untrusted`, `payload-truncated`, `protected-baseline-untrusted`, `preflight-error`, `shell-read-only-or-unmatched`, `non-write-tool`, `write-targets-disjoint`, `invalid-identity`, `shell-command-missing`, `shell-parse-error`, `protected-runtime-execution`, `destructive-command`, `protected-root`, `unknown-write-target`, `protected-target-unknown`, `trusted-import-invalid`, `trusted-import-unavailable` |
+| `hook.preflight.v1` | `reason_code` | `not-applicable`, `payload-untrusted`, `provider-untrusted`, `payload-truncated`, `protected-baseline-untrusted`, `preflight-error`, `shell-read-only-or-unmatched`, `non-write-tool`, `write-targets-disjoint`, `invalid-identity`, `shell-command-missing`, `shell-parse-error`, `protected-runtime-execution`, `destructive-command`, `protected-root`, `unknown-write-target`, `protected-target-unknown`, `trusted-import-invalid`, `trusted-import-unavailable`, `stub-detected` |
 | `hook.preflight.v1` | `tool_kind` | `shell`, `write`, `edit`, `multi-edit`, `patch`, `read`, `other`, `unknown` |
 | `hook.preflight.v1` | `tool_write_intent` | `none`, `read`, `write`, `unknown` |
 | `fixture.manifest.v1` | `provider` | `claude`, `codex` |
