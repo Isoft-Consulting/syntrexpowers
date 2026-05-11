@@ -49,13 +49,13 @@ The same restart requirement applies to Claude Code: after installing or refresh
 
 1. Stop any running provider sessions (exit the Claude Code or Codex CLI session via `/exit` or Ctrl-D, or close the terminal hosting it) so they do not race with the install transaction.
 2. Edit `<install-root>/config/user-prompt-injection.md` outside the running provider session with any text editor — provider tools cannot mutate protected config under enforce mode, and a runtime edit by the agent would otherwise invalidate the protected baseline hash on the very next hook invocation. The file is raw markdown; markdown headers, blank lines, and leading whitespace are preserved verbatim and emitted into the user prompt context, unlike the directive-format config files where `#` and blank lines are stripped as comments.
-3. Re-run the install command using the full path to the script in the cloned `syntrexpowers` checkout — the working directory does not need to be the repo root. For example:
+3. Re-run the install command. From the `strict-mode-universal-experimental` checkout root (the same working directory the README's `tests/run-tests.sh` and `ruby tools/...` examples assume):
 
    ```bash
-   /path/to/syntrexpowers/strict-mode-universal-experimental/install.sh --provider claude --install-root ~/.strict-mode
+   ./install.sh --provider claude --install-root ~/.strict-mode
    ```
 
-   Replace `/path/to/syntrexpowers/strict-mode-universal-experimental` with the actual checkout path on your machine (use `--provider codex` or `--provider all` to match the providers you originally installed). The installer keeps the existing file content — the template copy only fires when the file is missing — and recomputes the protected baseline so the new content hash matches the file you just edited.
+   Use `--provider codex` or `--provider all` to match the providers you originally installed. If you cannot `cd` into the checkout, substitute the full path to `install.sh` — the installer reads `--install-root` and the source tree it lives in, so any working directory works as long as the path to the script is resolvable. The installer keeps the existing file content — the template copy only fires when the file is missing — and recomputes the protected baseline so the new content hash matches the file you just edited.
 4. Start a new provider session. The runtime restart requirement documented two paragraphs above applies here too: a session that was running during the install still holds the old hook config in process memory and will not pick up the refreshed baseline until restart. Once the new session starts, `strict-hook` reads the file through the trusted baseline on every `user-prompt-submit` event and writes the contents to stdout, where the provider appends them to the user prompt per its UserPromptSubmit hook contract.
 
 Nested `claude -p` invocations launched from strict-mode-owned scripts (judge, worker, etc.) must set `STRICT_MODE_NESTED=1` in the subprocess environment to suppress recursive injection of the same rules block.
