@@ -313,6 +313,30 @@ with_project do |_root, project, cwd, home, install, protected_roots|
 end
 
 with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "fd-duplication 2>&1 followed by ; is not a parse error"
+  result = shell_result("echo a 2>&1 ; echo b", project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "allow", "shell-read-only-or-unmatched")
+end
+
+with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "fd-duplication 2>&1 followed by pipe is not a parse error"
+  result = shell_result("ruby tests/foo.rb 2>&1 | tail -5", project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "allow", "shell-read-only-or-unmatched")
+end
+
+with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "fd-duplication 1>&2 in chained command is not a parse error"
+  result = shell_result("echo warning 1>&2 && echo ok", project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "allow", "shell-read-only-or-unmatched")
+end
+
+with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "fd-close 2>&- is not a parse error"
+  result = shell_result("printf hello 2>&-", project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "allow", "shell-read-only-or-unmatched")
+end
+
+with_project do |_root, project, cwd, home, install, protected_roots|
   name = "inline interpreter blocks unknown write target"
   result = shell_result("python -c \"open('x','w').write('y')\"", project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
   expect_result(name, result, "block", "unknown-write-target")

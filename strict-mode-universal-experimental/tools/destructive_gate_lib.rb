@@ -194,10 +194,24 @@ module StrictModeDestructiveGate
     { "words" => words.reject { |word| REDIRECT_OPS.include?(word) }, "ops" => ops, "redirect_targets" => redirect_targets, "items" => items, "error" => nil }
   end
 
+  # Порядок важен: длинные операторы должны проверяться раньше коротких,
+  # иначе `find` сматчит короткий префикс и tokenizer сломается.
+  # FD-duplication формы (`2>&1`, `1>&2`, `2>&-`, `1>&-`) — единый оператор,
+  # не redirect-with-target: они НЕ входят в REDIRECT_OPS и не выставляют
+  # pending_redirect, потому что назначение указано inline в самом операторе.
+  SHELL_OPERATORS = %w[
+    2>&- 1>&- 2>&1 2>&2 1>&1 1>&2
+    &>> >> 2>> 1>>
+    && ||
+    &> 2> 1>
+    << > <
+    | & ;
+  ].freeze
+
   def shell_operator_at(command, index)
     return nil unless command[index]
 
-    %w[&>> >> 2>> 1>> && || &> 2> 1> << > < | & ;].find { |op| command[index, op.length] == op }
+    SHELL_OPERATORS.find { |op| command[index, op.length] == op }
   end
 
   def flush_word(words, token)
