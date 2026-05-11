@@ -15,7 +15,24 @@ The toolkit is project-local and provider-neutral. Codex, Claude, DeepSeek, or a
 
 ## Install Or Update
 
-From the repository that contains `rag-universal-experimental/`:
+### One-Command Helper
+
+For a quick install/update including project-local `rag.config.json` seeding,
+`.mcp.json` merge, and initial index build, use the bundled helper script:
+
+```bash
+rag-universal-experimental/tools/deploy-to-project.sh /path/to/project
+```
+
+Idempotent: re-runs preserve existing `rag.config.json`, replace the `rag`
+entry in `.mcp.json` only when its command changed, and never drop other MCP
+servers. Pass `--no-index` to skip the initial index build for very large
+projects or CI runs; pass `--no-mcp` if the project does not use MCP.
+
+### Manual Equivalent
+
+If you prefer to drive each step yourself, the script's first step is plain
+rsync from the repository that contains `rag-universal-experimental/`:
 
 ```bash
 TARGET=/path/to/project
