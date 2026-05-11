@@ -31,8 +31,21 @@ module StrictModeProviderConfigFingerprint
     output = []
     skip = false
     text.lines.each do |line|
-      if (match = line.match(/\A\s*\[([^\]]+)\]\s*(?:#.*)?\z/))
-        table = match[1]
+      # Recognise both single-bracket TOML tables `[X]` and double-bracket
+      # array-of-tables `[[X]]`. Codex CLI currently emits the single-bracket
+      # form for [hooks.state]/[hooks.state.*], but stripping both keeps the
+      # invariant ("any hooks.state-namespaced mutable trust-state block is
+      # not part of the stable content hash") robust against future Codex
+      # changes that switch to array-of-tables encoding for the same
+      # namespace. NOTE: this regex still uses `[^\]]+` for the table name,
+      # which does not honor quoted-key escapes containing `]` inside the
+      # quotes. TOML allows `[X."a]b"]`; for that input the captured table
+      # name would be `X."a` and the line would not be classified as
+      # hooks.state. Codex does not emit such keys today; fixing would
+      # require a proper TOML parser, which is out of scope for this
+      # protected-config fingerprint helper.
+      if (match = line.match(/\A\s*(?:\[\[([^\]]+)\]\]|\[([^\]]+)\])\s*(?:#.*)?\z/))
+        table = match[1] || match[2]
         skip = table == "hooks.state" || table.start_with?("hooks.state.")
         output.pop while skip && output.last&.strip == ""
       end
