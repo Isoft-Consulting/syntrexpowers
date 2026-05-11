@@ -84,10 +84,17 @@ findings = scan("function f() {\n    // TODO: real\n}\n", "/repo/app/x.ts", { ha
 assert(name, findings.length >= 1, "non-matching hash must not suppress", findings.inspect)
 
 $cases += 1
-name = "Per-line allow-stub bypass marker is honored"
+name = "Per-line allow-stub marker is IGNORED at pre-write time (per stub-scan spec)"
+# Spec specs/08-shared-core/01-stub-scan.md: "A current-turn edit that adds
+# allow-stub: on the same line as a stub marker does not suppress the stub
+# finding" + "If baseline comparison is unavailable for an edited file,
+# allow-stub: on changed or newly added lines is ignored." Pre-write hook has
+# no baseline comparison — must ignore the marker. Bypass только через
+# hash-allowlist (protected config, agent cannot mutate within turn).
 content = "function f() {\n    // TODO: real // allow-stub: legacy entry\n}\n"
 findings = scan(content, "/repo/app/x.ts")
-assert(name, findings.empty?, "allow-stub marker should suppress finding", findings.inspect)
+assert(name, findings.length >= 1, "allow-stub marker MUST NOT suppress finding at pre-write", findings.inspect)
+assert(name, findings.first["label"] == "TODO/FIXME/XXX/HACK", "wrong label", findings.inspect)
 
 $cases += 1
 name = "extract_scannable_targets handles Write tool"
@@ -111,6 +118,20 @@ targets = StrictModeStubDetection.extract_scannable_targets(tool)
 assert(name, targets.empty?, "expected no targets for shell tool", targets.inspect)
 
 $cases += 1
+name = "extract_scannable_targets is kind-based not name-based — unknown name + write kind still scanned"
+tool = { "name" => "FutureProprietaryWriter", "kind" => "write", "file_path" => "/repo/app/x.ts", "content" => "// TODO: trojan", "new_string" => "" }
+targets = StrictModeStubDetection.extract_scannable_targets(tool)
+assert(name, targets.length == 1, "expected one target for unknown-name write-kind", targets.inspect)
+assert(name, targets.first.fetch("content") == "// TODO: trojan", "wrong content", targets.inspect)
+
+$cases += 1
+name = "extract_scannable_targets handles unknown name + edit kind"
+tool = { "name" => "FutureEditTool", "kind" => "edit", "file_path" => "/repo/app/x.ts", "content" => "", "new_string" => "// FIXME: ignore me" }
+targets = StrictModeStubDetection.extract_scannable_targets(tool)
+assert(name, targets.length == 1, "expected one target for unknown-name edit-kind", targets.inspect)
+assert(name, targets.first.fetch("content") == "// FIXME: ignore me", "wrong content", targets.inspect)
+
+$cases += 1
 name = "parse_allowlist_records extracts finding hashes"
 records = [
   { "directive" => "finding", "finding_digest" => "a" * 64 },
@@ -129,7 +150,7 @@ findings = scan(content, "/repo/app/x.ts")
 assert(name, findings.length >= 2, "expected at least 2 findings", findings.inspect)
 
 $cases += 1
-name = "extract_raw_targets handles MultiEdit edits[]"
+name = "extract_raw_targets handles MultiEdit edits[] one target per edit"
 tool_input = {
   "file_path" => "/repo/app/a.ts",
   "edits" => [
@@ -138,10 +159,26 @@ tool_input = {
   ]
 }
 targets = StrictModeStubDetection.extract_raw_targets("MultiEdit", tool_input)
-assert(name, targets.length == 1, "expected one MultiEdit target", targets.inspect)
-assert(name, targets.first.fetch("file_path") == "/repo/app/a.ts", "wrong file_path", targets.inspect)
-assert(name, targets.first.fetch("content").include?("TODO: from first edit"), "content must include first edit new_string", targets.inspect)
-assert(name, targets.first.fetch("content").include?("function ok()"), "content must include second edit new_string", targets.inspect)
+assert(name, targets.length == 2, "expected one target per edit", targets.inspect)
+assert(name, targets.all? { |t| t.fetch("file_path") == "/repo/app/a.ts" }, "all targets must share MultiEdit's file_path", targets.inspect)
+assert(name, targets.first.fetch("content") == "// TODO: from first edit", "first target = first edit content", targets.inspect)
+assert(name, targets.last.fetch("content") == "function ok() { return 1; }", "second target = second edit content", targets.inspect)
+
+$cases += 1
+name = "MultiEdit per-edit targets give accurate line_numbers per edit"
+tool_input = {
+  "file_path" => "/repo/app/a.ts",
+  "edits" => [
+    { "old_string" => "x", "new_string" => "line1\nline2\n// TODO: at edit1 line 3" },
+    { "old_string" => "y", "new_string" => "// FIXME: at edit2 line 1" }
+  ]
+}
+targets = StrictModeStubDetection.extract_raw_targets("MultiEdit", tool_input)
+assert(name, targets.length == 2, "two edits → two targets", targets.inspect)
+findings_1 = StrictModeStubDetection.scan(content: targets.first.fetch("content"), file_path: "/repo/app/a.ts")
+findings_2 = StrictModeStubDetection.scan(content: targets.last.fetch("content"), file_path: "/repo/app/a.ts")
+assert(name, findings_1.length == 1 && findings_1.first["line_number"] == 3, "edit1 TODO at line 3", findings_1.inspect)
+assert(name, findings_2.length == 1 && findings_2.first["line_number"] == 1, "edit2 FIXME at line 1 of its own content", findings_2.inspect)
 
 $cases += 1
 name = "extract_raw_targets returns empty for MultiEdit without edits"
@@ -170,9 +207,43 @@ paths = targets.map { |t| t.fetch("file_path") }.sort
 assert(name, paths == ["/repo/a.ts", "/repo/b.ts"], "wrong paths", targets.inspect)
 
 $cases += 1
+name = "apply_patch Move directive attributes content to NEW path, not old"
+patch = "*** Update File: /repo/old.ts\n+// TODO: in renamed file\n+const x = 1;\n*** Move to: /repo/new.ts\n*** End Patch\n"
+targets = StrictModeStubDetection.extract_raw_targets("apply_patch", { "patch" => patch })
+assert(name, targets.length == 1, "expected one target after Move", targets.inspect)
+assert(name, targets.first.fetch("file_path") == "/repo/new.ts", "Move must redirect content to NEW path", targets.inspect)
+assert(name, targets.first.fetch("content").include?("TODO: in renamed file"), "content must survive Move", targets.inspect)
+
+$cases += 1
+name = "apply_patch Move with content AFTER move attributes correctly"
+# Edge case: Move comes early, then Update block continues with more lines.
+patch = "*** Update File: /repo/old.ts\n+// header line\n*** Move to: /repo/new.ts\n+// trailing line\n*** End Patch\n"
+targets = StrictModeStubDetection.extract_raw_targets("apply_patch", { "patch" => patch })
+assert(name, targets.length == 1, "expected one combined target", targets.inspect)
+assert(name, targets.first.fetch("file_path") == "/repo/new.ts", "final path = new (post-Move)", targets.inspect)
+assert(name, targets.first.fetch("content").include?("header line"), "buffer before Move preserved", targets.inspect)
+assert(name, targets.first.fetch("content").include?("trailing line"), "buffer after Move preserved", targets.inspect)
+
+$cases += 1
 name = "extract_raw_targets returns empty for unsupported tool"
 targets = StrictModeStubDetection.extract_raw_targets("Bash", { "command" => "ls" })
 assert(name, targets.empty?, "expected no targets for Bash", targets.inspect)
+
+$cases += 1
+name = "extract_raw_targets is kind-based when normalized tool is passed — unknown name + multi-edit kind still parsed"
+tool = { "name" => "FutureMultiEditor", "kind" => "multi-edit", "file_path" => "/repo/app/a.ts", "new_string" => "" }
+tool_input = { "file_path" => "/repo/app/a.ts", "edits" => [{ "new_string" => "// TODO: trojan" }] }
+targets = StrictModeStubDetection.extract_raw_targets(tool, tool_input)
+assert(name, targets.length == 1, "expected one target for unknown-name multi-edit kind", targets.inspect)
+assert(name, targets.first.fetch("content").include?("TODO: trojan"), "expected TODO content captured", targets.inspect)
+
+$cases += 1
+name = "extract_raw_targets is kind-based — unknown name + patch kind still parsed"
+tool = { "name" => "FuturePatcher", "kind" => "patch" }
+patch = "*** Add File: /repo/app/x.ts\n+function f() {\n+    // FIXME: real\n+}\n*** End Patch\n"
+targets = StrictModeStubDetection.extract_raw_targets(tool, { "patch" => patch })
+assert(name, targets.length == 1, "expected one patch target for unknown-name patch kind", targets.inspect)
+assert(name, targets.first.fetch("content").include?("FIXME: real"), "expected FIXME content captured", targets.inspect)
 
 $cases += 1
 name = "scan picks up TODO in joined MultiEdit content"

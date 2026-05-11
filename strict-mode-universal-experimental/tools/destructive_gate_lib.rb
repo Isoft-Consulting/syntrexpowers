@@ -44,7 +44,7 @@ module StrictModeDestructiveGate
     # список таргетов, дедуплицируем по file_path+content sha (на случай если
     # normalizer и raw extractor дали одно и то же).
     normalized_targets = StrictModeStubDetection.extract_scannable_targets(tool)
-    raw_targets = raw_tool_input.is_a?(Hash) ? StrictModeStubDetection.extract_raw_targets(tool.fetch("name", ""), raw_tool_input) : []
+    raw_targets = raw_tool_input.is_a?(Hash) ? StrictModeStubDetection.extract_raw_targets(tool, raw_tool_input) : []
     targets = dedupe_targets(normalized_targets + raw_targets)
     return allow("write-targets-disjoint") if targets.empty?
 

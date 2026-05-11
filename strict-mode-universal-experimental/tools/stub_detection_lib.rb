@@ -56,15 +56,24 @@ module StrictModeStubDetection
     "cjs" => _js_patterns
   }.freeze
 
-  # Per-line bypass marker: строка содержащая `allow-stub:` исключается из findings.
-  BYPASS_LINE_MARKER = /allow-stub:/.freeze
-
   # Allowlist directive types:
   #   finding <sha256>            — bypass by stripped-line-content hash
   #   path-line <path> <line-no>  — bypass by file path + line number (v2.5 style)
   # Plus blank lines and `#` comments are ignored.
+  #
+  # NOTE: per `specs/08-shared-core/01-stub-scan.md` Stub bypass safety section,
+  # `allow-stub:` per-line markers are accepted ONLY when they existed in the
+  # turn baseline. Pre-write hook has no baseline comparison available — by spec
+  # we ignore `allow-stub:` markers entirely here. Honoring them would let an
+  # agent trivially bypass stub-detection by adding `// allow-stub: x` to the
+  # same line as their TODO. Baseline-aware `allow-stub:` enforcement is the
+  # responsibility of a future Stop-time scanner (compares files-on-disk vs the
+  # turn-start baseline). The hash-allowlist path (`finding <sha256>` in
+  # stub-allowlist.txt) is still honored because that file is protected config:
+  # an agent cannot mutate it within the turn, so its entries are guaranteed to
+  # exist in the turn baseline by the protected-baseline contract.
 
-  # Возвращает array of findings; пустой если код чистый или allowlisted.
+  # Возвращает array of findings; пустой если код чистый или hash-allowlisted.
   # Каждая finding: {label, line_number, line_content, line_sha256}
   def scan(content:, file_path:, allowlist: { hashes: [], path_lines: [] }, max_bytes: DEFAULT_MAX_BYTES)
     return [] if content.nil? || content.empty?
@@ -78,7 +87,6 @@ module StrictModeStubDetection
 
     content.each_line.with_index(1) do |raw_line, line_number|
       line = raw_line.chomp
-      next if BYPASS_LINE_MARKER.match?(line)
 
       patterns.each do |pattern|
         next unless pattern.fetch(:regex).match?(line)
@@ -101,22 +109,24 @@ module StrictModeStubDetection
   end
 
   # Извлекает все scannable file_path → content пары из normalized tool.
-  # Поддерживает: Write (content), Edit (new_string). MultiEdit и apply_patch
+  # Kind-based (не name-based) extraction — закрывает случай когда новый
+  # write-tool с незнакомым именем имеет kind="write"/"edit" но stub-detection
+  # его пропускал из-за case-by-name. Подход: смотрим в "content" для write-kind
+  # и в "new_string" для edit-kind, независимо от имени. MultiEdit/apply_patch
   # содержат per-edit content только в raw tool_input — для них caller должен
-  # передать дополнительные таргеты через `extra_targets:` в classify_stub_content.
+  # вызывать extract_raw_targets отдельно.
   def extract_scannable_targets(tool)
-    name = tool.fetch("name", "").to_s
+    kind = tool.fetch("kind", "").to_s
+    file_path = tool.fetch("file_path", "").to_s
 
-    case name
-    when "Write"
+    case kind
+    when "write"
       content = tool.fetch("content", "").to_s
-      file_path = tool.fetch("file_path", "").to_s
       return [] if file_path.empty? || content.empty?
 
       [{ "file_path" => file_path, "content" => content }]
-    when "Edit"
+    when "edit"
       content = tool.fetch("new_string", "").to_s
-      file_path = tool.fetch("file_path", "").to_s
       return [] if file_path.empty? || content.empty?
 
       [{ "file_path" => file_path, "content" => content }]
@@ -126,15 +136,31 @@ module StrictModeStubDetection
   end
 
   # Извлекает per-change content из СЫРОГО tool_input (до нормализации).
-  # Для MultiEdit достаёт все edits[].new_string под одним file_path.
-  # Для apply_patch парсит patch body и собирает content per file_changes block.
-  # Нормализованный event сейчас уплощает эти структуры в одно top-level поле,
-  # поэтому caller должен достать raw payload и передать сюда. Безопасно по типам:
-  # принимает Hash или nil, на ошибках возвращает [].
-  def extract_raw_targets(tool_name, raw_tool_input)
-    return [] unless tool_name.is_a?(String) && raw_tool_input.is_a?(Hash)
+  # Kind-based dispatch чтобы новые tool names с `kind="multi-edit"` или
+  # `kind="patch"` тоже сканировались (closes gap паралleлый
+  # extract_scannable_targets fix). Для совместимости с тестами / legacy кодом
+  # сигнатура принимает либо normalized tool Hash, либо строку имени (старый
+  # API). Hash тип имеет приоритет: реальный pre-tool-use поток передаёт
+  # normalized tool через bin/strict-hook, имя — только тесты.
+  def extract_raw_targets(tool_or_name, raw_tool_input)
+    return [] unless raw_tool_input.is_a?(Hash)
 
-    case tool_name
+    kind, name = if tool_or_name.is_a?(Hash)
+                   [tool_or_name.fetch("kind", "").to_s, tool_or_name.fetch("name", "").to_s]
+                 elsif tool_or_name.is_a?(String)
+                   ["", tool_or_name]
+                 else
+                   return []
+                 end
+
+    case kind
+    when "multi-edit"
+      return extract_multi_edit_targets(raw_tool_input)
+    when "patch"
+      return extract_apply_patch_targets(raw_tool_input)
+    end
+
+    case name
     when "MultiEdit"
       extract_multi_edit_targets(raw_tool_input)
     when "ApplyPatch", "apply_patch"
@@ -153,18 +179,20 @@ module StrictModeStubDetection
     edits = tool_input["edits"]
     return [] unless edits.is_a?(Array)
 
-    # Собираем все new_string'и одного MultiEdit-таргета в один joined content.
-    # Joining через "\n" сохраняет line numbering приблизительно (каждая правка
-    # на своей "виртуальной" строке — точные line numbers недоступны без AST,
-    # но stub-detection бьёт по pattern'у, не по line nesting).
-    joined = edits.map do |edit|
-      next "" unless edit.is_a?(Hash)
+    # Один target ПЕР edit: каждое new_string сканируется отдельно, line_number в
+    # finding report считается относительно начала ЭТОГО new_string'а (line 1 =
+    # первая строка edit's new_string). Раньше делали joined content через "\n",
+    # из-за чего line_number у findings во втором edit врал (был сдвинут на
+    # сумму строк предыдущих edit'ов). Per-edit разделение даёт точные позиции
+    # и cleaner semantics: каждое edit — отдельный логический write event.
+    edits.each_with_object([]) do |edit, targets|
+      next unless edit.is_a?(Hash)
 
-      (edit["new_string"] || edit["newString"] || "").to_s
-    end.reject(&:empty?).join("\n")
-    return [] if joined.empty?
+      content = (edit["new_string"] || edit["newString"] || "").to_s
+      next if content.empty?
 
-    [{ "file_path" => file_path, "content" => joined }]
+      targets << { "file_path" => file_path, "content" => content }
+    end
   end
 
   def extract_apply_patch_targets(tool_input)
@@ -188,7 +216,15 @@ module StrictModeStubDetection
         flush.call
         current_path = Regexp.last_match(2).strip
         current_buffer = []
-      when /\A\*\*\* (Delete File|Move to|End Patch)/
+      when /\A\*\*\* Move to: (.+)\n?\z/
+        # Move меняет путь файла, content под Update block отражает состояние
+        # ПОСЛЕ переименования. Сохраняем накопленный buffer, переписываем
+        # current_path на новое значение — flush на следующем block boundary
+        # выдаст target с НОВЫМ path. Раньше Move обнулял path → content
+        # терялся в неправильную сторону (atributed к old path до flush, без
+        # учёта что Move "переадресует" content к new path).
+        current_path = Regexp.last_match(1).strip if current_path
+      when /\A\*\*\* (Delete File|End Patch)/
         flush.call
         current_path = nil
         current_buffer = []
