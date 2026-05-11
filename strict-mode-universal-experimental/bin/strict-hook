@@ -560,4 +560,19 @@ if enforcement.fetch("emitted") || enforcement.fetch("failed_closed")
   exit emission.fetch("exit_code")
 end
 
+# UserPromptSubmit prompt injection: при доверенной baseline и непустом контенте
+# в `<config-root>/user-prompt-injection.md` пишем содержимое в stdout — Claude
+# Code добавляет stdout к user prompt'у per UserPromptSubmit hook contract.
+# Recursion guard STRICT_MODE_NESTED=1 пропускает injection (nested `claude -p`
+# вызовы не должны получать ту же rules-вставку повторно).
+if logical_event == "user-prompt-submit" && ENV["STRICT_MODE_NESTED"] != "1" && context.fetch("trusted", false)
+  injection_records = context.fetch("config_results").fetch("user-prompt-injection.md", { "records" => [] }).fetch("records")
+  injection_text = injection_records.map { |record| record.fetch("content", "").to_s }.join
+  unless injection_text.empty?
+    STDOUT.write(injection_text)
+    STDOUT.write("\n") unless injection_text.end_with?("\n")
+    exit 0
+  end
+end
+
 exit 0

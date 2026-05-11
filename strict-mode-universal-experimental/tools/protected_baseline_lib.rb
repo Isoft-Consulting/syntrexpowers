@@ -20,7 +20,8 @@ module StrictModeProtectedBaseline
     "filesystem-read-allowlist.txt" => "filesystem-read-allowlist",
     "network-allowlist.txt" => "network-allowlist",
     "destructive-patterns.txt" => "destructive-patterns",
-    "stub-allowlist.txt" => "stub-allowlist"
+    "stub-allowlist.txt" => "stub-allowlist",
+    "user-prompt-injection.md" => "user-prompt-injection"
   }.freeze
   EXPECTED_GENERATED_HOOK_ENV = {
     "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix",
