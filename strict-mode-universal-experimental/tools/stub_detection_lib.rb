@@ -101,10 +101,11 @@ module StrictModeStubDetection
   end
 
   # Извлекает все scannable file_path → content пары из normalized tool.
-  # Поддерживает: Write (content), Edit (new_string), MultiEdit (joined edits).
+  # Поддерживает: Write (content), Edit (new_string). MultiEdit и apply_patch
+  # содержат per-edit content только в raw tool_input — для них caller должен
+  # передать дополнительные таргеты через `extra_targets:` в classify_stub_content.
   def extract_scannable_targets(tool)
     name = tool.fetch("name", "").to_s
-    kind = tool.fetch("kind", "").to_s
 
     case name
     when "Write"
@@ -119,20 +120,89 @@ module StrictModeStubDetection
       return [] if file_path.empty? || content.empty?
 
       [{ "file_path" => file_path, "content" => content }]
-    when "MultiEdit"
-      # Universal normalizer уплощает edits[] в один new_string поля; MultiEdit content
-      # вычитан через ту же `new_string`, плюс file_path остаётся per-tool.
-      content = tool.fetch("new_string", "").to_s
-      file_path = tool.fetch("file_path", "").to_s
-      return [] if file_path.empty? || content.empty?
-
-      [{ "file_path" => file_path, "content" => content }]
     else
-      # Patch-style apply_patch tools обработаются через file_changes, но контент per-file
-      # пока недоступен на нормализованном уровне — оставлено как future-extension.
       []
     end
   end
+
+  # Извлекает per-change content из СЫРОГО tool_input (до нормализации).
+  # Для MultiEdit достаёт все edits[].new_string под одним file_path.
+  # Для apply_patch парсит patch body и собирает content per file_changes block.
+  # Нормализованный event сейчас уплощает эти структуры в одно top-level поле,
+  # поэтому caller должен достать raw payload и передать сюда. Безопасно по типам:
+  # принимает Hash или nil, на ошибках возвращает [].
+  def extract_raw_targets(tool_name, raw_tool_input)
+    return [] unless tool_name.is_a?(String) && raw_tool_input.is_a?(Hash)
+
+    case tool_name
+    when "MultiEdit"
+      extract_multi_edit_targets(raw_tool_input)
+    when "ApplyPatch", "apply_patch"
+      extract_apply_patch_targets(raw_tool_input)
+    else
+      []
+    end
+  end
+
+  private
+
+  def extract_multi_edit_targets(tool_input)
+    file_path = (tool_input["file_path"] || tool_input["filePath"] || "").to_s
+    return [] if file_path.empty?
+
+    edits = tool_input["edits"]
+    return [] unless edits.is_a?(Array)
+
+    # Собираем все new_string'и одного MultiEdit-таргета в один joined content.
+    # Joining через "\n" сохраняет line numbering приблизительно (каждая правка
+    # на своей "виртуальной" строке — точные line numbers недоступны без AST,
+    # но stub-detection бьёт по pattern'у, не по line nesting).
+    joined = edits.map do |edit|
+      next "" unless edit.is_a?(Hash)
+
+      (edit["new_string"] || edit["newString"] || "").to_s
+    end.reject(&:empty?).join("\n")
+    return [] if joined.empty?
+
+    [{ "file_path" => file_path, "content" => joined }]
+  end
+
+  def extract_apply_patch_targets(tool_input)
+    patch = (tool_input["patch"] || tool_input["body"] || "").to_s
+    return [] if patch.empty?
+
+    targets = []
+    current_path = nil
+    current_buffer = []
+
+    flush = lambda do
+      next if current_path.nil? || current_path.empty? || current_buffer.empty?
+
+      content = current_buffer.join
+      targets << { "file_path" => current_path, "content" => content } unless content.empty?
+    end
+
+    patch.each_line do |line|
+      case line
+      when /\A\*\*\* (Add|Update) File: (.+)\n?\z/
+        flush.call
+        current_path = Regexp.last_match(2).strip
+        current_buffer = []
+      when /\A\*\*\* (Delete File|Move to|End Patch)/
+        flush.call
+        current_path = nil
+        current_buffer = []
+      when /\A\+(.*)\z/m
+        # Только added lines участвуют в новой версии содержимого.
+        current_buffer << (Regexp.last_match(1) || "") if current_path
+      end
+    end
+    flush.call
+
+    targets
+  end
+
+  public
 
   # Парсит stub-allowlist.txt протектед-конфиг файл. Принимает массив директив
   # как из StrictModeProtectedConfig.load_records (формат `finding <sha256>`),

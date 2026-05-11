@@ -125,6 +125,7 @@ def classify_preflight(payload:, provider:, logical_event:, payload_hash:, state
     )
   end
 
+  raw_tool_input = payload.is_a?(Hash) ? payload["tool_input"] : nil
   decision = StrictModeDestructiveGate.classify_tool(
     event.fetch("tool"),
     cwd: event.fetch("cwd"),
@@ -133,6 +134,7 @@ def classify_preflight(payload:, provider:, logical_event:, payload_hash:, state
     protected_inodes: baseline.fetch("protected_inodes"),
     destructive_patterns: baseline.fetch("destructive_patterns"),
     stub_allowlist: baseline.fetch("stub_allowlist"),
+    raw_tool_input: raw_tool_input,
     home: baseline.fetch("home"),
     install_root: baseline.fetch("install_root")
   )

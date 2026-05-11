@@ -18,7 +18,7 @@ module StrictModeDestructiveGate
   REDIRECT_OPS = %w[> >> 1> 1>> 2> 2>> &> &>>].freeze
   MAX_SUBSTITUTION_DEPTH = 8
 
-  def classify_tool(tool, cwd:, project_dir:, protected_roots:, protected_inodes: [], destructive_patterns: [], stub_allowlist: [], home: Dir.home, install_root: nil)
+  def classify_tool(tool, cwd:, project_dir:, protected_roots:, protected_inodes: [], destructive_patterns: [], stub_allowlist: [], raw_tool_input: nil, home: Dir.home, install_root: nil)
     errors = []
     cwd_path = normalize_identity_path(cwd, "cwd", errors)
     project_path = normalize_identity_path(project_dir, "project_dir", errors)
@@ -32,13 +32,20 @@ module StrictModeDestructiveGate
     path_decision = classify_direct_paths(tool, cwd: cwd_path, protected_roots: protected_roots, protected_inodes: protected_inodes)
     return path_decision unless path_decision.fetch("decision") == "allow"
 
-    classify_stub_content(tool, stub_allowlist: stub_allowlist)
+    classify_stub_content(tool, stub_allowlist: stub_allowlist, raw_tool_input: raw_tool_input)
   end
 
-  def classify_stub_content(tool, stub_allowlist:)
+  def classify_stub_content(tool, stub_allowlist:, raw_tool_input: nil)
     return allow("write-targets-disjoint") if stub_allowlist.nil?
 
-    targets = StrictModeStubDetection.extract_scannable_targets(tool)
+    # Normalized event покрывает Write (content) и Edit (new_string). MultiEdit и
+    # apply_patch уплощены в одно top-level поле, поэтому per-edit/per-patch-block
+    # контент достаётся из сырого tool_input. Объединяем оба источника в единый
+    # список таргетов, дедуплицируем по file_path+content sha (на случай если
+    # normalizer и raw extractor дали одно и то же).
+    normalized_targets = StrictModeStubDetection.extract_scannable_targets(tool)
+    raw_targets = raw_tool_input.is_a?(Hash) ? StrictModeStubDetection.extract_raw_targets(tool.fetch("name", ""), raw_tool_input) : []
+    targets = dedupe_targets(normalized_targets + raw_targets)
     return allow("write-targets-disjoint") if targets.empty?
 
     allowlist = StrictModeStubDetection.parse_allowlist_records(stub_allowlist)
@@ -56,6 +63,21 @@ module StrictModeDestructiveGate
     end
 
     allow("write-targets-disjoint")
+  end
+
+  def dedupe_targets(targets)
+    seen = {}
+    targets.each do |target|
+      next unless target.is_a?(Hash)
+
+      file_path = target.fetch("file_path", "").to_s
+      content = target.fetch("content", "").to_s
+      next if file_path.empty? || content.empty?
+
+      key = [file_path, Digest::SHA256.hexdigest(content)]
+      seen[key] ||= target
+    end
+    seen.values
   end
 
   def classify_shell(tool, cwd:, project_dir:, protected_roots:, protected_inodes:, destructive_patterns:, home:, install_root:, substitution_depth: 0)

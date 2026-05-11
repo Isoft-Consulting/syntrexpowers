@@ -128,6 +128,58 @@ content = "// TODO: A\n// FIXME: B\nfunction x() { throw new Error('TODO impl');
 findings = scan(content, "/repo/app/x.ts")
 assert(name, findings.length >= 2, "expected at least 2 findings", findings.inspect)
 
+$cases += 1
+name = "extract_raw_targets handles MultiEdit edits[]"
+tool_input = {
+  "file_path" => "/repo/app/a.ts",
+  "edits" => [
+    { "old_string" => "x", "new_string" => "// TODO: from first edit" },
+    { "old_string" => "y", "new_string" => "function ok() { return 1; }" }
+  ]
+}
+targets = StrictModeStubDetection.extract_raw_targets("MultiEdit", tool_input)
+assert(name, targets.length == 1, "expected one MultiEdit target", targets.inspect)
+assert(name, targets.first.fetch("file_path") == "/repo/app/a.ts", "wrong file_path", targets.inspect)
+assert(name, targets.first.fetch("content").include?("TODO: from first edit"), "content must include first edit new_string", targets.inspect)
+assert(name, targets.first.fetch("content").include?("function ok()"), "content must include second edit new_string", targets.inspect)
+
+$cases += 1
+name = "extract_raw_targets returns empty for MultiEdit without edits"
+targets = StrictModeStubDetection.extract_raw_targets("MultiEdit", { "file_path" => "/x.ts" })
+assert(name, targets.empty?, "expected no targets for empty edits", targets.inspect)
+
+$cases += 1
+name = "extract_raw_targets returns empty for MultiEdit without file_path"
+targets = StrictModeStubDetection.extract_raw_targets("MultiEdit", { "edits" => [{ "new_string" => "x" }] })
+assert(name, targets.empty?, "expected no targets without file_path", targets.inspect)
+
+$cases += 1
+name = "extract_raw_targets parses apply_patch Add File blocks"
+patch = "*** Begin Patch\n*** Add File: /repo/app/new.ts\n+function f() {\n+    // TODO: implement\n+}\n*** End Patch\n"
+targets = StrictModeStubDetection.extract_raw_targets("apply_patch", { "patch" => patch })
+assert(name, targets.length == 1, "expected one apply_patch target", targets.inspect)
+assert(name, targets.first.fetch("file_path") == "/repo/app/new.ts", "wrong file_path", targets.inspect)
+assert(name, targets.first.fetch("content").include?("TODO: implement"), "content must include + lines", targets.inspect)
+
+$cases += 1
+name = "extract_raw_targets parses apply_patch with multiple Update blocks"
+patch = "*** Update File: /repo/a.ts\n+const x = 1;\n*** Update File: /repo/b.ts\n+// FIXME: real\n+const y = 2;\n*** End Patch\n"
+targets = StrictModeStubDetection.extract_raw_targets("apply_patch", { "patch" => patch })
+assert(name, targets.length == 2, "expected two apply_patch targets", targets.inspect)
+paths = targets.map { |t| t.fetch("file_path") }.sort
+assert(name, paths == ["/repo/a.ts", "/repo/b.ts"], "wrong paths", targets.inspect)
+
+$cases += 1
+name = "extract_raw_targets returns empty for unsupported tool"
+targets = StrictModeStubDetection.extract_raw_targets("Bash", { "command" => "ls" })
+assert(name, targets.empty?, "expected no targets for Bash", targets.inspect)
+
+$cases += 1
+name = "scan picks up TODO in joined MultiEdit content"
+joined = "function f() {\n    // TODO: implement\n}\nfunction g() { return 1; }"
+findings = scan(joined, "/repo/app/a.ts")
+assert(name, findings.length >= 1, "expected TODO finding in joined MultiEdit content", findings.inspect)
+
 if $failures.empty?
   puts "stub detection tests passed (#{$cases} cases)"
 else
