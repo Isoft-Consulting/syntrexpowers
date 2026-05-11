@@ -1242,6 +1242,220 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(plan["confidence"]["top_score"], 2.0)
         self.assertGreaterEqual(plan["confidence"]["gap"], 0.0)
 
+    def test_self_rag_fdr_read_plan_includes_companion_artifacts(self) -> None:
+        profile = score_query_profile("RAG server FDR self-review exact_filename_boost read_plan config tests", "fdr", None)
+        results = [
+            {
+                "source": ".mcp/rag-server/rag_universal/core.py",
+                "read_hint": ".mcp/rag-server/rag_universal/core.py:4300 [implementation]",
+                "fdr_role": "implementation",
+                "chunk_role": "implementation",
+                "section": "core.py",
+                "document_status": "normal",
+                "score": 3.0,
+                "start_line": 4300,
+                "heading": "core.py",
+            },
+            {
+                "source": ".mcp/rag-server/tests/test_rag_universal.py",
+                "read_hint": ".mcp/rag-server/tests/test_rag_universal.py:1200 [test]",
+                "fdr_role": "test",
+                "chunk_role": "test",
+                "section": "test_rag_universal.py",
+                "document_status": "normal",
+                "score": 0.8,
+                "start_line": 1200,
+                "heading": "test_rag_universal.py",
+            },
+            {
+                "source": ".mcp/rag-server/schemas/rag.config.v1.schema.json",
+                "read_hint": ".mcp/rag-server/schemas/rag.config.v1.schema.json:1 [implementation]",
+                "fdr_role": "config",
+                "chunk_role": "implementation",
+                "section": "rag.config.v1.schema.json",
+                "document_status": "normal",
+                "score": 0.7,
+                "start_line": 1,
+                "heading": "rag.config.v1.schema.json",
+            },
+            {
+                "source": ".mcp/rag-server/rag_universal/cli.py",
+                "read_hint": ".mcp/rag-server/rag_universal/cli.py:1 [implementation]",
+                "fdr_role": "implementation",
+                "chunk_role": "implementation",
+                "section": "cli.py",
+                "document_status": "normal",
+                "score": 0.5,
+                "start_line": 1,
+                "heading": "cli.py",
+            },
+        ]
+
+        plan = build_read_plan(results, mode="fdr", profile=profile)
+        sources = [item["source"] for item in plan["items"]]
+
+        self.assertEqual(sources[0], ".mcp/rag-server/rag_universal/core.py")
+        self.assertEqual(sources[1], ".mcp/rag-server/tests/test_rag_universal.py")
+        self.assertIn(".mcp/rag-server/tests/test_rag_universal.py", sources)
+        self.assertIn(".mcp/rag-server/schemas/rag.config.v1.schema.json", sources)
+        self.assertIn(".mcp/rag-server/rag_universal/cli.py", sources)
+        self.assertIn("self-review", plan["token_budget_hint"])
+
+    def test_self_rag_fdr_read_plan_adds_runtime_when_config_is_top_hit(self) -> None:
+        profile = score_query_profile(
+            "RAG server self-review config schema drift exact_filename_boost DEFAULT_CONFIG rag.config.example",
+            "fdr",
+            None,
+        )
+        results = [
+            {
+                "source": ".mcp/rag-server/rag.config.example.json",
+                "read_hint": ".mcp/rag-server/rag.config.example.json:1 [implementation]",
+                "fdr_role": "config",
+                "chunk_role": "implementation",
+                "section": "rag.config.example.json",
+                "document_status": "normal",
+                "score": 7.0,
+                "start_line": 1,
+                "heading": "rag.config.example.json",
+            },
+            {
+                "source": ".mcp/rag-server/rag_universal/core.py",
+                "read_hint": ".mcp/rag-server/rag_universal/core.py:1 [implementation]",
+                "fdr_role": "implementation",
+                "chunk_role": "implementation",
+                "section": "core.py",
+                "document_status": "normal",
+                "score": 0.8,
+                "start_line": 1,
+                "heading": "core.py",
+            },
+            {
+                "source": ".mcp/rag-server/tests/test_rag_universal.py",
+                "read_hint": ".mcp/rag-server/tests/test_rag_universal.py:1 [test]",
+                "fdr_role": "test",
+                "chunk_role": "test",
+                "section": "test_rag_universal.py",
+                "document_status": "normal",
+                "score": 0.7,
+                "start_line": 1,
+                "heading": "test_rag_universal.py",
+            },
+            {
+                "source": ".mcp/rag-server/schemas/rag.config.v1.schema.json",
+                "read_hint": ".mcp/rag-server/schemas/rag.config.v1.schema.json:1 [implementation]",
+                "fdr_role": "config",
+                "chunk_role": "implementation",
+                "section": "rag.config.v1.schema.json",
+                "document_status": "normal",
+                "score": 0.6,
+                "start_line": 1,
+                "heading": "rag.config.v1.schema.json",
+            },
+        ]
+
+        plan = build_read_plan(results, mode="fdr", profile=profile)
+        sources = [item["source"] for item in plan["items"]]
+
+        self.assertEqual(sources[0], ".mcp/rag-server/rag.config.example.json")
+        self.assertIn(".mcp/rag-server/rag_universal/core.py", sources)
+        self.assertIn(".mcp/rag-server/tests/test_rag_universal.py", sources)
+        self.assertIn(".mcp/rag-server/schemas/rag.config.v1.schema.json", sources)
+
+    def test_self_rag_fdr_result_selection_keeps_companion_config_and_tests(self) -> None:
+        profile = score_query_profile(
+            "RAG server self-review config schema drift exact_filename_boost DEFAULT_CONFIG rag.config.example",
+            "fdr",
+            None,
+        )
+        results = [
+            {
+                "source": ".mcp/rag-server/rag.config.example.json",
+                "fdr_role": "config",
+                "chunk_role": "implementation",
+                "heading": "rag.config.example.json",
+                "document_status": "normal",
+                "score": 7.0,
+                "filename_match": 1.0,
+                "path_match": 0.0,
+                "start_line": 1,
+            },
+            {
+                "source": ".mcp/rag-server/schemas/rag.config.v1.schema.json",
+                "fdr_role": "config",
+                "chunk_role": "implementation",
+                "heading": "rag.config.v1.schema.json",
+                "document_status": "normal",
+                "score": 3.0,
+                "filename_match": 0.0,
+                "path_match": 0.0,
+                "start_line": 1,
+            },
+            {
+                "source": ".mcp/rag-server/rag_universal/core.py",
+                "fdr_role": "implementation",
+                "chunk_role": "implementation",
+                "heading": "core.py",
+                "document_status": "normal",
+                "score": 0.8,
+                "filename_match": 0.0,
+                "path_match": 0.0,
+                "start_line": 1,
+            },
+            {
+                "source": ".mcp/rag-server/tests/test_rag_universal.py",
+                "fdr_role": "test",
+                "chunk_role": "test",
+                "heading": "test_rag_universal.py",
+                "document_status": "normal",
+                "score": 0.7,
+                "filename_match": 0.0,
+                "path_match": 0.0,
+                "start_line": 1,
+            },
+        ]
+
+        selected = select_search_results(results, top_k=4, max_chunks_per_source=1, mode="fdr", profile=profile)
+        sources = [item["source"] for item in selected]
+
+        self.assertEqual(sources[0], ".mcp/rag-server/rag.config.example.json")
+        self.assertIn(".mcp/rag-server/rag_universal/core.py", sources)
+        self.assertIn(".mcp/rag-server/tests/test_rag_universal.py", sources)
+        self.assertIn(".mcp/rag-server/schemas/rag.config.v1.schema.json", sources)
+
+    def test_dotted_filename_anchor_matches_config_example_without_extension(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        (root / ".mcp" / "rag-server" / "rag_universal").mkdir(parents=True)
+        (root / ".mcp" / "rag-server").mkdir(parents=True, exist_ok=True)
+        (root / ".mcp" / "rag-server" / "rag_universal" / "core.py").write_text(
+            "exact_filename_boost read_plan config schema\n",
+            encoding="utf-8",
+        )
+        (root / ".mcp" / "rag-server" / "rag.config.example.json").write_text(
+            json.dumps({"search": {"exact_filename_boost": 1.05}}),
+            encoding="utf-8",
+        )
+        (root / "rag.config.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "rag.config.v1",
+                    "force_include_globs": [
+                        ".mcp/rag-server/rag_universal/*.py",
+                        ".mcp/rag-server/*.json",
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        build_index(root)
+
+        results = search_index(root, None, "RAG server config rag.config.example exact_filename_boost", top_k=2, mode="fdr")
+
+        self.assertEqual(results[0]["source"], ".mcp/rag-server/rag.config.example.json")
+        self.assertGreater(results[0]["filename_match"], 0.0)
+
     def test_review_comment_query_prefers_shell_script_over_plan_noise(self) -> None:
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)

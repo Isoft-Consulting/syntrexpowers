@@ -22,7 +22,7 @@ SOURCE_STATE_VERSION = "rag.source-state.v1"
 SEARCH_CACHE_VERSION = "rag.search-cache.v1"
 CHUNKER_VERSION = "lexical-chunker.v1"
 TOKENIZER_VERSION = "unicode-tokenizer.v1"
-SEARCH_VERSION = "hash-vector-bm25.v18"
+SEARCH_VERSION = "hash-vector-bm25.v19"
 
 _SEARCH_CACHE_CONNECTIONS: dict[tuple[str, float, int, str], sqlite3.Connection] = {}
 _LEXICON_CACHE: dict[tuple[str, float, int], dict[str, Any]] = {}
@@ -3787,6 +3787,26 @@ FILENAME_TOKEN_RE = re.compile(
     re.IGNORECASE,
 )
 CAMEL_FILENAME_ANCHOR_RE = re.compile(r"\b[A-Z][A-Za-z0-9]+(?:[A-Z][A-Za-z0-9]+)+\b")
+KNOWN_FILENAME_EXTENSIONS = {
+    ".php",
+    ".vue",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".md",
+    ".py",
+    ".sh",
+    ".css",
+    ".scss",
+    ".sql",
+    ".xml",
+    ".html",
+    ".service",
+}
 
 
 def extract_query_paths(query: str) -> list[str]:
@@ -3847,6 +3867,11 @@ def extract_query_filename_anchors(query: str, profile: dict[str, Any] | None = 
         add(name)
         add(Path(name).stem)
 
+    for match in re.finditer(r"\b[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+){1,}\b", query):
+        # Basename-like dotted anchors without an extension, e.g.
+        # "rag.config.example" should match "rag.config.example.json".
+        add(match.group(0))
+
     for match in CAMEL_FILENAME_ANCHOR_RE.finditer(query):
         name = match.group(0)
         # Avoid treating all-caps acronyms such as RAG/MCP/SPA as filenames.
@@ -3903,8 +3928,9 @@ def filename_anchor_match_score(source: str, anchors: list[str]) -> float:
         base = max(0.72, 1.0 - order * 0.035)
         anchor_name = Path(anchor).name.lower()
         anchor_suffix = Path(anchor_name).suffix.lower()
+        anchor_has_known_suffix = anchor_suffix in KNOWN_FILENAME_EXTENSIONS
         anchor_stem = Path(anchor_name).stem.lower() if anchor_suffix else anchor_name
-        if anchor_suffix:
+        if anchor_has_known_suffix:
             if name == anchor_name:
                 best = max(best, base)
             elif stem == anchor_stem:
@@ -3925,7 +3951,7 @@ def fetch_filename_candidates(connection: sqlite3.Connection, anchors: list[str]
             continue
         anchor_suffix = Path(anchor_name).suffix.lower()
         terms = [anchor_name]
-        if anchor_suffix:
+        if anchor_suffix in KNOWN_FILENAME_EXTENSIONS:
             terms.append(Path(anchor_name).stem.lower())
         placeholders = ",".join("?" for _ in terms)
         try:
@@ -4540,7 +4566,18 @@ def select_search_results(
         source_counts[source] += 1
         return True
 
-    if normalize_search_mode(mode) == "fdr":
+    if should_expand_self_rag_review_plan(active_profile, mode):
+        for result in ordered_results:
+            if add_result(result):
+                break
+        for companion_kind in ("runtime", "test", "config", "entrypoint"):
+            if len(selected) >= limit:
+                break
+            for result in ordered_results:
+                if self_rag_review_companion_kind(result) == companion_kind and add_result(result):
+                    break
+
+    elif normalize_search_mode(mode) == "fdr":
         selected_roles: set[str] = set()
         seed_count = min(3, limit)
         role_insert_limit = min(limit, seed_count + 2)
@@ -4570,6 +4607,34 @@ def select_search_results(
     return selected
 
 
+def self_rag_review_companion_kind(result: dict[str, Any]) -> str | None:
+    source = str(result.get("source", "")).lower()
+    if not source.startswith(".mcp/rag-server/"):
+        return None
+    role = str(result.get("fdr_role", "other")).lower()
+    if role == "test" or "/tests/" in source:
+        return "test"
+    name = Path(source).name.lower()
+    if (
+        "/schemas/" in source
+        or source.endswith(("rag.config.json", "rag.config.example.json"))
+        or name.endswith(".schema.json")
+        or (role == "config" and "config" in name)
+    ):
+        return "config"
+    if source.endswith(("/mcp_server.py", "/cli.py", "/tools/rag.py")):
+        return "entrypoint"
+    if "/rag_universal/" in source and role == "implementation":
+        return "runtime"
+    if role in {"docs", "spec", "plan"}:
+        return "docs"
+    return None
+
+
+def should_expand_self_rag_review_plan(profile: dict[str, Any], mode: str) -> bool:
+    return bool(profile.get("self_rag")) and normalize_search_mode(mode) == "fdr"
+
+
 def build_read_plan(
     results: list[dict[str, Any]],
     mode: str = "default",
@@ -4588,9 +4653,12 @@ def build_read_plan(
         adaptive_read_plan_limit(active_profile, max_items),
         max(1, int(confidence.get("recommended_limit", 3))),
     )
-    for result in ordered_results:
+    if should_expand_self_rag_review_plan(active_profile, mode):
+        read_plan_limit = min(max_items, max(read_plan_limit, 4))
+
+    def entry_for(result: dict[str, Any]) -> dict[str, Any]:
         status = str(result.get("document_status", "normal"))
-        entry = {
+        return {
             "source": result.get("source"),
             "read_hint": result.get("read_hint"),
             "role": result.get("fdr_role", "other"),
@@ -4600,19 +4668,45 @@ def build_read_plan(
             "score": result.get("score"),
             "token_cost_hint": "low" if float(result.get("score", 0.0)) >= 0.55 else "medium",
         }
+
+    def add_plan_result(result: dict[str, Any]) -> bool:
+        entry = entry_for(result)
+        status = str(entry["status"])
         if status in ("superseded", "historical"):
             blocked.append({**entry, "reason": "low-trust document status"})
-            continue
+            return False
         source = str(result.get("source", ""))
         if source in seen_sources:
-            continue
+            return False
         items.append(entry)
         seen_sources.add(source)
+        return True
+
+    if should_expand_self_rag_review_plan(active_profile, mode):
+        first_kind: str | None = None
+        for result in results:
+            if add_plan_result(result):
+                first_kind = self_rag_review_companion_kind(result)
+                break
+        for companion_kind in ("runtime", "test", "config", "entrypoint"):
+            if companion_kind == "runtime" and first_kind == "runtime":
+                continue
+            if len(items) >= read_plan_limit:
+                break
+            for result in ordered_results:
+                if self_rag_review_companion_kind(result) == companion_kind and add_plan_result(result):
+                    break
+
+    for result in ordered_results:
         if len(items) >= read_plan_limit:
             break
+        add_plan_result(result)
+
     confidence_level = str(confidence.get("level", "low"))
     token_budget_hint = "Start with 1-2 low-cost sections, then expand only if evidence is still missing."
-    if confidence_level == "high":
+    if should_expand_self_rag_review_plan(active_profile, mode):
+        token_budget_hint = "For self-review, read the implementation hit plus companion test/config artifacts before declaring 0 issues."
+    elif confidence_level == "high":
         token_budget_hint = "Start with the first section only; expand only if that evidence is insufficient."
     elif confidence_level == "medium":
         token_budget_hint = "Start with the first 1-2 sections; expand only if the first hit does not resolve the task."
