@@ -147,9 +147,17 @@ module StrictModeDestructiveGate
     kind = tool.fetch("kind", "unknown").to_s
     write_intent = tool.fetch("write_intent", "unknown").to_s
     return true if WRITE_TOOL_KINDS.include?(kind)
-    return true if PATH_BEARING_KINDS.include?(kind) && write_intent != "read"
+    return false unless PATH_BEARING_KINDS.include?(kind) && write_intent != "read"
 
-    false
+    # "other"/"unknown" tools only count as write-like когда они реально экспонируют
+    # путь к файлу. Орchestration-tools (Task*, ScheduleWakeup, Skill, ToolSearch и
+    # любой другой не-write tool без file_paths) не должны fail-close'иться на
+    # "protected-target-unknown" просто потому что мы не знаем их name. Если же
+    # неизвестный tool раскрывает file_path/file_paths — он проверяется по
+    # protected-paths как раньше, и невыразимый target всё равно блокируется.
+    tool_paths = Array(tool["file_paths"]).map(&:to_s).reject(&:empty?)
+    tool_paths << tool["file_path"].to_s if tool["file_path"].is_a?(String) && !tool["file_path"].empty?
+    !tool_paths.empty?
   end
 
   def shell_tokens(command)

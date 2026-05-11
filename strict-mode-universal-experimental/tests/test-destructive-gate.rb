@@ -348,6 +348,42 @@ with_project do |_root, project, cwd, home, install, protected_roots|
   expect_result(name, result, "block", "unknown-write-target")
 end
 
+# === Orchestration tools (no file_paths) — должны проходить, не fail-close'иться ===
+# Эти тесты закрывают reported finding о Universal classify_direct_paths fail-closed
+# для ScheduleWakeup/TaskCreate/Skill/etc — orchestration tools без file_paths больше
+# не получают protected-target-unknown, потому что write_like_tool? возвращает false
+# для "other"/"unknown" kind когда tool не экспонирует пути к файлам.
+
+with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "other-kind tool without file_paths passes as non-write"
+  tool = { "name" => "ScheduleWakeup", "kind" => "other", "write_intent" => "unknown", "file_path" => "", "file_paths" => [] }
+  result = classify(tool, project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "allow", "non-write-tool")
+end
+
+with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "unknown-kind tool without file_paths passes as non-write"
+  tool = { "name" => "TaskCreate", "kind" => "unknown", "write_intent" => "unknown", "file_path" => "", "file_paths" => [] }
+  result = classify(tool, project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "allow", "non-write-tool")
+end
+
+with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "other-kind tool WITH file_path remains write-like and checked against protected roots"
+  unknown_tool_target = project.join("src/safe.txt").to_s
+  tool = { "name" => "MysteryWriter", "kind" => "other", "write_intent" => "unknown", "file_path" => unknown_tool_target, "file_paths" => [unknown_tool_target] }
+  result = classify(tool, project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "allow", "write-targets-disjoint")
+end
+
+with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "other-kind tool WITH protected-root file_path is still blocked"
+  protected_target = install.join("active/something").to_s
+  tool = { "name" => "MysteryWriter", "kind" => "other", "write_intent" => "unknown", "file_path" => protected_target, "file_paths" => [protected_target] }
+  result = classify(tool, project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "block", "protected-root")
+end
+
 if $failures.empty?
   puts "destructive gate tests passed (#{$cases} cases)"
 else
