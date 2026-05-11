@@ -87,11 +87,13 @@ universal-experimental/
     normalize-event.rb
     decision_contract_lib.rb
     validate-decision-contract.rb
+    internal_decision_lib.rb
     preflight_record_lib.rb
     validate-preflight-record.rb
     protected_config_lib.rb
     validate-protected-config.rb
     destructive_gate_lib.rb
+    stub_detection_lib.rb
     protected_baseline_lib.rb
     fixture_manifest_lib.rb
     generate-fixture-manifests.rb
@@ -133,15 +135,22 @@ universal-experimental/
     test-provider-detection.rb
     test-normalized-events.rb
     test-decisions.rb
+    test-internal-decision.rb
     test-protected-config.rb
     test-destructive-gate.rb
+    test-stub-detection.rb
     test-protected-baseline.rb
+    test-provider-config-fingerprint.rb
     test-preflight-record.rb
     test-hook-preflight.rb
+    test-fdr-cli.rb
+    test-judge.rb
     test-fixtures.rb
     test-fixture-readiness.rb
     test-hook-entry-plan.rb
+    test-install-hook-plan.rb
     test-installer.rb
+    test-require-ruby.sh
     fixtures/
       claude/
       codex/
