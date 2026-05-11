@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "proof_kind": "claude.event-order.observed",
+  "provider": "claude",
+  "provider_version": "unknown",
+  "provider_build_hash": "",
+  "event": "session-start",
+  "contract_id": "claude.session-start.order",
+  "early_baseline_events_before_tool": true,
+  "observed_order": [
+    {
+      "event": "session-start",
+      "recorded_at": "2026-05-11T10:17:56Z",
+      "payload_sha256": "fd80453998bfb0312c3614e8976784f5c670edc936813eab62909f04c2728a21"
+    },
+    {
+      "event": "user-prompt-submit",
+      "recorded_at": "2026-05-11T10:18:16Z",
+      "payload_sha256": "18c971beb162eca54a276a266b37111040e569fceed7d5bfc197bfef637dd3d4"
+    },
+    {
+      "event": "pre-tool-use",
+      "recorded_at": "2026-05-11T10:18:19Z",
+      "payload_sha256": "bd94c314f7e91f3d822d22c4216668246691846e56db738b547057160828e2e9"
+    }
+  ]
+}

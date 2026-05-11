@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "proof_kind": "claude.command-execution.observed",
+  "provider": "claude",
+  "provider_version": "unknown",
+  "provider_build_hash": "",
+  "event": "post-tool-use",
+  "contract_id": "claude.post-tool-use.command",
+  "hook_command_executed": true,
+  "hook_argv": [
+    "strict-hook",
+    "--provider",
+    "claude",
+    "post-tool-use"
+  ],
+  "hook_exit_status": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "discovery_recorded_at": "2026-05-11T10:18:20Z",
+  "provider_detection_decision": "match",
+  "payload_sha256": "7dbf313384edc957744e6bac997eb336d10ddb00156ad60426c9371d99620ee0",
+  "raw_payload_captured": true,
+  "raw_payload_path": "/Users/andrey/.strict-mode/state/discovery/raw/claude/post-tool-use/20260511T101820-29368-2313665b-7dbf313384ed.payload",
+  "hook_mode": "discovery-log-only"
+}

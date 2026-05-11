@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "contract_id": "claude.pre-tool-use.block",
+  "provider": "claude",
+  "event": "pre-tool-use",
+  "logical_event": "pre-tool-use",
+  "provider_action": "block",
+  "stdout_mode": "json",
+  "stdout_required_fields": [
+    "decision",
+    "reason"
+  ],
+  "stderr_mode": "empty",
+  "stderr_required_fields": [],
+  "exit_code": 0,
+  "blocks_or_denies": 1,
+  "injects_context": 0,
+  "decision_contract_hash": "fece5afb3817c47ad3ef845276d8b35c5515c38569eeced1dfee83417aa4fcce"
+}

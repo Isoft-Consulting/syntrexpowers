@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "contract_id": "claude.stop.block",
+  "provider": "claude",
+  "event": "stop",
+  "logical_event": "stop",
+  "provider_action": "block",
+  "stdout_mode": "json",
+  "stdout_required_fields": [
+    "decision",
+    "reason"
+  ],
+  "stderr_mode": "empty",
+  "stderr_required_fields": [],
+  "exit_code": 0,
+  "blocks_or_denies": 1,
+  "injects_context": 0,
+  "decision_contract_hash": "03c3a752142d9c911c28981f92acba129303961bbcc60e92f2d38a34b020e1df"
+}

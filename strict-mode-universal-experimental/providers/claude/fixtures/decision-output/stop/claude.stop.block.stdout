@@ -1,0 +1,1 @@
+{"decision":"block","reason":"Run exactly this shell command now: printf claude-stop-continuation-ok. Then answer exactly: stop-guard-complete"}

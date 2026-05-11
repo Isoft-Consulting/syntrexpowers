@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "proof_kind": "claude.command-execution.observed",
+  "provider": "claude",
+  "provider_version": "unknown",
+  "provider_build_hash": "",
+  "event": "pre-tool-use",
+  "contract_id": "claude.pre-tool-use.command",
+  "hook_command_executed": true,
+  "hook_argv": [
+    "strict-hook",
+    "--provider",
+    "claude",
+    "pre-tool-use"
+  ],
+  "hook_exit_status": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "discovery_recorded_at": "2026-05-11T10:18:19Z",
+  "provider_detection_decision": "match",
+  "payload_sha256": "bd94c314f7e91f3d822d22c4216668246691846e56db738b547057160828e2e9",
+  "raw_payload_captured": true,
+  "raw_payload_path": "/Users/andrey/.strict-mode/state/discovery/raw/claude/pre-tool-use/20260511T101819-29328-da5eff30-bd94c314f7e9.payload",
+  "hook_mode": "discovery-log-only"
+}
