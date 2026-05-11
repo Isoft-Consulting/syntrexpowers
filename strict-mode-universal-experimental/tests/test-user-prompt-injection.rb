@@ -88,6 +88,20 @@ end
 # --- Case 1: injection populated → stdout contains content ---
 INJECTION_CONTENT = "TEST INJECTION RULES\n1. Marker line one\n2. Marker line two\n"
 
+# Explicit STRICT_MODE_NESTED unset so cases that rely on it being absent
+# don't false-pass when the test driver session happens to have it set.
+# Open3.capture3 treats a nil value in env hash as "remove from subprocess
+# environment", so subprocess sees no STRICT_MODE_NESTED regardless of
+# parent env.
+def base_env(home, state_root, project)
+  {
+    "HOME" => home.to_s,
+    "STRICT_STATE_ROOT" => state_root.to_s,
+    "STRICT_PROJECT_DIR" => project.to_s,
+    "STRICT_MODE_NESTED" => nil
+  }
+end
+
 with_install_claude do |phase, *args|
   case phase
   when :setup
@@ -95,11 +109,7 @@ with_install_claude do |phase, *args|
   when :test
     _root, home, install_root, state_root, project = args
     name = "user-prompt-submit emits injection content when config populated and baseline trusted"
-    env = {
-      "HOME" => home.to_s,
-      "STRICT_STATE_ROOT" => state_root.to_s,
-      "STRICT_PROJECT_DIR" => project.to_s
-    }
+    env = base_env(home, state_root, project)
     stdout, stderr, status = run_strict_hook(env, install_root, "claude", "user-prompt-submit", claude_user_prompt_payload(project))
     assert_no_stacktrace(name, stdout + stderr)
     assert(name, status.exitstatus.zero?, "strict-hook must exit 0, got #{status.exitstatus}", stdout + stderr)
@@ -118,12 +128,7 @@ with_install_claude do |phase, *args|
   when :test
     _root, home, install_root, state_root, project = args
     name = "user-prompt-submit suppresses injection when STRICT_MODE_NESTED=1"
-    env = {
-      "HOME" => home.to_s,
-      "STRICT_STATE_ROOT" => state_root.to_s,
-      "STRICT_PROJECT_DIR" => project.to_s,
-      "STRICT_MODE_NESTED" => "1"
-    }
+    env = base_env(home, state_root, project).merge("STRICT_MODE_NESTED" => "1")
     stdout, stderr, status = run_strict_hook(env, install_root, "claude", "user-prompt-submit", claude_user_prompt_payload(project))
     assert_no_stacktrace(name, stdout + stderr)
     assert(name, status.exitstatus.zero?, "strict-hook must exit 0", stdout + stderr)
@@ -139,11 +144,7 @@ with_install_claude do |phase, *args|
   when :test
     _root, home, install_root, state_root, project = args
     name = "user-prompt-submit emits no injection content when file is empty (default template)"
-    env = {
-      "HOME" => home.to_s,
-      "STRICT_STATE_ROOT" => state_root.to_s,
-      "STRICT_PROJECT_DIR" => project.to_s
-    }
+    env = base_env(home, state_root, project)
     stdout, stderr, status = run_strict_hook(env, install_root, "claude", "user-prompt-submit", claude_user_prompt_payload(project))
     assert_no_stacktrace(name, stdout + stderr)
     assert(name, status.exitstatus.zero?, "strict-hook must exit 0", stdout + stderr)
@@ -165,11 +166,7 @@ with_install_claude do |phase, *args|
     tmp.write("TAMPERED CONTENT NOT IN BASELINE\n")
     File.chmod(0o600, tmp)
     File.rename(tmp, tampered_path)
-    env = {
-      "HOME" => home.to_s,
-      "STRICT_STATE_ROOT" => state_root.to_s,
-      "STRICT_PROJECT_DIR" => project.to_s
-    }
+    env = base_env(home, state_root, project)
     stdout, stderr, status = run_strict_hook(env, install_root, "claude", "user-prompt-submit", claude_user_prompt_payload(project))
     assert_no_stacktrace(name, stdout + stderr)
     assert(name, status.exitstatus.zero?, "strict-hook must exit 0 even when injection skipped", stdout + stderr)
