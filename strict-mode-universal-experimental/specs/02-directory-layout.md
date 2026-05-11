@@ -127,6 +127,7 @@ universal-experimental/
     network-allowlist.txt
     destructive-patterns.txt
     stub-allowlist.txt
+    user-prompt-injection.md
   tests/
     run-tests.sh
     test-provider-detection.rb

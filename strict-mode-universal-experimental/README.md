@@ -43,6 +43,17 @@ After installing or refreshing Codex hooks, start a new Codex CLI session before
 
 The same restart requirement applies to Claude Code: after installing or refreshing Claude hooks in `~/.claude/settings.json`, start a new Claude Code session before expecting native lifecycle hooks to fire. Existing sessions keep the hook configuration loaded from process start, so direct `strict-hook` smoke tests will succeed while in-session hook events still use the previously loaded configuration.
 
+## Enabling UserPromptSubmit injection
+
+`install.sh` lays down an empty `<install-root>/config/user-prompt-injection.md` protected config file. While the file is empty, `strict-hook` writes nothing to stdout on `user-prompt-submit` and the agent receives no injected context. To start injecting strict-mode rules (or any persistent reminders) into every user prompt:
+
+1. Stop any running provider sessions (Claude Code and/or Codex CLI) so they do not race with the install transaction.
+2. Edit `<install-root>/config/user-prompt-injection.md` outside the running provider session — provider tools cannot mutate protected config under enforce mode, and a runtime edit would otherwise invalidate the protected baseline hash.
+3. Re-run `install.sh --provider <provider> --install-root <install-root>`. The installer keeps the existing file content (the template copy only fires when the file is missing) and recomputes the protected baseline so the new hash matches the file you edited.
+4. Start a new provider session. `strict-hook` reads the file through the trusted baseline on every `user-prompt-submit` event and writes the contents to stdout, where the provider appends them to the user prompt per its UserPromptSubmit hook contract.
+
+Nested `claude -p` invocations launched from strict-mode-owned scripts (judge, worker, etc.) must set `STRICT_MODE_NESTED=1` in the subprocess environment to suppress recursive injection of the same rules block.
+
 To inspect the current enforcing blockers as a structured report, run:
 
 ```bash
