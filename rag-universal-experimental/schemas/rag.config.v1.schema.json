@@ -14,6 +14,18 @@
     "secret_path_patterns": { "type": "array", "items": { "type": "string" } },
     "max_file_bytes": { "type": "integer", "minimum": 1 },
     "follow_symlinks": { "type": "boolean" },
+    "mcp": {
+      "type": "object",
+      "properties": {
+        "auto_reindex_default": { "type": "boolean", "default": true }
+      }
+    },
+    "cli": {
+      "type": "object",
+      "properties": {
+        "auto_reindex_default": { "type": "boolean", "default": false }
+      }
+    },
     "chunk": {
       "type": "object",
       "properties": {

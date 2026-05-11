@@ -175,6 +175,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
     ],
     "max_file_bytes": 1_048_576,
     "follow_symlinks": False,
+    "mcp": {
+        "auto_reindex_default": True,
+    },
+    "cli": {
+        "auto_reindex_default": False,
+    },
     "chunk": {
         "max_chars": 2400,
         "min_chars": 160,

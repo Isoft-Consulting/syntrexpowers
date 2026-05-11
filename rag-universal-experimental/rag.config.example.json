@@ -87,6 +87,12 @@
   ],
   "max_file_bytes": 1048576,
   "follow_symlinks": false,
+  "mcp": {
+    "auto_reindex_default": true
+  },
+  "cli": {
+    "auto_reindex_default": false
+  },
   "chunk": {
     "max_chars": 2400,
     "min_chars": 160,

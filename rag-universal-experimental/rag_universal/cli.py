@@ -5,7 +5,18 @@ import json
 import sys
 from typing import Any
 
-from .core import build_index, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan, watch_index
+from .core import (
+    build_index,
+    index_coverage,
+    index_status,
+    load_config,
+    lookup_deps,
+    lookup_symbol,
+    resolve_root,
+    search_index,
+    search_index_with_plan,
+    watch_index,
+)
 from .eval_quality import benchmark_quality, evaluate_quality, quality_check
 from .knowledge import build_project_knowledge, generate_project_profile
 from .mcp_server import run_stdio
@@ -34,7 +45,12 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--filter-type", default=None)
     search.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"], default="default")
     search.add_argument("--with-plan", action="store_true", help="Return results with a section-level read plan.")
-    search.add_argument("--auto-reindex", action="store_true", help="Rebuild the index before searching when rag_status reports stale source files.")
+    search.add_argument(
+        "--auto-reindex",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Rebuild the index before searching when rag_status reports stale source files. Omit to use cli.auto_reindex_default.",
+    )
 
     watch = subparsers.add_parser("watch", help="Poll source files and rebuild the index when it becomes stale")
     watch.add_argument("--interval", type=float, default=2.0, help="Polling interval in seconds for continuous watch mode.")
@@ -77,7 +93,12 @@ def build_parser() -> argparse.ArgumentParser:
     quality.add_argument("--case-limit", type=int, default=25, help="Maximum generated cases when --cases is omitted.")
     quality.add_argument("--top-k", type=int, default=10)
     quality.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"], default="default")
-    quality.add_argument("--auto-reindex", action="store_true", help="Rebuild first when rag_status reports stale source files.")
+    quality.add_argument(
+        "--auto-reindex",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Rebuild first when rag_status reports stale source files. Omit to use cli.auto_reindex_default.",
+    )
     quality.add_argument("--summary-only", action="store_true", help="Omit per-case details from output.")
     quality.add_argument("--min-cases", type=int, default=5)
     quality.add_argument("--min-top3-ratio", type=float, default=0.6)
@@ -126,6 +147,21 @@ def normalize_global_args(argv: list[str] | None) -> list[str]:
     return extracted + remaining
 
 
+def cli_auto_reindex_default(config_data: dict[str, Any]) -> bool:
+    cli_config = config_data.get("cli")
+    if isinstance(cli_config, dict):
+        value = cli_config.get("auto_reindex_default")
+        if isinstance(value, bool):
+            return value
+    return False
+
+
+def resolve_cli_auto_reindex(value: bool | None, root: str, config: str | None) -> bool:
+    if value is not None:
+        return bool(value)
+    return cli_auto_reindex_default(load_config(resolve_root(root), config))
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(normalize_global_args(argv))
     if args.command == "index":
@@ -138,10 +174,11 @@ def main(argv: list[str] | None = None) -> int:
         emit(index_coverage(args.root, args.config, args.paths))
         return 0
     if args.command == "search":
+        auto_reindex = resolve_cli_auto_reindex(args.auto_reindex, args.root, args.config)
         if args.with_plan:
-            emit(search_index_with_plan(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode, args.auto_reindex))
+            emit(search_index_with_plan(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode, auto_reindex))
         else:
-            emit(search_index(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode, args.auto_reindex))
+            emit(search_index(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode, auto_reindex))
         return 0
     if args.command == "watch":
         try:
@@ -187,6 +224,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     if args.command == "quality-check":
+        auto_reindex = resolve_cli_auto_reindex(args.auto_reindex, args.root, args.config)
         emit(
             quality_check(
                 args.root,
@@ -195,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.case_limit,
                 args.top_k,
                 args.mode,
-                args.auto_reindex,
+                auto_reindex,
                 not args.summary_only,
                 args.min_cases,
                 args.min_top3_ratio,

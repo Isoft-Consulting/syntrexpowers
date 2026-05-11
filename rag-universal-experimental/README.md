@@ -90,7 +90,7 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
 | `index` / `rag_reindex` | CLI, MCP | Build the local `.rag-index`. |
 | `status` / `rag_status` | CLI, MCP | Inspect index counts, manifest, stale config state, and source-change state. |
 | `coverage` / `rag_coverage` | CLI, MCP | Explain whether specific paths are indexed or excluded. |
-| `search` / `rag_search` | CLI, MCP | Ranked chunk retrieval with source/type filters, task modes, optional read-plan output, and optional stale-index rebuild. |
+| `search` / `rag_search` | CLI, MCP | Ranked chunk retrieval with source/type filters, task modes, optional read-plan output, and optional stale-index rebuild. MCP search auto-reindexes by default; CLI search requires `--auto-reindex`. |
 | `watch` | CLI | Poll the project and rebuild when indexed files are added, changed, or deleted. |
 | `symbol` / `rag_symbol` | CLI, MCP | Exact symbol lookup. |
 | `deps` / `rag_deps` | CLI, MCP | Forward or reverse dependency edge lookup. |
@@ -121,7 +121,7 @@ python3 tools/rag.py search --root /path/to/project "query" --with-plan --auto-r
 python3 tools/rag.py watch --root /path/to/project
 ```
 
-`index --incremental` refreshes only changed/deleted sources when the current manifest, config hash, tokenizer, chunker, and search version are compatible; otherwise it falls back to a full rebuild. `--auto-reindex` checks `rag_status` before a search and rebuilds when the manifest is missing or stale, preferring an incremental rebuild when possible. `--with-plan` diagnostics report whether the index was stale before search, whether it was rebuilt, and whether it is still stale after search. `watch` is a simple polling loop for long-lived local sessions and also prefers incremental rebuilds when possible.
+`index --incremental` refreshes only changed/deleted sources when the current manifest, config hash, tokenizer, chunker, and search version are compatible; otherwise it falls back to a full rebuild. `--auto-reindex` checks `rag_status` before a CLI search and rebuilds when the manifest is missing or stale, preferring an incremental rebuild when possible. CLI can opt into that behavior by default through `cli.auto_reindex_default=true`, with `--no-auto-reindex` for one read-only run. MCP `rag_search` does the same by default through `mcp.auto_reindex_default=true`; set it to `false` or pass `auto_reindex=false` for read-only MCP calls. `--with-plan` diagnostics report whether the index was stale before search, whether it was rebuilt, and whether it is still stale after search. `watch` is a simple polling loop for long-lived local sessions and also prefers incremental rebuilds when possible.
 
 `force_include_globs` can include narrow review-critical files from otherwise excluded directories, for example `tests/Unit/*ContractTest.php` while keeping the rest of `tests/` out of the index. Runtime/generated directories such as `node_modules`, `vendor`, `dist`, `storage`, `_tmp_storage`, `payload`, and `.git` are excluded by default. `Dockerfile`, `Dockerfile.*`, and `.dockerignore` are included by default because build contracts are common FDR evidence.
 

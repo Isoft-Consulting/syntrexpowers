@@ -58,7 +58,12 @@ from rag_universal.eval_quality import resolve_benchmark_profile
 from rag_universal.knowledge import build_project_knowledge
 from rag_universal.knowledge import generate_project_profile
 from rag_universal.knowledge import knowledge_pack_status
+from rag_universal.cli import cli_auto_reindex_default
+from rag_universal.cli import resolve_cli_auto_reindex
 from rag_universal.mcp_server import handle_message
+from rag_universal.mcp_server import mcp_auto_reindex_default
+from rag_universal.mcp_server import resolve_mcp_auto_reindex
+from rag_universal.mcp_server import tool_definitions
 
 
 class RagUniversalTest(unittest.TestCase):
@@ -337,6 +342,53 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(quality_payload["health"]["baseline"], "keyword")
         self.assertIn("delta", quality_payload["summary"])
 
+    def test_mcp_search_auto_reindex_defaults_to_configured_true(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        (root / "README.md").write_text("# Demo\n\nMCP default refresh token appears here.", encoding="utf-8")
+
+        called = handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {
+                    "name": "rag_search",
+                    "arguments": {"query": "MCP default refresh token", "top_k": 1, "with_plan": True},
+                },
+            },
+            str(root),
+            None,
+        )
+        payload = json.loads(called["result"]["content"][0]["text"])
+        self.assertTrue(payload["diagnostics"]["index_stale_before_search"])
+        self.assertTrue(payload["diagnostics"]["index_reindexed"])
+        self.assertFalse(payload["diagnostics"]["index_stale_after_search"])
+        self.assertEqual(payload["results"][0]["source"], "README.md")
+        self.assertEqual(index_status(root)["manifest"]["build_mode"], "incremental")
+
+    def test_mcp_auto_reindex_default_can_be_configured_or_overridden(self) -> None:
+        root = self.make_project()
+        config_path = root / ".mcp" / "rag-server" / "rag.config.json"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text(
+            json.dumps({"schema_version": "rag.config.v1", "mcp": {"auto_reindex_default": False}}),
+            encoding="utf-8",
+        )
+
+        schema = next(tool for tool in tool_definitions() if tool["name"] == "rag_search")["inputSchema"]
+        self.assertNotIn("default", schema["properties"]["auto_reindex"])
+        self.assertTrue(mcp_auto_reindex_default({"mcp": {"auto_reindex_default": True}}))
+        self.assertFalse(mcp_auto_reindex_default({"mcp": {"auto_reindex_default": False}}))
+        self.assertFalse(resolve_mcp_auto_reindex({}, str(root), None))
+        self.assertTrue(resolve_mcp_auto_reindex({"auto_reindex": True}, str(root), None))
+        self.assertFalse(resolve_mcp_auto_reindex({"auto_reindex": False}, str(root), None))
+        self.assertFalse(cli_auto_reindex_default({"cli": {"auto_reindex_default": False}}))
+        self.assertTrue(cli_auto_reindex_default({"cli": {"auto_reindex_default": True}}))
+        self.assertFalse(resolve_cli_auto_reindex(None, str(root), None))
+        self.assertTrue(resolve_cli_auto_reindex(True, str(root), None))
+        self.assertFalse(resolve_cli_auto_reindex(False, str(root), None))
+
     def test_mcp_memory_cache_storage_uses_in_memory_sqlite_replica(self) -> None:
         root = self.make_project()
         build_index(root)
@@ -429,6 +481,51 @@ class RagUniversalTest(unittest.TestCase):
         with mock.patch("rag_universal.core.load_chunks", side_effect=AssertionError("search cache was bypassed")):
             cached_results = search_index(root, None, "strict stop guard", top_k=1)
         self.assertEqual(cached_results[0]["source"], "README.md")
+
+    def test_cli_auto_reindex_default_uses_project_config_and_can_be_disabled(self) -> None:
+        root = self.make_project()
+        tool = ROOT / "tools" / "rag.py"
+        config_path = root / ".mcp" / "rag-server" / "rag.config.json"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text(
+            json.dumps({"schema_version": "rag.config.v1", "cli": {"auto_reindex_default": True}}),
+            encoding="utf-8",
+        )
+        subprocess.run([sys.executable, str(tool), "index", "--root", str(root)], check=True, text=True, capture_output=True)
+
+        (root / "README.md").write_text("# Demo\n\nCLI configured refresh token appears here.", encoding="utf-8")
+        refreshed = subprocess.run(
+            [sys.executable, str(tool), "search", "--root", str(root), "CLI configured refresh token", "--top-k", "1", "--with-plan"],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        refreshed_payload = json.loads(refreshed.stdout)
+        self.assertTrue(refreshed_payload["diagnostics"]["index_reindexed"])
+        self.assertEqual(refreshed_payload["results"][0]["source"], "README.md")
+
+        (root / "README.md").write_text("# Demo\n\nZirconium qxnoauto sentinel appears here.", encoding="utf-8")
+        not_refreshed = subprocess.run(
+            [
+                sys.executable,
+                str(tool),
+                "search",
+                "--root",
+                str(root),
+                "zirconium qxnoauto sentinel",
+                "--top-k",
+                "1",
+                "--with-plan",
+                "--no-auto-reindex",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        not_refreshed_payload = json.loads(not_refreshed.stdout)
+        self.assertTrue(not_refreshed_payload["diagnostics"]["index_stale_before_search"])
+        self.assertFalse(not_refreshed_payload["diagnostics"]["index_reindexed"])
+        self.assertEqual(not_refreshed_payload["results"], [])
 
     def test_cli_config_can_be_relative_to_current_directory(self) -> None:
         root = self.make_project()

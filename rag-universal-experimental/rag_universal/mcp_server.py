@@ -4,7 +4,18 @@ import json
 import sys
 from typing import Any
 
-from .core import build_index, configure_search_cache_storage, index_coverage, index_status, lookup_deps, lookup_symbol, search_index, search_index_with_plan
+from .core import (
+    build_index,
+    configure_search_cache_storage,
+    index_coverage,
+    index_status,
+    load_config,
+    lookup_deps,
+    lookup_symbol,
+    resolve_root,
+    search_index,
+    search_index_with_plan,
+)
 from .eval_quality import quality_check
 from .knowledge import build_project_knowledge, generate_project_profile, knowledge_pack_status
 
@@ -27,7 +38,10 @@ def tool_definitions() -> list[dict[str, Any]]:
                         "default": "default",
                     },
                     "with_plan": {"type": "boolean", "default": False},
-                    "auto_reindex": {"type": "boolean", "default": False},
+                    "auto_reindex": {
+                        "type": "boolean",
+                        "description": "When omitted, uses mcp.auto_reindex_default from rag.config.json; project default is true.",
+                    },
                 },
                 "required": ["query"],
             },
@@ -155,9 +169,25 @@ def text_content(value: Any) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)}]}
 
 
+def mcp_auto_reindex_default(config_data: dict[str, Any]) -> bool:
+    mcp_config = config_data.get("mcp")
+    if isinstance(mcp_config, dict):
+        value = mcp_config.get("auto_reindex_default")
+        if isinstance(value, bool):
+            return value
+    return True
+
+
+def resolve_mcp_auto_reindex(arguments: dict[str, Any], root: str | None, config: str | None) -> bool:
+    if "auto_reindex" in arguments and arguments.get("auto_reindex") is not None:
+        return bool(arguments["auto_reindex"])
+    return mcp_auto_reindex_default(load_config(resolve_root(root), config))
+
+
 def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: str | None) -> Any:
     if name == "rag_search":
         search_fn = search_index_with_plan if bool(arguments.get("with_plan", False)) else search_index
+        auto_reindex = resolve_mcp_auto_reindex(arguments, root, config)
         return text_content(
             search_fn(
                 root,
@@ -167,7 +197,7 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
                 arguments.get("filter_source"),
                 arguments.get("filter_type"),
                 str(arguments.get("mode", "default")),
-                bool(arguments.get("auto_reindex", False)),
+                auto_reindex,
             )
         )
     if name == "rag_reindex":
