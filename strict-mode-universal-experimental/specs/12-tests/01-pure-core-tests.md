@@ -110,7 +110,7 @@ Run without Claude or Codex:
 - FDR challenge bypass hashes bind to scope digest, artifact hash, and the original blocking FDR cycle record hash, not diagnostic `blocked-reused` records
 - FDR challenge `bypassed` cycle records are appended only after successful generic bypass tombstone, consumed-audit, and ledger commits, and they hash-bind the original blocking challenge record, consumed marker, consumed audit record, and ledger record; failed consumption leaves the original quality block active
 - judge-disabled responses are returned by `strict-judge`, while the Stop/FDR challenge caller owns the `judge-unknown` cycle record append and ledger coverage
-- `strict-judge` tests cover optional protected `judge-prompt-template.md` loading, absent template fallback to schema-shaped unknown, tampered template refusal without leaking template bytes, and JSON-looking template text that does not widen `judge.response.v1`
+- `strict-judge` tests cover optional protected `judge-prompt-template.md` loading, absent template fallback to schema-shaped unknown, tampered template refusal without leaking template bytes, JSON-looking template text that does not widen `judge.response.v1`, deterministic local classifier first-cycle challenge, in-scope and out-of-scope cut-corner handling, dismissive phrasing, review-mode routing, multi-line severity-pair verdict detection, malformed stdin parse-failure, and duplicate-key stdin rejection
 - strict-mode runtime/state/config protected path enforcement
 - protected path enforcement for `multi-edit` and path-bearing `other` or unknown write-like tools
 - shell protected-path matching covers quoted and unquoted lexical install/state/config/provider paths plus resolved active-runtime aliases

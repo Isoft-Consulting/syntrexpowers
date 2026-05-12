@@ -24,6 +24,16 @@ EXPECTED_KEYS = %w[
   schema_version
   verdict
 ].freeze
+INITIAL_HISTORY = [{ "cycle" => 0, "classification" => "initial", "summary" => "Initial challenge fired" }].freeze
+POST_FIRST_HISTORY = [
+  INITIAL_HISTORY.first,
+  {
+    "cycle" => 1,
+    "classification" => "substantive",
+    "summary" => "Где ты схалтурил?",
+    "gaps" => "Где ты схалтурил?"
+  }
+].freeze
 
 $cases = 0
 $failures = []
@@ -46,6 +56,14 @@ end
 
 def run_judge_env(env, *args)
   Open3.capture3(strict_env(env), RbConfig.ruby, JUDGE.to_s, *args)
+end
+
+def run_judge_input(input, *args)
+  Open3.capture3(strict_env({}), RbConfig.ruby, JUDGE.to_s, *args, stdin_data: JSON.generate(input))
+end
+
+def run_judge_stdin(stdin_data, *args)
+  Open3.capture3(strict_env({}), RbConfig.ruby, JUDGE.to_s, *args, stdin_data: stdin_data)
 end
 
 def assert(name, condition, message, output = "")
@@ -71,6 +89,46 @@ def assert_unknown_response(name, record, backend:, model:, reviewed_scope_diges
   assert(name, record.fetch("backend") == backend, "backend mismatch", JSON.pretty_generate(record))
   assert(name, record.fetch("model") == model, "model mismatch", JSON.pretty_generate(record))
   assert(name, record.fetch("response_hash") == StrictModeMetadata.hash_record(record, "response_hash"), "response_hash mismatch", JSON.pretty_generate(record))
+end
+
+def assert_response_contract(name, record, backend:, model:, reviewed_scope_digest: ZERO_HASH, reviewed_artifact_hash: ZERO_HASH)
+  assert(name, record.keys.sort == EXPECTED_KEYS, "response fields drifted: #{record.keys.sort.inspect}", JSON.pretty_generate(record))
+  assert(name, record.fetch("schema_version") == 1, "schema_version mismatch", JSON.pretty_generate(record))
+  assert(name, record.fetch("reviewed_scope_digest") == reviewed_scope_digest, "scope digest mismatch", JSON.pretty_generate(record))
+  assert(name, record.fetch("reviewed_artifact_hash") == reviewed_artifact_hash, "artifact hash mismatch", JSON.pretty_generate(record))
+  assert(name, record.fetch("backend") == backend, "backend mismatch", JSON.pretty_generate(record))
+  assert(name, record.fetch("model") == model, "model mismatch", JSON.pretty_generate(record))
+  assert(name, record.fetch("response_hash") == StrictModeMetadata.hash_record(record, "response_hash"), "response_hash mismatch", JSON.pretty_generate(record))
+end
+
+def assert_challenge_response(name, record, backend:, model:, message_includes: nil)
+  assert_response_contract(name, record, backend: backend, model: model)
+  assert(name, record.fetch("verdict") == "challenge", "verdict mismatch", JSON.pretty_generate(record))
+  assert(name, record.fetch("reason") == "challenge", "reason mismatch", JSON.pretty_generate(record))
+  assert(name, record.fetch("findings").is_a?(Array) && !record.fetch("findings").empty?, "challenge findings must be nonempty", JSON.pretty_generate(record))
+  record.fetch("findings").each do |finding|
+    assert(name, finding.keys.sort == %w[message severity source], "finding fields drifted", JSON.pretty_generate(record))
+    assert(name, finding.fetch("severity") == "info", "finding severity mismatch", JSON.pretty_generate(record))
+    assert(name, finding.fetch("source") == "assistant-text", "finding source mismatch", JSON.pretty_generate(record))
+  end
+  assert(name, record.fetch("confidence").match?(/\A0\.\d{3}\z/), "confidence must be canonical decimal", JSON.pretty_generate(record))
+  assert(name, record.fetch("findings").any? { |finding| finding.fetch("message").include?(message_includes) }, "missing expected finding text #{message_includes.inspect}", JSON.pretty_generate(record)) if message_includes
+end
+
+def assert_clean_response(name, record, backend:, model:)
+  assert_response_contract(name, record, backend: backend, model: model)
+  assert(name, record.fetch("verdict") == "clean", "verdict mismatch", JSON.pretty_generate(record))
+  assert(name, record.fetch("reason") == "clean", "reason mismatch", JSON.pretty_generate(record))
+  assert(name, record.fetch("findings") == [], "clean findings must be empty", JSON.pretty_generate(record))
+  assert(name, record.fetch("confidence").match?(/\A0\.\d{3}\z/), "confidence must be canonical decimal", JSON.pretty_generate(record))
+end
+
+def assert_unknown_reason_response(name, record, backend:, model:, reason:)
+  assert_response_contract(name, record, backend: backend, model: model)
+  assert(name, record.fetch("verdict") == "unknown", "verdict mismatch", JSON.pretty_generate(record))
+  assert(name, record.fetch("reason") == reason, "reason mismatch", JSON.pretty_generate(record))
+  assert(name, record.fetch("findings") == [], "unknown findings must be empty", JSON.pretty_generate(record))
+  assert(name, record.fetch("confidence") == "0.000", "confidence must be zero", JSON.pretty_generate(record))
 end
 
 def assert_canonical_stdout(name, stdout, record)
@@ -182,6 +240,129 @@ stdout, stderr, status = run_judge("--provider", "codex", "extra")
 assert(name, status.exitstatus == 2, "expected usage failure, got #{status.exitstatus}", stdout + stderr)
 assert(name, stdout.empty?, "usage failure should not emit JSON", stdout)
 assert(name, stderr.include?("unexpected positional arguments"), "missing positional-argument diagnostic", stderr)
+
+$cases += 1
+name = "judge classifier triggers first-cycle cut-corners challenge"
+stdout, stderr, status = run_judge_input(
+  { "history" => INITIAL_HISTORY, "current_response" => "0 проблем, выглядит чисто." },
+  "--provider", "claude"
+)
+assert(name, status.exitstatus == 0, "expected successful classifier response, got #{status.exitstatus}", stdout + stderr)
+record = parse_json(name, stdout)
+unless record.empty?
+  assert_challenge_response(name, record, backend: "claude", model: "claude-haiku-4-5-20251001", message_includes: "Где ты схалтурил")
+  assert_canonical_stdout(name, stdout, record)
+end
+assert(name, stderr.empty?, "classifier should not warn", stderr)
+
+$cases += 1
+name = "judge classifier treats explicit out-of-scope cut-corners as clean"
+stdout, stderr, status = run_judge_input(
+  {
+    "history" => POST_FIRST_HISTORY,
+    "current_response" => "Схалтурил: не переписал старый README. Это вне текущего scope и будет follow-up PR."
+  },
+  "--provider", "codex"
+)
+assert(name, status.exitstatus == 0, "expected successful classifier response, got #{status.exitstatus}", stdout + stderr)
+record = parse_json(name, stdout)
+unless record.empty?
+  assert_clean_response(name, record, backend: "codex", model: "gpt-5.3-codex-spark")
+  assert_canonical_stdout(name, stdout, record)
+end
+assert(name, stderr.empty?, "classifier should not warn", stderr)
+
+$cases += 1
+name = "judge classifier challenges in-scope cut-corner admission"
+stdout, stderr, status = run_judge_input(
+  {
+    "history" => POST_FIRST_HISTORY,
+    "current_response" => "Схалтурил: пропустил проверку JSON-output-schema и не проверил edge cases."
+  },
+  "--provider", "codex"
+)
+assert(name, status.exitstatus == 0, "expected successful classifier response, got #{status.exitstatus}", stdout + stderr)
+record = parse_json(name, stdout)
+unless record.empty?
+  assert_challenge_response(name, record, backend: "codex", model: "gpt-5.3-codex-spark", message_includes: "Давай исправлять")
+  assert_canonical_stdout(name, stdout, record)
+end
+assert(name, stderr.empty?, "classifier should not warn", stderr)
+
+$cases += 1
+name = "judge classifier challenges dismissive minor phrasing"
+stdout, stderr, status = run_judge_input(
+  {
+    "history" => POST_FIRST_HISTORY,
+    "current_response" => "Остались только мелочи, это не критично, можно ship anyway."
+  },
+  "--provider", "claude"
+)
+assert(name, status.exitstatus == 0, "expected successful classifier response, got #{status.exitstatus}", stdout + stderr)
+record = parse_json(name, stdout)
+unless record.empty?
+  assert_challenge_response(name, record, backend: "claude", model: "claude-haiku-4-5-20251001", message_includes: "мелочи")
+  assert_canonical_stdout(name, stdout, record)
+end
+assert(name, stderr.empty?, "classifier should not warn", stderr)
+
+$cases += 1
+name = "judge classifier keeps review mode in findings-only lane"
+stdout, stderr, status = run_judge_input(
+  {
+    "history" => POST_FIRST_HISTORY,
+    "last_user_msg" => "Проведи FDR review PR, no fixes, только ревью.",
+    "current_response" => "Все чисто, 0 findings."
+  },
+  "--provider", "claude"
+)
+assert(name, status.exitstatus == 0, "expected successful classifier response, got #{status.exitstatus}", stdout + stderr)
+record = parse_json(name, stdout)
+unless record.empty?
+  assert_challenge_response(name, record, backend: "claude", model: "claude-haiku-4-5-20251001", message_includes: "Review-mode")
+  assert(name, record.fetch("findings").none? { |finding| finding.fetch("message").include?("фикси") }, "review-mode finding must not demand fixes", JSON.pretty_generate(record))
+  assert_canonical_stdout(name, stdout, record)
+end
+assert(name, stderr.empty?, "classifier should not warn", stderr)
+
+$cases += 1
+name = "judge classifier recognizes multiline severity-pair clean verdict as evasive"
+stdout, stderr, status = run_judge_input(
+  {
+    "history" => POST_FIRST_HISTORY,
+    "current_response" => "Verdict:\nCritical: 0\nHigh: 0"
+  },
+  "--provider", "codex"
+)
+assert(name, status.exitstatus == 0, "expected successful classifier response, got #{status.exitstatus}", stdout + stderr)
+record = parse_json(name, stdout)
+unless record.empty?
+  assert_challenge_response(name, record, backend: "codex", model: "gpt-5.3-codex-spark", message_includes: "Не верю")
+  assert_canonical_stdout(name, stdout, record)
+end
+assert(name, stderr.empty?, "classifier should not warn", stderr)
+
+$cases += 1
+name = "judge classifier invalid stdin is schema-shaped parse-failure"
+stdout, stderr, status = run_judge_stdin("{bad json", "--provider", "codex")
+assert(name, status.exitstatus == 0, "expected successful parse-failure response, got #{status.exitstatus}", stdout + stderr)
+record = parse_json(name, stdout)
+unless record.empty?
+  assert_unknown_reason_response(name, record, backend: "codex", model: "gpt-5.3-codex-spark", reason: "parse-failure")
+  assert_canonical_stdout(name, stdout, record)
+end
+assert(name, stderr.empty?, "parse-failure should not warn", stderr)
+
+$cases += 1
+name = "judge classifier duplicate-key stdin is schema-shaped parse-failure"
+stdout, stderr, status = run_judge_stdin('{"history":[],"current_response":"clean","current_response":"tampered"}', "--provider", "codex")
+assert(name, status.exitstatus == 0, "expected successful duplicate-key parse-failure response, got #{status.exitstatus}", stdout + stderr)
+record = parse_json(name, stdout)
+unless record.empty?
+  assert_unknown_reason_response(name, record, backend: "codex", model: "gpt-5.3-codex-spark", reason: "parse-failure")
+  assert_canonical_stdout(name, stdout, record)
+end
+assert(name, stderr.empty?, "duplicate-key parse-failure should not warn", stderr)
 
 with_installed_judge_template("# Custom judge prompt\nReturn JSON only.\n") do |home, install_root, state_root, project|
   name = "trusted judge-prompt-template keeps judge response schema exact"

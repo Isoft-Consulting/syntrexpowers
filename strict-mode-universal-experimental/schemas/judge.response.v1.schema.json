@@ -135,6 +135,7 @@
     "verdict enum",
     "closed reason enum coupled to verdict",
     "finding schema for challenge only",
+    "deterministic local classifier mapping from stdin cycle JSON to closed response variants",
     "confidence canonical decimal `0..1` with at most three fractional digits",
     "model/backend binding",
     "scope/artifact hash equality",
@@ -173,8 +174,16 @@
         "finding schema for challenge only"
       ]
     },
-    "confidence canonical decimal `0..1` with at most three fractional digits": {
+    "deterministic local classifier mapping from stdin cycle JSON to closed response variants": {
       "index": 5,
+      "kind": "domain",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "deterministic local classifier mapping from stdin cycle JSON to closed response variants"
+      ]
+    },
+    "confidence canonical decimal `0..1` with at most three fractional digits": {
+      "index": 6,
       "kind": "behavior",
       "source": "17.2 Schema Implementation Profiles",
       "rules": [
@@ -182,7 +191,7 @@
       ]
     },
     "model/backend binding": {
-      "index": 6,
+      "index": 7,
       "kind": "behavior",
       "source": "17.2 Schema Implementation Profiles",
       "rules": [
@@ -190,7 +199,7 @@
       ]
     },
     "scope/artifact hash equality": {
-      "index": 7,
+      "index": 8,
       "kind": "behavior",
       "source": "17.2 Schema Implementation Profiles",
       "rules": [
@@ -198,7 +207,7 @@
       ]
     },
     "`response_hash` recomputation.": {
-      "index": 8,
+      "index": 9,
       "kind": "hash-recompute",
       "source": "17.2 Schema Implementation Profiles",
       "rules": [
@@ -212,5 +221,5 @@
   "fixture_requirements": [
     "judge response parser with bounded confidence decimal and reason/verdict coupling"
   ],
-  "profile_hash": "7831c69ab71c7c42b8e08e1d85fc9982d0575fae19057904c8303206a420d6f1"
+  "profile_hash": "9567837aaefffa6513fddbd24d6b82917489dbcace8f9e185020ccce162c8401"
 }

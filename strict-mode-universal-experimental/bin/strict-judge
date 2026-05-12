@@ -3,6 +3,7 @@
 
 require "json"
 require "optparse"
+require_relative "../tools/judge_classifier_lib"
 require_relative "../tools/metadata_lib"
 require_relative "../tools/protected_baseline_lib"
 
@@ -79,6 +80,80 @@ def load_judge_prompt_template(install_root:, state_root:, project_dir:)
   records.map { |record| record.fetch("content", "").to_s }.join
 end
 
+def read_judge_input
+  return [nil, nil] if STDIN.tty?
+
+  input = STDIN.read
+  return [nil, nil] if input.nil? || input.strip.empty?
+
+  [JSON.parse(input, object_class: StrictModeMetadata::DuplicateKeyHash), nil]
+rescue JSON::ParserError => e
+  [nil, "invalid judge input JSON: #{e.message}"]
+end
+
+def canonical_reason(reason)
+  allowed = %w[
+    clean
+    challenge
+    judge-disabled
+    judge-invocation-unverified
+    judge-state-isolation-failed-until-repair
+    timeout
+    nonzero-exit
+    invalid-output
+    empty-output
+    parse-failure
+  ]
+  allowed.include?(reason) ? reason : "parse-failure"
+end
+
+def bounded_text(value, limit = 600)
+  text = value.to_s.strip
+  text.length > limit ? "#{text[0, limit]}..." : text
+end
+
+def findings_from_classification(classification)
+  gaps = classification.fetch("gaps_to_demand", [])
+  gaps = [classification.fetch("rationale", "judge challenged response")] if gaps.empty?
+  gaps.map do |gap|
+    {
+      "severity" => "info",
+      "source" => "assistant-text",
+      "message" => bounded_text(gap)
+    }
+  end
+end
+
+def response_from_classifier(classification:, route:, reviewed_scope_digest:, reviewed_artifact_hash:)
+  case classification.fetch("classification", "unknown")
+  when "complete"
+    verdict = "clean"
+    reason = "clean"
+    findings = []
+  when "substantive", "evasive", "repetitive"
+    verdict = "challenge"
+    reason = "challenge"
+    findings = findings_from_classification(classification)
+  else
+    verdict = "unknown"
+    reason = canonical_reason(classification.fetch("reason_code", "parse-failure"))
+    findings = []
+  end
+
+  {
+    "schema_version" => 1,
+    "verdict" => verdict,
+    "reason" => reason,
+    "findings" => findings,
+    "reviewed_scope_digest" => reviewed_scope_digest,
+    "reviewed_artifact_hash" => reviewed_artifact_hash,
+    "confidence" => classification.fetch("confidence", verdict == "unknown" ? "0.000" : "0.700"),
+    "model" => route.fetch("model"),
+    "backend" => route.fetch("backend"),
+    "response_hash" => ""
+  }
+end
+
 route = PROVIDER_ROUTES.fetch(provider, { "backend" => "unknown", "model" => "unknown" })
 judge_prompt_template = load_judge_prompt_template(
   install_root: configured_install_root(install_root),
@@ -86,18 +161,22 @@ judge_prompt_template = load_judge_prompt_template(
   project_dir: project_dir || ENV["STRICT_PROJECT_DIR"]
 )
 
-response = {
-  "schema_version" => 1,
-  "verdict" => "unknown",
-  "reason" => "judge-invocation-unverified",
-  "findings" => [],
-  "reviewed_scope_digest" => reviewed_scope_digest,
-  "reviewed_artifact_hash" => reviewed_artifact_hash,
-  "confidence" => "0.000",
-  "model" => route.fetch("model"),
-  "backend" => route.fetch("backend"),
-  "response_hash" => ""
-}
+judge_input, judge_input_error = read_judge_input
+classification =
+  if PROVIDER_ROUTES.key?(provider) && judge_input_error
+    StrictModeJudgeClassifier.unknown("parse-failure", judge_input_error)
+  elsif PROVIDER_ROUTES.key?(provider) && judge_input
+    StrictModeJudgeClassifier.classify(judge_input)
+  else
+    StrictModeJudgeClassifier.unknown("judge-invocation-unverified", "fixture-gated judge invocation unavailable")
+  end
+
+response = response_from_classifier(
+  classification: classification,
+  route: route,
+  reviewed_scope_digest: reviewed_scope_digest,
+  reviewed_artifact_hash: reviewed_artifact_hash
+)
 response["response_hash"] = StrictModeMetadata.hash_record(response, "response_hash")
 
 puts StrictModeMetadata.canonical_json(response)
