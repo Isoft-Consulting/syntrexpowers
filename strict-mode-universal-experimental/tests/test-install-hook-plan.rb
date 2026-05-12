@@ -116,6 +116,27 @@ run_case do
 end
 
 run_case do
+  name = "enforcing provider hook plan ignores selected outputs for other providers"
+  selected = [
+    selected_output("claude", "pre-tool-use", "claude.pre-tool-use.block"),
+    selected_output("claude", "stop", "claude.stop.block"),
+    selected_output("codex", "pre-tool-use", "codex.pre-tool-use.block"),
+    selected_output("codex", "stop", "codex.stop.block")
+  ]
+  entries = StrictModeInstallHookPlan.managed_entries(
+    "claude",
+    Pathname.new("/tmp/claude.json"),
+    Pathname.new("/tmp/strict root"),
+    selected_output_contracts: selected,
+    enforce: true
+  )
+  enforcing = entries.select { |entry| entry.fetch("enforcing") }
+  assert(name, entries.all? { |entry| entry.fetch("provider") == "claude" }, "foreign provider entries leaked into plan", entries.inspect)
+  assert(name, enforcing.map { |entry| entry.fetch("logical_event") } == %w[pre-tool-use stop], "wrong enforcing logical events", entries.inspect)
+  assert(name, enforcing.map { |entry| entry.fetch("output_contract_id") } == %w[claude.pre-tool-use.block claude.stop.block], "wrong output contracts", entries.inspect)
+end
+
+run_case do
   name = "Codex selected SubagentStop cannot install unsupported hook"
   selected = [
     selected_output("codex", "pre-tool-use", "codex.pre-tool-use.block"),

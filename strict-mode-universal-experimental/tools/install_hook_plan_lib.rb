@@ -54,12 +54,13 @@ module StrictModeInstallHookPlan
 
   def managed_entries(provider, config_path, install_root, state_root: nil, selected_output_contracts: [], enforce: false)
     selected = normalize_selected_output_contracts(selected_output_contracts)
+    selected_for_provider = selected.select { |record| record["provider"] == provider }
     state_root_path = Pathname.new(state_root || install_root.join("state"))
-    include_permission_request = selected.any? do |record|
-      record["provider"] == provider && record["logical_event"] == "permission-request"
+    include_permission_request = selected_for_provider.any? do |record|
+      record["logical_event"] == "permission-request"
     end
-    include_subagent_stop = selected.any? do |record|
-      record["provider"] == provider && record["logical_event"] == "subagent-stop"
+    include_subagent_stop = selected_for_provider.any? do |record|
+      record["logical_event"] == "subagent-stop"
     end
     entries = hook_specs(provider, include_permission_request: include_permission_request, include_subagent_stop: include_subagent_stop).map do |event, logical_event, matcher, self_timeout_ms, provider_timeout_ms, provider_timeout_field|
       command = command_for(install_root, state_root_path, provider, logical_event, self_timeout_ms)
@@ -80,7 +81,7 @@ module StrictModeInstallHookPlan
         "removal_selector" => {}
       }
     end
-    planned = StrictModeHookEntryPlan.apply(entries, selected_output_contracts: selected, enforce: enforce, install_root: install_root, state_root: state_root_path)
+    planned = StrictModeHookEntryPlan.apply(entries, selected_output_contracts: selected_for_provider, enforce: enforce, install_root: install_root, state_root: state_root_path)
     planned.each do |entry|
       output_contract_id = entry.fetch("enforcing") ? entry.fetch("output_contract_id") : ""
       entry["command"] = command_for(
@@ -92,7 +93,7 @@ module StrictModeInstallHookPlan
         output_contract_id: output_contract_id
       )
     end
-    StrictModeHookEntryPlan.apply(planned, selected_output_contracts: selected, enforce: enforce, install_root: install_root, state_root: state_root_path)
+    StrictModeHookEntryPlan.apply(planned, selected_output_contracts: selected_for_provider, enforce: enforce, install_root: install_root, state_root: state_root_path)
   end
 
   def hook_config_entry(entry)
