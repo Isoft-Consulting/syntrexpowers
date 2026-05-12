@@ -50,6 +50,33 @@ def safe_component(value)
   raw.match?(/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/) && component.match?(/\A[a-z0-9][a-z0-9._-]*\z/) ? component : "unknown"
 end
 
+def prompt_injection_session_key(provider, parsed_payload)
+  return "" unless parsed_payload.is_a?(Hash)
+
+  stable_id = %w[session_id conversation_id transcript_path].map { |key| parsed_payload[key].to_s }.find { |value| !value.empty? }
+  return "" unless stable_id
+
+  Digest::SHA256.hexdigest("#{provider}:#{stable_id}")
+end
+
+def should_emit_prompt_injection?(state_root, provider, parsed_payload)
+  key = prompt_injection_session_key(provider, parsed_payload)
+  return true if key.empty?
+
+  marker_dir = state_root.join("prompt-injection")
+  marker_path = marker_dir.join("#{key}.seen")
+  FileUtils.mkdir_p(marker_dir, mode: 0o700)
+  File.open(marker_path, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
+    file.puts(Time.now.utc.iso8601)
+  end
+  true
+rescue Errno::EEXIST
+  false
+rescue SystemCallError, RuntimeError => e
+  warn "strict-hook prompt injection marker failed: #{e.message}"
+  true
+end
+
 def canonical_path(value)
   path = Pathname.new(value.to_s).expand_path
   path.exist? ? path.realpath : path.cleanpath
@@ -561,11 +588,15 @@ if enforcement.fetch("emitted") || enforcement.fetch("failed_closed")
 end
 
 # UserPromptSubmit prompt injection: при доверенной baseline и непустом контенте
-# в `<config-root>/user-prompt-injection.md` пишем содержимое в stdout — Claude
-# Code добавляет stdout к user prompt'у per UserPromptSubmit hook contract.
+# в `<config-root>/user-prompt-injection.md` пишем содержимое в stdout один
+# раз на provider session — provider добавляет stdout к user prompt'у per
+# UserPromptSubmit hook contract.
 # Recursion guard STRICT_MODE_NESTED=1 пропускает injection (nested `claude -p`
 # вызовы не должны получать ту же rules-вставку повторно).
-if logical_event == "user-prompt-submit" && ENV["STRICT_MODE_NESTED"] != "1" && context.fetch("trusted", false)
+if logical_event == "user-prompt-submit" &&
+   ENV["STRICT_MODE_NESTED"] != "1" &&
+   context.fetch("trusted", false) &&
+   should_emit_prompt_injection?(state_root, provider, parsed_payload)
   injection_records = context.fetch("config_results").fetch("user-prompt-injection.md", { "records" => [] }).fetch("records")
   injection_text = injection_records.map { |record| record.fetch("content", "").to_s }.join
   unless injection_text.empty?

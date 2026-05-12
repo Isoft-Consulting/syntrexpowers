@@ -75,9 +75,9 @@ def run_strict_hook(env, install_root, provider, logical_event, payload)
   Open3.capture3(env, hook_path.to_s, "--provider", provider, logical_event, stdin_data: payload)
 end
 
-def claude_user_prompt_payload(project)
+def claude_user_prompt_payload(project, session_id = "11111111-2222-3333-4444-555555555555")
   JSON.generate({
-    "session_id" => "11111111-2222-3333-4444-555555555555",
+    "session_id" => session_id,
     "transcript_path" => project.join(".claude/projects/test.jsonl").to_s,
     "cwd" => project.to_s,
     "hook_event_name" => "UserPromptSubmit",
@@ -85,7 +85,14 @@ def claude_user_prompt_payload(project)
   })
 end
 
-# --- Case 1: injection populated → stdout contains content ---
+def assert_injection_present(name, stdout)
+  assert(name, stdout.include?("TEST INJECTION RULES"), "stdout must contain injection content marker line 0", stdout.inspect)
+  assert(name, stdout.include?("Marker line one"), "stdout must contain marker line 1", stdout.inspect)
+  assert(name, stdout.include?("Marker line two"), "stdout must contain marker line 2", stdout.inspect)
+  assert(name, stdout.end_with?("\n"), "stdout must end with newline", stdout.inspect)
+end
+
+# --- Case 1: injection populated → stdout contains content once per session ---
 INJECTION_CONTENT = "TEST INJECTION RULES\n1. Marker line one\n2. Marker line two\n"
 
 # Explicit isolation of strict-mode env so cases don't inherit pollution
@@ -123,15 +130,35 @@ with_install_claude do |phase, *args|
     next INJECTION_CONTENT
   when :test
     _root, home, install_root, state_root, project = args
-    name = "user-prompt-submit emits injection content when config populated and baseline trusted"
+    name = "user-prompt-submit emits injection content once when config populated and baseline trusted"
     env = base_env(home, state_root, project)
     stdout, stderr, status = run_strict_hook(env, install_root, "claude", "user-prompt-submit", claude_user_prompt_payload(project))
     assert_no_stacktrace(name, stdout + stderr)
     assert(name, status.exitstatus.zero?, "strict-hook must exit 0, got #{status.exitstatus}", stdout + stderr)
-    assert(name, stdout.include?("TEST INJECTION RULES"), "stdout must contain injection content marker line 0", stdout.inspect)
-    assert(name, stdout.include?("Marker line one"), "stdout must contain marker line 1", stdout.inspect)
-    assert(name, stdout.include?("Marker line two"), "stdout must contain marker line 2", stdout.inspect)
-    assert(name, stdout.end_with?("\n"), "stdout must end with newline", stdout.inspect)
+    assert_injection_present(name, stdout)
+
+    second_stdout, second_stderr, second_status = run_strict_hook(env, install_root, "claude", "user-prompt-submit", claude_user_prompt_payload(project))
+    assert_no_stacktrace(name, second_stdout + second_stderr)
+    assert(name, second_status.exitstatus.zero?, "second strict-hook must exit 0, got #{second_status.exitstatus}", second_stdout + second_stderr)
+    assert(name, second_stdout.empty?, "second prompt in same session must suppress repeated injection", second_stdout.inspect)
+  end
+end
+
+# --- Case 1b: another session still receives the one-shot injection ---
+with_install_claude do |phase, *args|
+  case phase
+  when :setup
+    next INJECTION_CONTENT
+  when :test
+    _root, home, install_root, state_root, project = args
+    name = "user-prompt-submit emits injection for each distinct session"
+    env = base_env(home, state_root, project)
+    first_stdout, first_stderr, first_status = run_strict_hook(env, install_root, "claude", "user-prompt-submit", claude_user_prompt_payload(project, "session-one"))
+    second_stdout, second_stderr, second_status = run_strict_hook(env, install_root, "claude", "user-prompt-submit", claude_user_prompt_payload(project, "session-two"))
+    assert_no_stacktrace(name, first_stdout + first_stderr + second_stdout + second_stderr)
+    assert(name, first_status.exitstatus.zero? && second_status.exitstatus.zero?, "strict-hook must exit 0 for both sessions", first_stdout + first_stderr + second_stdout + second_stderr)
+    assert_injection_present(name, first_stdout)
+    assert_injection_present(name, second_stdout)
   end
 end
 

@@ -45,7 +45,7 @@ The same restart requirement applies to Claude Code: after installing or refresh
 
 ## Enabling UserPromptSubmit injection
 
-`install.sh` lays down an empty `<install-root>/config/user-prompt-injection.md` protected config file. While the file is empty, `strict-hook` writes nothing to stdout on `user-prompt-submit` and the agent receives no injected context. To start injecting strict-mode rules (or any persistent reminders) into every user prompt:
+`install.sh` lays down an empty `<install-root>/config/user-prompt-injection.md` protected config file. While the file is empty, `strict-hook` writes nothing to stdout on `user-prompt-submit` and the agent receives no injected context. To start injecting strict-mode rules (or any persistent reminders) once per provider session:
 
 1. Stop any running provider sessions (exit the Claude Code or Codex CLI session via `/exit` or Ctrl-D, or close the terminal hosting it) so they do not race with the install transaction.
 2. Edit `<install-root>/config/user-prompt-injection.md` outside the running provider session with any text editor — provider tools cannot mutate protected config under enforce mode, and a runtime edit by the agent would otherwise invalidate the protected baseline hash on the very next hook invocation. The file is raw markdown; markdown headers, blank lines, and leading whitespace are preserved verbatim and emitted into the user prompt context, unlike the directive-format config files where `#` and blank lines are stripped as comments.
@@ -56,7 +56,7 @@ The same restart requirement applies to Claude Code: after installing or refresh
    ```
 
    Use `--provider codex` or `--provider all` to match the providers you originally installed. If you cannot `cd` into the checkout, substitute the full path to `install.sh` — the installer reads `--install-root` and the source tree it lives in, so any working directory works as long as the path to the script is resolvable. The installer keeps the existing file content — the template copy only fires when the file is missing — and recomputes the protected baseline so the new content hash matches the file you just edited.
-4. Start a new provider session. The runtime restart requirement documented two paragraphs above applies here too: a session that was running during the install still holds the old hook config in process memory and will not pick up the refreshed baseline until restart. Once the new session starts, `strict-hook` reads the file through the trusted baseline on every `user-prompt-submit` event and writes the contents to stdout, where the provider appends them to the user prompt per its UserPromptSubmit hook contract.
+4. Start a new provider session. The runtime restart requirement documented two paragraphs above applies here too: a session that was running during the install still holds the old hook config in process memory and will not pick up the refreshed baseline until restart. Once the new session starts, `strict-hook` reads the file through the trusted baseline and writes the contents to stdout on the first `user-prompt-submit` for that provider session. Later prompts in the same session are suppressed by a strict-mode-owned marker under `<state-root>/prompt-injection/`, so the provider gets the reminder without repeating the same block every turn.
 
 ## Configuring The Judge Prompt Template
 
