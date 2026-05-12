@@ -480,7 +480,7 @@ module StrictModeDestructiveGate
     return block("trusted-import-invalid", "source path must be an existing regular file") unless source_path.file? && !source_path.symlink?
     return block("trusted-import-invalid", "source path matches protected dev+inode") if protected_inode_path?(source_path, protected_inodes)
 
-    block("trusted-import-unavailable", "strict-fdr import requires the artifact importer before provider shell execution can create trusted state")
+    allow("trusted-import-ready")
   end
 
   def runtime_executable_execution(tokens, protected_roots, cwd)

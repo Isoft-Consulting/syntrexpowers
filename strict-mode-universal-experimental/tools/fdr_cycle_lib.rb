@@ -430,13 +430,20 @@ class StrictModeFdrCycle
 
     errors << "schema_version must be 1" unless record.fetch("schema_version") == 1
     errors << "ledger_scope must be session" unless record.fetch("ledger_scope") == "session"
-    errors << "writer must be strict-hook" unless record.fetch("writer") == "strict-hook"
     errors << "provider invalid" unless %w[claude codex].include?(record.fetch("provider"))
     %w[session_key raw_session_hash cwd project_dir target_path target_class operation].each do |field|
       errors << "#{field} must be a non-empty string" unless record.fetch(field).is_a?(String) && !record.fetch(field).empty?
     end
-    errors << "target_class invalid" unless record.fetch("target_class") == "fdr-cycle-log"
-    errors << "operation must be append" unless record.fetch("operation") == "append"
+    valid_writer_target = case record.fetch("writer")
+                          when "strict-hook"
+                            (record.fetch("target_class") == "fdr-cycle-log" && record.fetch("operation") == "append") ||
+                              (record.fetch("target_class") == "tool-intent-log" && record.fetch("operation") == "append")
+                          when "strict-fdr"
+                            record.fetch("target_class") == "fdr-artifact" && %w[create modify].include?(record.fetch("operation"))
+                          else
+                            false
+                          end
+    errors << "writer/target/operation tuple invalid" unless valid_writer_target
     %w[raw_session_hash related_record_hash previous_record_hash record_hash].each do |field|
       errors << "#{field} must be lowercase SHA-256" unless sha256?(record.fetch(field))
     end
@@ -590,14 +597,14 @@ class StrictModeFdrCycle
     0
   end
 
-  def self.append_session_ledger!(state_root, context, target_path:, target_class:, operation:, old_fingerprint:, new_fingerprint:, related_record_hash:)
+  def self.append_session_ledger!(state_root, context, target_path:, target_class:, operation:, old_fingerprint:, new_fingerprint:, related_record_hash:, writer: "strict-hook")
     path = ledger_path(state_root, context.fetch("provider"), context.fetch("session_key"))
     path.dirname.mkpath
     previous_record_hash = last_session_ledger_hash(path)
     record = {
       "schema_version" => 1,
       "ledger_scope" => "session",
-      "writer" => "strict-hook",
+      "writer" => writer,
       "provider" => context.fetch("provider"),
       "session_key" => context.fetch("session_key"),
       "raw_session_hash" => context.fetch("raw_session_hash"),

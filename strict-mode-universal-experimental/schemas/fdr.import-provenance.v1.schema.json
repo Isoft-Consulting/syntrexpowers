@@ -65,9 +65,15 @@
       ]
     },
     "source_fingerprint": {
-      "shape": "nested-object",
+      "shape": "hash",
       "members": [
-        "state.ledger-fingerprint.v1"
+        "source_realpath",
+        "dev",
+        "inode",
+        "mode",
+        "size_bytes",
+        "mtime_ns",
+        "content_sha256"
       ],
       "rules": [
         "source identity proof"
@@ -187,5 +193,5 @@
   "fixture_requirements": [
     "trusted import provenance parser and argv/source identity validator"
   ],
-  "profile_hash": "866724e543ab534fd3877825bf8685fc076f49ab5f66dbdd53fc9fde3543e119"
+  "profile_hash": "847f449b0ea9424c50e7e2c4197dbe985563b0883eba84e6ccaedd48ca627c9c"
 }

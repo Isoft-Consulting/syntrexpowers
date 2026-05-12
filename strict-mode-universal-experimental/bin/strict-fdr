@@ -2,6 +2,26 @@
 # frozen_string_literal: true
 
 require "json"
+require "pathname"
+
+require_relative "../tools/fdr_import_lib"
+
+def inferred_install_root
+  return Pathname.new(ENV["STRICT_INSTALL_ROOT"]).expand_path.cleanpath if ENV["STRICT_INSTALL_ROOT"]
+
+  program = Pathname.new($PROGRAM_NAME).expand_path.cleanpath
+  if program.basename.to_s == "strict-fdr" &&
+     program.dirname.basename.to_s == "bin" &&
+     program.dirname.dirname.basename.to_s == "active"
+    return program.dirname.dirname.dirname
+  end
+
+  Pathname.new(__dir__).parent.expand_path.cleanpath
+end
+
+def hook_cwd
+  Pathname.new(ENV["STRICT_CWD"] || Dir.pwd).expand_path.cleanpath
+end
 
 command = ARGV.shift
 separator = ARGV.shift
@@ -12,17 +32,35 @@ unless command == "import" && separator == "--" && path && ARGV.empty?
   exit 2
 end
 
-unless File.file?(path)
-  warn "#{path}: artifact is not a file"
+install_root = inferred_install_root
+cwd = hook_cwd
+state_root = Pathname.new(ENV["STRICT_STATE_ROOT"] || install_root.join("state")).expand_path.cleanpath
+project_dir = Pathname.new(ENV["STRICT_PROJECT_DIR"] || cwd.to_s).expand_path.cleanpath
+
+begin
+  result = StrictModeFdrImport.import!(
+    source_arg: path,
+    install_root: install_root,
+    state_root: state_root,
+    cwd: cwd,
+    project_dir: project_dir
+  )
+  puts JSON.pretty_generate(result)
+  exit 0
+rescue StrictModeFdrImport::ImportError => e
+  source_path = begin
+    candidate = Pathname.new(path)
+    (candidate.absolute? ? candidate : cwd.join(candidate)).cleanpath.to_s
+  rescue ArgumentError
+    path.to_s
+  end
+  puts JSON.pretty_generate({
+    "schema_version" => 1,
+    "mode" => "trusted-import",
+    "source_path" => source_path,
+    "decision" => "block",
+    "reason_code" => e.reason_code,
+    "reason" => e.message
+  })
   exit 1
 end
-
-puts JSON.pretty_generate({
-  "schema_version" => 1,
-  "mode" => "discovery-import-unavailable",
-  "source_path" => File.expand_path(path),
-  "decision" => "block",
-  "reason_code" => "trusted-import-unavailable",
-  "reason" => "strict-fdr import requires the artifact importer before it can create trusted state"
-})
-exit 1

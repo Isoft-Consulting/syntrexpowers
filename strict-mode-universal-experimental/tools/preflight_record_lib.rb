@@ -51,6 +51,7 @@ module StrictModePreflightRecord
     shell-read-only-or-unmatched
     non-write-tool
     write-targets-disjoint
+    trusted-import-ready
   ].freeze
   CLASSIFIER_BLOCK_REASON_CODES = %w[
     invalid-identity

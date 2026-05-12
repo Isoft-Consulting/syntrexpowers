@@ -13,6 +13,7 @@ require "time"
 require_relative "../tools/decision_contract_lib"
 require_relative "../tools/destructive_gate_lib"
 require_relative "../tools/fdr_cycle_lib"
+require_relative "../tools/fdr_import_lib"
 require_relative "../tools/fixture_readiness_lib"
 require_relative "../tools/internal_decision_lib"
 require_relative "../tools/normalized_event_lib"
@@ -879,6 +880,35 @@ preflight = if provider_detection_decision == "match" && !payload_truncated
             end
 preflight = validate_preflight_or_error(logical_event, preflight)
 context = protected_context(state_root)
+trusted_state_written = false
+if preflight.fetch("attempted") &&
+   preflight.fetch("trusted") &&
+   preflight.fetch("decision") == "allow" &&
+   preflight.fetch("reason_code") == "trusted-import-ready" &&
+   provider_detection_decision == "match" &&
+   !payload_truncated &&
+   parsed_payload.is_a?(Hash) &&
+   context.fetch("trusted", false) &&
+   enforcing_hook_invocation? &&
+   enforcing_hook_entry(context, provider, logical_event)
+  begin
+    cwd = hook_cwd
+    intent = StrictModeFdrImport.append_import_intent_from_payload!(
+      state_root: state_root,
+      install_root: inferred_install_root(state_root),
+      provider: provider,
+      logical_event: logical_event,
+      payload: parsed_payload,
+      payload_hash: payload_hash,
+      cwd: cwd,
+      project_dir: hook_project_dir(cwd)
+    )
+    trusted_state_written = !intent.nil?
+    preflight = validate_preflight_or_error(logical_event, preflight_error(logical_event, "preflight-error", ["trusted import intent was not written"])) unless trusted_state_written
+  rescue RuntimeError, SystemCallError, ArgumentError, KeyError => e
+    preflight = validate_preflight_or_error(logical_event, preflight_error(logical_event, "preflight-error", ["trusted import intent append failed: #{e.message}"]))
+  end
+end
 stop_hook_active = provider_detection_decision == "match" &&
                    !payload_truncated &&
                    parsed_payload.is_a?(Hash) &&
@@ -934,7 +964,7 @@ record = {
   "raw_payload_path" => raw_payload_path,
   "preflight" => preflight,
   "enforcement" => enforcement.reject { |key, _value| key == "emission" },
-  "trusted_state_written" => false
+  "trusted_state_written" => trusted_state_written
 }
 
 begin

@@ -8,6 +8,7 @@ require "pathname"
 require "tmpdir"
 require_relative "../tools/decision_contract_lib"
 require_relative "../tools/fdr_cycle_lib"
+require_relative "../tools/fdr_import_lib"
 require_relative "../tools/fixture_readiness_lib"
 require_relative "../tools/hook_entry_plan_lib"
 require_relative "../tools/metadata_lib"
@@ -918,8 +919,13 @@ with_install do |_root, home, install_root, state_root, project|
 end
 
 with_install do |_root, home, install_root, state_root, project|
-  name = "pre-tool preflight blocks strict-fdr import while importer is unavailable"
-  project.join("review.md").write("# review\n")
+  name = "pre-tool preflight allows exact strict-fdr import in discovery without trusted state"
+  project.join("review.md").write("# review\n\n```json strict-fdr-v1\n#{JSON.pretty_generate({
+    "review_generated_at" => "2026-05-13T00:00:00Z",
+    "reviewer" => "fixture-reviewer",
+    "verdict" => "clean",
+    "findings" => []
+  })}\n```\n")
   command = "\"#{install_root.join('active/bin/strict-fdr')}\" import -- review.md"
   payload = {
     "event" => "pre-tool-use",
@@ -932,18 +938,62 @@ with_install do |_root, home, install_root, state_root, project|
   status, output = run_hook(home, install_root, state_root, project, payload)
   assert_no_stacktrace(name, output)
   assert(name, status.zero?, "strict-hook must stay discovery/log-only", output)
-  assert(name, output.include?("preflight would block"), "missing would-block warning", output)
+  assert(name, !output.include?("preflight would block"), "exact import should not warn as would-block", output)
 
   record = last_discovery_record(state_root)
   preflight = record.fetch("preflight")
   assert_valid_preflight(name, preflight)
   assert(name, preflight.fetch("trusted") == true, "preflight was not trusted", preflight.inspect)
-  assert(name, preflight.fetch("decision") == "block", "preflight did not classify block", preflight.inspect)
-  assert(name, preflight.fetch("would_block") == true, "preflight would_block mismatch", preflight.inspect)
-  assert(name, preflight.fetch("reason_code") == "trusted-import-unavailable", "wrong reason_code", preflight.inspect)
+  assert(name, preflight.fetch("decision") == "allow", "preflight did not classify allow", preflight.inspect)
+  assert(name, preflight.fetch("would_block") == false, "preflight would_block mismatch", preflight.inspect)
+  assert(name, preflight.fetch("reason_code") == "trusted-import-ready", "wrong reason_code", preflight.inspect)
   assert(name, preflight.fetch("command_hash") == Digest::SHA256.hexdigest(command), "command hash mismatch", preflight.inspect)
   assert(name, !state_root.join("discovery/codex-pre-tool-use.jsonl").read.include?(command), "raw shell command leaked into discovery log")
   assert(name, record.fetch("trusted_state_written") == false, "preflight wrote trusted state")
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing pre-tool records trusted strict-fdr import intent"
+  enable_codex_enforcement!(install_root, state_root)
+  project.join("review.md").write("# review\n\n```json strict-fdr-v1\n#{JSON.pretty_generate({
+    "review_generated_at" => "2026-05-13T00:00:00Z",
+    "reviewer" => "fixture-reviewer",
+    "verdict" => "clean",
+    "findings" => []
+  })}\n```\n")
+  command = "\"#{install_root.join('active/bin/strict-fdr')}\" import -- review.md"
+  payload = {
+    "event" => "pre-tool-use",
+    "thread_id" => "t1",
+    "tool_name" => "exec_command",
+    "tool_input" => {
+      "command" => command
+    }
+  }
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "trusted import pre-tool should exit cleanly", stdout + stderr)
+  assert(name, stdout.empty? && stderr.empty?, "trusted import pre-tool should not emit provider output", stdout + stderr)
+
+  record = last_discovery_record(state_root)
+  preflight = record.fetch("preflight")
+  assert_valid_preflight(name, preflight)
+  assert(name, preflight.fetch("decision") == "allow", "preflight did not allow exact import", preflight.inspect)
+  assert(name, preflight.fetch("reason_code") == "trusted-import-ready", "wrong reason_code", preflight.inspect)
+  assert(name, record.fetch("trusted_state_written") == true, "trusted import intent was not recorded", record.inspect)
+  enforcement = record.fetch("enforcement")
+  assert(name, enforcement.fetch("active") == true && enforcement.fetch("emitted") == false, "enforcement should allow trusted import command", enforcement.inspect)
+
+  identity = fdr_session_identity("t1")
+  intent_path = StrictModeFdrImport.tool_intent_log_path(state_root, "codex", identity.fetch("session_key"))
+  assert(name, intent_path.file?, "tool intent log missing")
+  intent = JSON.parse(intent_path.read.lines.last)
+  assert(name, intent.fetch("command_hash_source") == "trusted-import-argv", "intent command hash source mismatch", intent.inspect)
+  assert(name, intent.fetch("normalized_path_list") == [project.join("review.md").realpath.to_s], "intent path binding mismatch", intent.inspect)
+  ledgers = fdr_ledger_records(state_root)
+  assert(name, StrictModeFdrCycle.validate_session_ledger_chain(fdr_ledger_path(state_root)).empty?, "session ledger invalid", ledgers.inspect)
+  assert(name, ledgers.last.fetch("writer") == "strict-hook" && ledgers.last.fetch("target_class") == "tool-intent-log", "intent ledger tuple mismatch", ledgers.inspect)
+  assert(name, ledgers.last.fetch("related_record_hash") == intent.fetch("intent_hash"), "intent ledger hash mismatch", ledgers.inspect)
 end
 
 with_install do |_root, home, install_root, state_root, project|

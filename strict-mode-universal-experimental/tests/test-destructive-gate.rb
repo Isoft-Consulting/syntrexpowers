@@ -250,10 +250,10 @@ with_project do |_root, project, cwd, home, install, protected_roots|
 end
 
 with_project do |_root, project, cwd, home, install, protected_roots|
-  name = "exact strict-fdr import is unavailable until artifact importer is ready"
+  name = "exact strict-fdr import is allowed for intent-gated importer"
   write_file(project.join("review.md"), "# review\n")
   result = shell_result("\"#{install.join('active/bin/strict-fdr')}\" import -- ../review.md", project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
-  expect_result(name, result, "block", "trusted-import-unavailable")
+  expect_result(name, result, "allow", "trusted-import-ready")
 end
 
 with_project do |_root, project, cwd, home, install, protected_roots|

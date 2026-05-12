@@ -105,9 +105,12 @@
       "shape": "array",
       "members": [
         "severity",
-        "source",
-        "message",
-        "evidence"
+        "path",
+        "line",
+        "claim",
+        "evidence",
+        "impact",
+        "recommendation"
       ],
       "rules": [
         "verdict coupling"
@@ -271,5 +274,5 @@
   "fixture_requirements": [
     "artifact parser, freshness validator, and finding domain validator"
   ],
-  "profile_hash": "d77ee3a6b53061df6469f6e5b64cef0bade6495cc2f3d271a31854a9efb85fe5"
+  "profile_hash": "037b05d14d6386c2230a71251c9e727658716adcf8798f1e99e9d85f4c4f09bf"
 }

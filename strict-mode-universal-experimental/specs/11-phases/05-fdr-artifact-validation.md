@@ -31,7 +31,7 @@ Acceptance:
 - artifact edited path list must match current-turn edit scope
 - stale artifact whose exact sequence lists or log digests do not cover current-turn tool-intent/tool/edit entries blocks stop
 - provider tools cannot directly create trusted state-root FDR artifacts
-- `strict-fdr import -- <path>` is the only planned v0 path for creating trusted FDR artifacts from project markdown; the current command path blocks with `trusted-import-unavailable`
+- `strict-fdr import -- <path>` is the only v0 path for creating trusted FDR artifacts from project markdown; it imports only when the source and argv match a ledger-backed trusted pre-tool intent
 - `strict-fdr import` command fingerprint is verified before it may write trusted artifact state after the artifact importer exists
 - trusted import command matching uses argv/shell-lexer parsing, not regex-only matching
 - trusted import rejects out-of-project sources, protected-root sources, symlink components, devices, FIFOs, sockets, directories, oversize files, and protected-root hardlinks through `dev+inode` comparison
