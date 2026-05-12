@@ -4,6 +4,7 @@
 require "json"
 require "optparse"
 require_relative "../tools/metadata_lib"
+require_relative "../tools/protected_baseline_lib"
 
 ZERO_HASH = "0" * 64
 HASH_PATTERN = /\A[a-f0-9]{64}\z/
@@ -21,11 +22,17 @@ PROVIDER_ROUTES = {
 provider = nil
 reviewed_scope_digest = ZERO_HASH
 reviewed_artifact_hash = ZERO_HASH
+install_root = nil
+state_root = nil
+project_dir = nil
 begin
   OptionParser.new do |opts|
     opts.on("--provider PROVIDER") { |value| provider = value }
     opts.on("--reviewed-scope-digest SHA256") { |value| reviewed_scope_digest = value }
     opts.on("--reviewed-artifact-hash SHA256") { |value| reviewed_artifact_hash = value }
+    opts.on("--install-root PATH") { |value| install_root = value }
+    opts.on("--state-root PATH") { |value| state_root = value }
+    opts.on("--project-dir PATH") { |value| project_dir = value }
   end.parse!(ARGV)
 rescue OptionParser::ParseError => e
   warn "strict-judge usage error: #{e.message}"
@@ -47,7 +54,37 @@ unless reviewed_artifact_hash.match?(HASH_PATTERN)
   exit 2
 end
 
+def configured_install_root(explicit_install_root)
+  return explicit_install_root if explicit_install_root
+  return ENV["STRICT_INSTALL_ROOT"] if ENV["STRICT_INSTALL_ROOT"]
+
+  nil
+end
+
+def load_judge_prompt_template(install_root:, state_root:, project_dir:)
+  return "" unless install_root
+
+  loaded = StrictModeProtectedBaseline.load(
+    install_root: install_root,
+    state_root: state_root,
+    project_dir: project_dir,
+    home: Dir.home
+  )
+  unless loaded.fetch("trusted")
+    warn "strict-judge protected judge prompt template unavailable: protected baseline untrusted"
+    return ""
+  end
+
+  records = loaded.fetch("config_results").fetch("judge-prompt-template.md", { "records" => [] }).fetch("records")
+  records.map { |record| record.fetch("content", "").to_s }.join
+end
+
 route = PROVIDER_ROUTES.fetch(provider, { "backend" => "unknown", "model" => "unknown" })
+judge_prompt_template = load_judge_prompt_template(
+  install_root: configured_install_root(install_root),
+  state_root: state_root || ENV["STRICT_STATE_ROOT"],
+  project_dir: project_dir || ENV["STRICT_PROJECT_DIR"]
+)
 
 response = {
   "schema_version" => 1,
@@ -64,5 +101,10 @@ response = {
 response["response_hash"] = StrictModeMetadata.hash_record(response, "response_hash")
 
 puts StrictModeMetadata.canonical_json(response)
+
+# The protected prompt template is intentionally not emitted in v0. It is loaded
+# here only to establish the protected config plugin point for future
+# fixture-proven judge invocation without widening judge.response.v1.
+judge_prompt_template = nil
 
 exit(PROVIDER_ROUTES.key?(provider) ? 0 : 1)

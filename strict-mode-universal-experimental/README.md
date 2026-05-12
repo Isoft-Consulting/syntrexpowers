@@ -58,6 +58,12 @@ The same restart requirement applies to Claude Code: after installing or refresh
    Use `--provider codex` or `--provider all` to match the providers you originally installed. If you cannot `cd` into the checkout, substitute the full path to `install.sh` — the installer reads `--install-root` and the source tree it lives in, so any working directory works as long as the path to the script is resolvable. The installer keeps the existing file content — the template copy only fires when the file is missing — and recomputes the protected baseline so the new content hash matches the file you just edited.
 4. Start a new provider session. The runtime restart requirement documented two paragraphs above applies here too: a session that was running during the install still holds the old hook config in process memory and will not pick up the refreshed baseline until restart. Once the new session starts, `strict-hook` reads the file through the trusted baseline on every `user-prompt-submit` event and writes the contents to stdout, where the provider appends them to the user prompt per its UserPromptSubmit hook contract.
 
+## Configuring The Judge Prompt Template
+
+`install.sh` also lays down `<install-root>/config/judge-prompt-template.md`. The file is optional raw markdown for future fixture-proven `strict-judge` prompt construction. It is protected config, not executable code: provider tools cannot mutate it under enforce mode, and `strict-judge` never shells, evals, or emits the template as `judge.response.v1`.
+
+To customize it, edit the file outside the running provider session and re-run the install command so the protected baseline records the new hash. Until a `judge-invocation` fixture proves a real provider judge route, `strict-judge` still returns the canonical `unknown` response.
+
 Nested `claude -p` invocations launched from strict-mode-owned scripts (judge, worker, etc.) must set `STRICT_MODE_NESTED=1` in the subprocess environment to suppress recursive injection of the same rules block.
 
 To inspect the current enforcing blockers as a structured report, run:

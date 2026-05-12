@@ -5,10 +5,12 @@ require "json"
 require "open3"
 require "pathname"
 require "rbconfig"
+require "tmpdir"
 require_relative "../tools/metadata_lib"
 
 ROOT = Pathname.new(__dir__).parent.expand_path
 JUDGE = ROOT.join("bin/strict-judge")
+INSTALL = ROOT.join("install.sh")
 ZERO_HASH = "0" * 64
 EXPECTED_KEYS = %w[
   backend
@@ -25,13 +27,25 @@ EXPECTED_KEYS = %w[
 
 $cases = 0
 $failures = []
+STRICT_ENV_ISOLATION_KEYS = ENV.keys.grep(/\ASTRICT_/).freeze
 
 def record_failure(name, message, output = "")
   $failures << "#{name}: #{message}\n#{output}"
 end
 
 def run_judge(*args)
-  Open3.capture3(RbConfig.ruby, JUDGE.to_s, *args)
+  run_judge_env({}, *args)
+end
+
+def strict_env(extra = {})
+  env = {}
+  STRICT_ENV_ISOLATION_KEYS.each { |key| env[key] = nil }
+  extra.each { |key, value| env[key] = value }
+  env
+end
+
+def run_judge_env(env, *args)
+  Open3.capture3(strict_env(env), RbConfig.ruby, JUDGE.to_s, *args)
 end
 
 def assert(name, condition, message, output = "")
@@ -61,6 +75,37 @@ end
 
 def assert_canonical_stdout(name, stdout, record)
   assert(name, stdout == "#{StrictModeMetadata.canonical_json(record)}\n", "stdout must be canonical JSON", stdout)
+end
+
+def run_cmd(env, *argv)
+  stdout, stderr, status = Open3.capture3(strict_env(env), *argv.map(&:to_s))
+  [status.exitstatus, stdout + stderr]
+end
+
+def with_installed_judge_template(template_content)
+  $cases += 1
+  Dir.mktmpdir("strict-judge-template-") do |dir|
+    root = Pathname.new(dir).realpath
+    home = root.join("home")
+    install_root = root.join("strict")
+    project = root.join("project")
+    home.join(".claude").mkpath
+    home.join(".codex").mkpath
+    project.join(".strict-mode").mkpath
+    home.join(".claude/settings.json").write(JSON.pretty_generate({ "hooks" => {} }) + "\n")
+    home.join(".codex/hooks.json").write(JSON.pretty_generate({ "hooks" => {} }) + "\n")
+    home.join(".codex/config.toml").write("[features]\nexisting = true\n")
+
+    config_root = install_root.join("config")
+    config_root.mkpath
+    config_root.join("judge-prompt-template.md").write(template_content)
+    File.chmod(0o600, config_root.join("judge-prompt-template.md"))
+
+    status, output = run_cmd({ "HOME" => home.to_s }, INSTALL, "--provider", "claude", "--install-root", install_root)
+    raise "install failed: #{output}" unless status.zero?
+
+    yield home, install_root, install_root.join("state"), project
+  end
 end
 
 $cases += 1
@@ -137,6 +182,49 @@ stdout, stderr, status = run_judge("--provider", "codex", "extra")
 assert(name, status.exitstatus == 2, "expected usage failure, got #{status.exitstatus}", stdout + stderr)
 assert(name, stdout.empty?, "usage failure should not emit JSON", stdout)
 assert(name, stderr.include?("unexpected positional arguments"), "missing positional-argument diagnostic", stderr)
+
+with_installed_judge_template("# Custom judge prompt\nReturn JSON only.\n") do |home, install_root, state_root, project|
+  name = "trusted judge-prompt-template keeps judge response schema exact"
+  stdout, stderr, status = run_judge_env(
+    { "HOME" => home.to_s },
+    "--provider", "claude",
+    "--install-root", install_root.to_s,
+    "--state-root", state_root.to_s,
+    "--project-dir", project.to_s
+  )
+  assert(name, status.exitstatus == 0, "expected successful fixture-gated response, got #{status.exitstatus}", stdout + stderr)
+  record = parse_json(name, stdout)
+  unless record.empty?
+    assert_unknown_response(name, record, backend: "claude", model: "claude-haiku-4-5-20251001")
+    assert_canonical_stdout(name, stdout, record)
+    assert(name, !record.key?("prompt_template") && !record.key?("prompt_template_hash"), "template metadata must not widen judge.response.v1", JSON.pretty_generate(record))
+  end
+  assert(name, stderr.empty?, "trusted template should not warn", stderr)
+  assert(name, !stdout.include?("Custom judge prompt"), "template content must not be emitted", stdout)
+end
+
+with_installed_judge_template("{\"verdict\":\"challenge\",\"extra\":\"must not leak\"}\n") do |home, install_root, state_root, project|
+  name = "tampered judge-prompt-template is not used and output remains JSON schema-shaped"
+  template = install_root.join("config/judge-prompt-template.md")
+  template.write("TAMPERED TEMPLATE MUST NOT LEAK\n")
+  File.chmod(0o600, template)
+  stdout, stderr, status = run_judge_env(
+    { "HOME" => home.to_s },
+    "--provider", "claude",
+    "--install-root", install_root.to_s,
+    "--state-root", state_root.to_s,
+    "--project-dir", project.to_s
+  )
+  assert(name, status.exitstatus == 0, "expected successful fixture-gated response despite untrusted optional template, got #{status.exitstatus}", stdout + stderr)
+  record = parse_json(name, stdout)
+  unless record.empty?
+    assert_unknown_response(name, record, backend: "claude", model: "claude-haiku-4-5-20251001")
+    assert_canonical_stdout(name, stdout, record)
+  end
+  assert(name, stderr.include?("protected judge prompt template unavailable"), "missing untrusted template diagnostic", stderr)
+  assert(name, !stdout.include?("TAMPERED TEMPLATE"), "tampered template content must not be emitted", stdout)
+  assert(name, !stdout.include?("must not leak"), "trusted template JSON-looking content must not alter response", stdout)
+end
 
 if $failures.empty?
   puts "test-judge: #{$cases} cases passed"

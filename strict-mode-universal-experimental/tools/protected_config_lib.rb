@@ -17,6 +17,11 @@ module StrictModeProtectedConfig
     filesystem-read-allowlist
     network-allowlist
     user-prompt-injection
+    judge-prompt-template
+  ].freeze
+  RAW_TEXT_KINDS = %w[
+    user-prompt-injection
+    judge-prompt-template
   ].freeze
   SHA256_PATTERN = /\A[a-f0-9]{64}\z/
   BOOL_KEYS = %w[
@@ -76,15 +81,14 @@ module StrictModeProtectedConfig
     text = decode_utf8(bytes, errors)
     return result(kind, source, records, errors, config_errors) unless errors.empty?
 
-    if kind == "user-prompt-injection"
-      # Raw-text режим: контент целиком предназначен для инжекта в user prompt
-      # (markdown заголовки `#`, leading whitespace, blank lines — всё легитимно).
-      # Per-line filter из parse_physical_line отрезает `#` и whitespace, что
-      # сломало бы markdown structure. Возвращаем единый record с raw text.
+    if RAW_TEXT_KINDS.include?(kind)
+      # Raw-text configs preserve markdown headers, leading whitespace, and
+      # blank lines. The directive parser would otherwise treat `#` as a
+      # comment and reject useful prompt-template formatting.
       total_bytes = bytes.bytesize
       max_total = line_max_bytes * 256
       if total_bytes > max_total
-        errors << "user-prompt-injection exceeds #{max_total} bytes (#{total_bytes})"
+        errors << "#{kind} exceeds #{max_total} bytes (#{total_bytes})"
         return result(kind, source, records, errors, config_errors)
       end
       records << { "directive" => "text", "content" => text } unless text.empty?
@@ -198,10 +202,10 @@ module StrictModeProtectedConfig
       )
     when "network-allowlist"
       parse_network_line(line)
-    when "user-prompt-injection"
-      # user-prompt-injection обрабатывается через raw-text fast-path в parse_bytes
-      # до того как мы дойдём до per-line dispatch, поэтому сюда не должно попадать.
-      # На случай прямого вызова parse_config_line — возвращаем no-op text record.
+    when *RAW_TEXT_KINDS
+      # Raw-text kinds are handled before per-line dispatch. This fallback keeps
+      # direct parser calls deterministic without giving the line parser any
+      # executable semantics.
       [[{ "directive" => "text", "content" => line }], []]
     else
       [[], ["unknown config kind #{kind}"]]

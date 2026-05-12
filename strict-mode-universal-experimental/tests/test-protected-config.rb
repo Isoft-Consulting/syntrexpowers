@@ -69,7 +69,8 @@ with_root do |_root|
     "stub-allowlist.txt" => "stub-allowlist",
     "filesystem-read-allowlist.txt" => "filesystem-read-allowlist",
     "network-allowlist.txt" => "network-allowlist",
-    "user-prompt-injection.md" => "user-prompt-injection"
+    "user-prompt-injection.md" => "user-prompt-injection",
+    "judge-prompt-template.md" => "judge-prompt-template"
   }.each do |file, kind|
     expect_valid(name, ROOT.join("templates/#{file}"), kind)
   end
@@ -113,6 +114,48 @@ with_root do |root|
   big = "x" * (StrictModeProtectedConfig::DEFAULT_LINE_MAX_BYTES * 256 + 1)
   path = write_file(root.join("user-prompt-injection.md"), big)
   result = StrictModeProtectedConfig.parse_file(path, kind: "user-prompt-injection")
+  $cases += 1
+  record_failure(name, "oversized content must fail validation") if result.fetch("trusted")
+  record_failure(name, "error message must mention size bound") unless result.fetch("errors").any? { |e| e.include?("exceeds") }
+end
+
+with_root do |root|
+  name = "judge-prompt-template raw-text parser preserves markdown and JSON-looking schema text"
+  raw_content = <<~TEXT
+    # Judge prompt
+
+       Keep this indentation.
+    Return ONLY JSON matching:
+    {"verdict":"unknown","reason":"judge-invocation-unverified"}
+  TEXT
+  path = write_file(root.join("judge-prompt-template.md"), raw_content)
+  result = StrictModeProtectedConfig.parse_file(path, kind: "judge-prompt-template")
+  $cases += 1
+  record_failure(name, "expected trusted parse, got errors: #{result.fetch("errors").inspect}") unless result.fetch("trusted")
+  records = result.fetch("records")
+  record_failure(name, "expected single record with full text, got #{records.length}") unless records.length == 1
+  if records.length == 1
+    content = records.first.fetch("content")
+    record_failure(name, "content lost markdown header") unless content.include?("# Judge prompt")
+    record_failure(name, "content lost leading whitespace") unless content.include?("   Keep this indentation.")
+    record_failure(name, "content lost JSON-looking output schema text") unless content.include?("{\"verdict\":\"unknown\"")
+  end
+end
+
+with_root do |root|
+  name = "judge-prompt-template empty file yields no records"
+  path = write_file(root.join("judge-prompt-template.md"), "")
+  result = StrictModeProtectedConfig.parse_file(path, kind: "judge-prompt-template")
+  $cases += 1
+  record_failure(name, "empty file must be trusted (no errors)") unless result.fetch("trusted")
+  record_failure(name, "empty file must yield zero records") unless result.fetch("records").empty?
+end
+
+with_root do |root|
+  name = "judge-prompt-template rejects content exceeding bound"
+  big = "x" * (StrictModeProtectedConfig::DEFAULT_LINE_MAX_BYTES * 256 + 1)
+  path = write_file(root.join("judge-prompt-template.md"), big)
+  result = StrictModeProtectedConfig.parse_file(path, kind: "judge-prompt-template")
   $cases += 1
   record_failure(name, "oversized content must fail validation") if result.fetch("trusted")
   record_failure(name, "error message must mention size bound") unless result.fetch("errors").any? { |e| e.include?("exceeds") }
