@@ -21,7 +21,8 @@ module StrictModeProtectedBaseline
     "network-allowlist.txt" => "network-allowlist",
     "destructive-patterns.txt" => "destructive-patterns",
     "stub-allowlist.txt" => "stub-allowlist",
-    "user-prompt-injection.md" => "user-prompt-injection"
+    "user-prompt-injection.md" => "user-prompt-injection",
+    "judge-prompt-template.md" => "judge-prompt-template"
   }.freeze
   EXPECTED_GENERATED_HOOK_ENV = {
     "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix",

@@ -130,6 +130,7 @@ universal-experimental/
     destructive-patterns.txt
     stub-allowlist.txt
     user-prompt-injection.md
+    judge-prompt-template.md
   tests/
     run-tests.sh
     test-provider-detection.rb

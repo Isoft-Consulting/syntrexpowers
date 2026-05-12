@@ -31,6 +31,15 @@ These settings are accepted only through protected `runtime.env` or generated pr
 
 `STRICT_NO_HAIKU_JUDGE` and `STRICT_NO_CODEX_JUDGE` default to `0`. When a protected config explicitly sets the matching key to `1`, it acts as a backend-specific kill switch only. It makes `strict-judge` return `verdict:"unknown"` with a `judge-disabled` reason for the matching active provider; the Stop/FDR challenge caller must append the normal FDR cycle record under the session transaction. It never reroutes to the other provider, never disables artifact validation/import freshness, and never disables destructive, protected-root, approval, or Stop gates.
 
+Protected judge prompt template:
+
+- `<install-root>/config/judge-prompt-template.md` is an optional raw-text protected config loaded only after the protected install baseline is trusted.
+- The template is prompt text for future fixture-proven judge invocation. It is not an executable extension point: strict-mode never shells, evals, sources, expands, or dispatches it as code.
+- Markdown headers, blank lines, leading whitespace, and JSON-looking output-schema examples are preserved verbatim under the same whole-file byte cap as `user-prompt-injection.md`.
+- If the file is missing, empty, malformed, or its protected baseline is untrusted, `strict-judge` must not use its bytes. A malformed or tampered template must not appear in stdout/stderr provider output or in `judge.response.v1`.
+- The template cannot widen `judge.response.v1`. Even when the template contains JSON schema examples, `strict-judge` still returns exactly one canonical judge response object with the closed field set below.
+- A future executable judge extension requires a separate `judge-extension` contract, explicit security spec, and fixture proof. `judge-prompt-template.md` deliberately does not establish executable protected config semantics.
+
 Claude invocation target form, enabled only after the matching `judge-invocation` fixture proves the prompt-delivery and flag contract:
 
 ```bash

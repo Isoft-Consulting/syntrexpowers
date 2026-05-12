@@ -21,6 +21,7 @@ Every trusted normalized event, JSON, JSONL, marker, manifest, fixture, protecte
 | `hook.preflight.v1` | [Hook Event Matrix](03-hook-event-matrix.md), [Destructive Gate](08-shared-core/05-destructive-gate.md) | strict-hook discovery `preflight` object | `preflight_hash` | preflight record parser, hash binder, and attempt/trust/decision coupling validator |
 | `fixture.manifest.v1` | [Hook Event Matrix](03-hook-event-matrix.md), [Judge Router](09-judge-router.md) | provider fixture manifest and records | `manifest_hash`, `fixture_record_hash` | schema parser, compatibility-range validator, fixture hash validator |
 | `config.runtime-env.v1` | [State Layout](07-state-layout.md), [Judge Router](09-judge-router.md) | protected `runtime.env` key/value config | none | protected text parser plus runtime config domain matrix |
+| `config.judge-prompt-template.v1` | [Judge Router](09-judge-router.md) | protected `judge-prompt-template.md` raw text config | none | protected raw text parser plus no-executable-template validator |
 | `config.protected-paths.v1` | [Hook Event Matrix](03-hook-event-matrix.md) | `protected-paths.txt` | none | protected text parser and protected path directive validator |
 | `config.destructive-patterns.v1` | [Hook Event Matrix](03-hook-event-matrix.md), [Destructive Gate](08-shared-core/05-destructive-gate.md) | `destructive-patterns.txt` | none | protected text parser and destructive pattern compiler validator |
 | `config.stub-allowlist.v1` | [Hook Event Matrix](03-hook-event-matrix.md), [Stub Scan](08-shared-core/01-stub-scan.md) | `stub-allowlist.txt` | none | protected text parser and finding digest validator |
@@ -72,6 +73,7 @@ The owning sub-specs define the full exact field lists. Implementation readiness
 | `hook.preflight.v1` | Exact preflight fields `schema_version`, `attempted`, `trusted`, `logical_event`, `decision`, `would_block`, `reason_code`, `reason_hash`, `tool_kind`, `tool_write_intent`, `tool_name_hash`, `command_hash`, `path_list_hash`, `error_count`, `error_hash`, and `preflight_hash`; logical event, decision, reason code, tool kind, and write intent domains; data hash and `preflight_hash` recomputation; not-attempted sentinel fields; untrusted diagnostic sentinel fields; trusted classifier decision coupling; no raw tool command, raw reason, path list, or error text retention. |
 | `fixture.manifest.v1` | Top-level manifest fields `schema_version`, `generated_at`, `records`, `manifest_hash`; record fields from the fixture proof contract; `contract_kind` enum; compatibility modes `exact`, `range`, `unknown-only`; fixture-file hash object schema; hash sentinels per contract kind; `judge-invocation` contract records bound to Judge Router prompt delivery, command execution, timeout, state-isolation, and output-shape fixture requirements; `worker-invocation` contract records bound to Bounded Worker Delegation prompt delivery, no-tool sandbox, timeout, output-shape, and state-isolation fixture requirements. |
 | `config.runtime-env.v1` | UTF-8 line grammar; blank/comment handling; exact `KEY=VALUE` syntax; duplicate-key rejection; shell syntax rejection; whitelist key domains and integer/bool/model bounds for judge and worker routes; resolution source rules; closed matrix validator `matrix.runtime-config-domain.v1`. |
+| `config.judge-prompt-template.v1` | UTF-8 raw text grammar; whole-file byte cap; markdown preservation; protected-baseline loading only; no executable semantics; no judge response field widening. |
 | `config.protected-paths.v1` | UTF-8 line grammar; line length cap; directives `protect-file` and `protect-tree`; absolute normalized path rules; `/**` grammar suffix handling; symlink, glob, shell syntax, NUL, newline, and trailing slash rejection. |
 | `config.destructive-patterns.v1` | UTF-8 line grammar; directives `shell-ere` and `argv-token`; POSIX ERE compile validation; shell-token comparison input rules; no shell sourcing, expansion, or grep/sed/awk shell pass-through. |
 | `config.stub-allowlist.v1` | UTF-8 line grammar; directive `finding`; full lowercase SHA-256 finding digest validation; previous-baseline or approved-bypass activation requirement; line-number-only identity rejection. |
@@ -121,6 +123,7 @@ The owning sub-specs define the full exact field lists. Implementation readiness
 | `hook.preflight.v1` | `schema_version`, `attempted`, `trusted`, `logical_event`, `decision`, `would_block`, `reason_code`, `reason_hash`, `tool_kind`, `tool_write_intent`, `tool_name_hash`, `command_hash`, `path_list_hash`, `error_count`, `error_hash`, `preflight_hash` |
 | `fixture.manifest.v1` | `schema_version`, `generated_at`, `records`, `manifest_hash` |
 | `config.runtime-env.v1` | none |
+| `config.judge-prompt-template.v1` | none |
 | `config.protected-paths.v1` | none |
 | `config.destructive-patterns.v1` | none |
 | `config.stub-allowlist.v1` | none |
@@ -242,6 +245,7 @@ Every referenced term derived from the implementation profile in 17.2 must have 
 | `hook.preflight.v1` | data hash fields; tool summary fields; error diagnostic fields | `logical_event`; `decision`; `reason_code`; `tool_kind`; `tool_write_intent` | not-attempted sentinel fields; untrusted diagnostic sentinel fields; trusted classifier decision coupling |
 | `fixture.manifest.v1` | `records`; `records.fixture_file_hashes`; `records.compatibility_range` | `provider`; `contract_kind`; `compatibility_range.mode` | hash sentinel fields by contract kind; exact compatibility range; range compatibility comparator |
 | `config.runtime-env.v1` | runtime config lines; integer bounds | runtime key; boolean value; claude judge model; codex judge model; claude worker model; codex worker model | key-specific value parser and safe fallback behavior |
+| `config.judge-prompt-template.v1` | none | none | none |
 | `config.protected-paths.v1` | directive lines | directive kind | `protect-file` file target; `protect-tree` tree target |
 | `config.destructive-patterns.v1` | directive lines | directive kind | `shell-ere` compile validation; `argv-token` token comparison |
 | `config.stub-allowlist.v1` | directive lines | directive kind | `finding` digest identity |

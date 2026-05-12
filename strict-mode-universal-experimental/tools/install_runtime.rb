@@ -305,6 +305,7 @@ def backup_subjects_for(providers, home, install_root, state_root)
     destructive-patterns.txt
     stub-allowlist.txt
     user-prompt-injection.md
+    judge-prompt-template.md
   ].each do |name|
     subjects << [config_root.join(name), "protected-config", ""]
   end
@@ -383,7 +384,8 @@ def ensure_config_files(install_root)
     "network-allowlist.txt" => "network-allowlist.txt",
     "destructive-patterns.txt" => "destructive-patterns.txt",
     "stub-allowlist.txt" => "stub-allowlist.txt",
-    "user-prompt-injection.md" => "user-prompt-injection.md"
+    "user-prompt-injection.md" => "user-prompt-injection.md",
+    "judge-prompt-template.md" => "judge-prompt-template.md"
   }.each do |target, template|
     path = config_root.join(target)
     raise "#{path}: protected config must not be a symlink" if path.symlink?
@@ -407,6 +409,7 @@ def protected_config_records(config_root)
     destructive-patterns.txt
     stub-allowlist.txt
     user-prompt-injection.md
+    judge-prompt-template.md
   ].map { |name| file_record(config_root.join(name), "protected-config") })
 end
 
@@ -418,7 +421,8 @@ def validate_config_files(config_root, install_root, state_root)
     "network-allowlist.txt" => "network-allowlist",
     "destructive-patterns.txt" => "destructive-patterns",
     "stub-allowlist.txt" => "stub-allowlist",
-    "user-prompt-injection.md" => "user-prompt-injection"
+    "user-prompt-injection.md" => "user-prompt-injection",
+    "judge-prompt-template.md" => "judge-prompt-template"
   }
   protected_roots = [install_root, state_root, config_root].map(&:to_s).uniq
   mapping.each do |file, kind|
@@ -449,7 +453,8 @@ def preflight_existing_config_files(config_root, install_root, state_root)
     "network-allowlist.txt" => "network-allowlist",
     "destructive-patterns.txt" => "destructive-patterns",
     "stub-allowlist.txt" => "stub-allowlist",
-    "user-prompt-injection.md" => "user-prompt-injection"
+    "user-prompt-injection.md" => "user-prompt-injection",
+    "judge-prompt-template.md" => "judge-prompt-template"
   }
   protected_roots = [install_root, state_root, config_root].map(&:to_s).uniq
   mapping.each do |file, kind|
