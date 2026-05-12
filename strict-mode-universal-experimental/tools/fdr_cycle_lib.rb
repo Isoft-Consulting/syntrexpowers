@@ -130,11 +130,11 @@ class StrictModeFdrCycle
     Pathname.new(state_root).join("state-#{provider}-#{session_key}.lock")
   end
 
-  def self.context(provider:, payload:, cwd:, project_dir:)
+  def self.context(provider:, payload:, cwd:, project_dir:, normalized_event: nil, require_normalized_assistant: false)
     identity = session_identity(provider, payload)
     return nil unless identity
 
-    bounded = bounded_assistant_text(first_payload_string(payload, "last_assistant_message", "current_response", "assistant_text", "turn_assistant_text"))
+    bounded = bounded_assistant_text(normalized_assistant_text(normalized_event, payload, require_normalized: require_normalized_assistant))
     assistant_sha = bounded.fetch("text").empty? ? ZERO_HASH : Digest::SHA256.hexdigest(bounded.fetch("text"))
     tool_intent_seq_list = seq_list(payload, "tool_intent_seq_list")
     tool_seq_list = seq_list(payload, "tool_seq_list")
@@ -481,6 +481,14 @@ class StrictModeFdrCycle
       return value if value.is_a?(String) && !value.empty?
     end
     ""
+  end
+
+  def self.normalized_assistant_text(normalized_event, payload, require_normalized: false)
+    turn = normalized_event.fetch("turn") if normalized_event.is_a?(Hash)
+    return turn.fetch("assistant_text") if turn.is_a?(Hash) && turn.fetch("assistant_text", "").is_a?(String)
+    return "" if require_normalized
+
+    first_payload_string(payload, "last_assistant_message", "current_response", "assistant_text", "turn_assistant_text")
   end
 
   def self.bounded_assistant_text(text)

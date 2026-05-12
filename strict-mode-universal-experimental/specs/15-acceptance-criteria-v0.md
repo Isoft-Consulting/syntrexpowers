@@ -100,7 +100,7 @@ v0 is acceptable when:
 - uninstall does not remove candidate hooks automatically when manifest is missing
 - provider config merge uses structured JSON/TOML parsing, rejects malformed or duplicate-key configs, and preserves unrelated user entries
 - README provider support matrix status and proof text are covered by closed provider-feature enums, and their claims match the protected installer feature gates and selected fixture proofs
-- README maps Codex FDR challenge to the closed `disabled-until-proof` status until current-turn extraction is verified, if still unproven
+- README maps FDR challenge to fixture-gated support only when normalized current-turn assistant text is fixture-proven; unproven providers stay `disabled-until-proof`
 - every normalized event, trusted schema, protected text config grammar, internal/provider decision contract, and closed matrix used by enforcing runtime behavior has a stable schema id or matrix id in [Implementation Readiness](17-implementation-readiness.md) with protected executable metadata, parser or validator coverage, valid and malformed fixtures, hash coverage when applicable, positive and negative matrix coverage when applicable, invalid-combination coverage where a matrix is involved, and fail-closed test coverage
 
 ---

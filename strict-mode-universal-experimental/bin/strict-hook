@@ -390,8 +390,16 @@ def semantic_judge_history(payload)
   value.is_a?(Array) ? JSON.parse(JSON.generate(value)) : []
 end
 
-def semantic_judge_input(payload)
-  current_response = first_payload_string(payload, "last_assistant_message", "current_response", "assistant_text", "turn_assistant_text")
+def normalized_assistant_text(normalized_event)
+  turn = normalized_event.fetch("turn") if normalized_event.is_a?(Hash)
+  return "" unless turn.is_a?(Hash)
+
+  value = turn.fetch("assistant_text", "")
+  value.is_a?(String) ? value : ""
+end
+
+def semantic_judge_input(payload, normalized_event)
+  current_response = normalized_assistant_text(normalized_event)
   return nil if current_response.strip.empty?
 
   input = {
@@ -530,15 +538,33 @@ rescue KeyError, NoMethodError
   StrictModeFdrCycle::ZERO_HASH
 end
 
-def semantic_judge_result(provider, logical_event, payload, state_root, prompt_template_hash: StrictModeFdrCycle::ZERO_HASH)
+def normalized_stop_event(provider, logical_event, payload, payload_hash: nil)
+  return nil unless payload.is_a?(Hash)
+
+  cwd = hook_cwd
+  project_dir = hook_project_dir(cwd)
+  StrictModeNormalized.normalize(
+    payload,
+    provider: provider,
+    logical_event: logical_event,
+    cwd: cwd,
+    project_dir: project_dir,
+    payload_sha256: payload_hash
+  )
+rescue RuntimeError, ArgumentError, KeyError
+  nil
+end
+
+def semantic_judge_result(provider, logical_event, payload, state_root, prompt_template_hash: StrictModeFdrCycle::ZERO_HASH, payload_hash: nil)
   return judge_summary(attempted: false, reason: "not-stop-like") unless stop_continuation_logical_event?(logical_event)
 
   cwd = hook_cwd
   project_dir = hook_project_dir(cwd)
+  normalized_event = normalized_stop_event(provider, logical_event, payload, payload_hash: payload_hash)
   cycle_context = if payload.is_a?(Hash)
-                    StrictModeFdrCycle.context(provider: provider, payload: payload, cwd: cwd, project_dir: project_dir)
+                    StrictModeFdrCycle.context(provider: provider, payload: payload, cwd: cwd, project_dir: project_dir, normalized_event: normalized_event, require_normalized_assistant: true)
                   end
-  input = semantic_judge_input(payload)
+  input = semantic_judge_input(payload, normalized_event)
   unless input
     cycle_record = append_fdr_cycle_safely(
       state_root,
@@ -670,7 +696,7 @@ rescue RuntimeError, SystemCallError, ArgumentError => e
   judge_summary(attempted: true, reason: e.message)
 end
 
-def enforcement_result(context, provider, logical_event, preflight, stop_hook_active: false, parsed_payload: nil, state_root: nil)
+def enforcement_result(context, provider, logical_event, preflight, stop_hook_active: false, parsed_payload: nil, state_root: nil, payload_hash: nil)
   entry = enforcing_hook_entry(context, provider, logical_event)
   if stop_hook_active && stop_continuation_logical_event?(logical_event) && enforcing_hook_invocation?
     contract_id = entry ? entry.fetch("output_contract_id") : ENV["STRICT_OUTPUT_CONTRACT_ID"].to_s
@@ -740,7 +766,7 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
   contract = selected_output_contract(context, entry)
   raise "selected output contract missing for #{provider} #{logical_event} #{entry.fetch("output_contract_id")}" unless contract
 
-  judge = stop_continuation_logical_event?(logical_event) ? semantic_judge_result(provider, logical_event, parsed_payload, state_root || inferred_install_root.join("state"), prompt_template_hash: judge_prompt_template_hash(context)) : nil
+  judge = stop_continuation_logical_event?(logical_event) ? semantic_judge_result(provider, logical_event, parsed_payload, state_root || inferred_install_root.join("state"), prompt_template_hash: judge_prompt_template_hash(context), payload_hash: payload_hash) : nil
   if judge && judge.fetch("verdict") == "clean"
     return attach_judge_summary({ "active" => true, "emitted" => false, "failed_closed" => false, "output_contract_id" => contract.fetch("contract_id"), "stop_hook_active" => stop_hook_active, "emission" => nil, "error" => "" }, judge)
   elsif judge && judge.fetch("verdict") == "challenge"
@@ -865,7 +891,8 @@ enforcement = enforcement_result(
   preflight,
   stop_hook_active: stop_hook_active,
   parsed_payload: parsed_payload,
-  state_root: state_root
+  state_root: state_root,
+  payload_hash: payload_hash
 )
 if preflight.fetch("would_block") && !enforcement.fetch("active")
   warn "strict-hook preflight would block in enforcement: #{preflight.fetch("reason_code")} (discovery log-only)"

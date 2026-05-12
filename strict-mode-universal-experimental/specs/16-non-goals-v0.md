@@ -3,7 +3,7 @@
 Part of [Strict Mode Universal Experimental - Specification v0](../SPEC.md).
 
 
-- Full parity with Claude Wave 2.5 FDR challenge on Codex before transcript proof
+- Transcript-scraping parity for FDR challenge before fixture-proven bounded current-turn extraction
 - Full interactive `/fdr` runner implementation beyond required `strict-fdr import`
 - CI integration
 - Windows support

@@ -499,13 +499,13 @@
       "platform": "x86_64-linux-gnu",
       "event": "stop",
       "contract_kind": "payload-schema",
-      "payload_schema_hash": "9ed62a31c9e94255cf30c72c94d3d2045e6cadd8c8ae6435e07569d7a6fbd1ed",
+      "payload_schema_hash": "e117e60568487c64d8368aa71c33b531a2c863377b8dc3e7f1e184f2408ff985",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "fixture_file_hashes": [
         {
           "path": "providers/codex/fixtures/normalized/stop/bb7c003149e29902.event.normalized.json",
-          "content_sha256": "f7e113f828bac14d5cac38b2706381805ed8f2ae65280591eff238bad2e9818b"
+          "content_sha256": "636fe29da65c74688a7106fd7b77df26c53b94214da69cf5406beaad272e3970"
         },
         {
           "path": "providers/codex/fixtures/payloads/stop/bb7c003149e29902.json",
@@ -526,7 +526,7 @@
 
         ]
       },
-      "fixture_record_hash": "92e6fd465cf118538f02c4e20de3c159781434e72e5916122e40aede0454cf97"
+      "fixture_record_hash": "ba8d1fc414497f54e5e9725509dd2bbb4d5668792e968db533a977dcebfe5baf"
     },
     {
       "schema_version": 1,
@@ -613,5 +613,5 @@
       "fixture_record_hash": "48ff1d79147b4fa79f8a1abc2b256c815ca3a9666409a124659eea91a1c01196"
     }
   ],
-  "manifest_hash": "592fc6ba996fbdc7471dfd9f63ae228f44a73d5b97c03600f53c754f282a36ca"
+  "manifest_hash": "e2b973b616d0a3d85e6496c1c166dc05da652773dc502b4e0f7b26717e28dc0e"
 }

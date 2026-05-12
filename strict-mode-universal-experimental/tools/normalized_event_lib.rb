@@ -32,6 +32,8 @@ module StrictModeNormalized
   NETWORK_SCHEMES = %w[http https unknown].freeze
   NETWORK_OPERATIONS = %w[connect listen proxy tunnel unknown].freeze
   CAN_APPROVE = %w[true false unknown].freeze
+  ASSISTANT_TEXT_CAP_BYTES = 32_768
+  ASSISTANT_TEXT_TRUNCATION_MARKER = "[strict-mode-truncated-assistant-text]".freeze
   TOP_FIELDS = %w[
     schema_version
     provider
@@ -123,7 +125,7 @@ module StrictModeNormalized
     tool = normalize_tool(payload, logical_event)
     tool = unknown_provider_tool(tool, logical_event) if provider == "unknown"
     permission = normalize_permission(payload, logical_event, tool)
-    assistant_text = bounded_string(first_string(payload, "assistant_text", "turn_assistant_text"))
+    assistant_text = bounded_assistant_text(current_turn_assistant_text(payload, logical_event))
     prompt_text = logical_event == "user-prompt-submit" ? bounded_string(first_string(payload, "prompt", "user_prompt", "message")) : ""
 
     event = {
@@ -138,9 +140,9 @@ module StrictModeNormalized
       "project_dir" => project_dir,
       "transcript_path" => absolute_or_empty(first_string(payload, "transcript_path", "transcriptPath")),
       "turn" => {
-        "assistant_text" => assistant_text,
-        "assistant_text_bytes" => assistant_text.bytesize,
-        "assistant_text_truncated" => 0,
+        "assistant_text" => assistant_text.fetch("text"),
+        "assistant_text_bytes" => assistant_text.fetch("bytes"),
+        "assistant_text_truncated" => assistant_text.fetch("truncated"),
         "edit_count" => tool.fetch("file_changes").length,
         "has_fdr_context" => false
       },
@@ -150,7 +152,7 @@ module StrictModeNormalized
         "text" => prompt_text
       },
       "assistant" => {
-        "last_message" => bounded_string(first_string(payload, "last_message", "assistant_message"))
+        "last_message" => bounded_string(first_string(payload, "last_message", "assistant_message", "last_assistant_message"))
       },
       "raw" => {
         "payload_sha256" => payload_sha256 || Digest::SHA256.hexdigest(StrictModeMetadata.canonical_json(payload)),
@@ -601,6 +603,42 @@ module StrictModeNormalized
 
   def bounded_string(value)
     value.to_s.byteslice(0, 65_536) || ""
+  end
+
+  def current_turn_assistant_text(payload, logical_event)
+    keys = %w[assistant_text turn_assistant_text]
+    keys = %w[last_assistant_message current_response] + keys if %w[stop subagent-stop].include?(logical_event)
+    first_string(payload, *keys)
+  end
+
+  def bounded_assistant_text(value)
+    text = value.to_s
+    return { "text" => text, "bytes" => text.bytesize, "truncated" => 0 } if text.bytesize <= ASSISTANT_TEXT_CAP_BYTES
+
+    head_limit = (ASSISTANT_TEXT_CAP_BYTES - ASSISTANT_TEXT_TRUNCATION_MARKER.bytesize) / 2
+    tail_limit = ASSISTANT_TEXT_CAP_BYTES - ASSISTANT_TEXT_TRUNCATION_MARKER.bytesize - head_limit
+    bounded = prefix_bytes(text, head_limit) + ASSISTANT_TEXT_TRUNCATION_MARKER + suffix_bytes(text, tail_limit)
+    { "text" => bounded, "bytes" => bounded.bytesize, "truncated" => 1 }
+  end
+
+  def prefix_bytes(text, limit)
+    out = +""
+    text.each_char do |char|
+      break if out.bytesize + char.bytesize > limit
+
+      out << char
+    end
+    out
+  end
+
+  def suffix_bytes(text, limit)
+    out = +""
+    text.each_char.to_a.reverse_each do |char|
+      break if out.bytesize + char.bytesize > limit
+
+      out.prepend(char)
+    end
+    out
   end
 
   def absolute_or_empty(value)

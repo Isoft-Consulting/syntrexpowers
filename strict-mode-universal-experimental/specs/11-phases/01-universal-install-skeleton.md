@@ -56,4 +56,4 @@ Acceptance:
 - install transaction backup manifest is hash-bound to the pending transaction, including previous install manifest/baseline hashes, runtime config records, and active runtime fingerprints, and rollback or uninstall recovery verifies restored or committed files against it
 - rollback verifies every backup blob against the matching backup file record `content_sha256` before changing the pending marker to `rollback-in-progress` or restoring any file
 - install root with a space in its path is covered by config-writer tests
-- README provider support matrix exists, uses only closed provider-feature status/proof text, and does not claim Codex FDR challenge parity before Phase 7 fixture proof
+- README provider support matrix exists, uses only closed provider-feature status/proof text, and claims FDR challenge support only for fixture-proven current-turn assistant text

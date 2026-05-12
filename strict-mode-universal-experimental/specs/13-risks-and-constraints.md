@@ -10,7 +10,7 @@ Part of [Strict Mode Universal Experimental - Specification v0](../SPEC.md).
    Mitigation: stop-time scan is authoritative for stub content; pre-tool patch scan is best-effort. This does not relax target-path proof: enforcing write-like events without normalized target paths still block before execution.
 
 3. FDR challenge requires current-turn assistant text.
-   Mitigation: enable Codex challenge only after bounded current-turn extraction is fixture-proven; do not guess from raw transcripts or provider history.
+   Mitigation: enable challenge only after bounded current-turn extraction is fixture-proven from Stop payload fields, transcript path, or another verified runtime source; do not guess from raw transcripts or provider history.
 
 4. Nested provider judge may fail or dirty normal provider session/history files due to session storage or sandbox restrictions.
    Mitigation: fixture-proven judge invocation, fixture-proven provider state isolation, `--ephemeral` only when supported by the installed Codex build, protected nested token guard, and audited semantic `unknown` that never disables artifact validation or other Stop gates.

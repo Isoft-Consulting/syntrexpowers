@@ -60,7 +60,7 @@ The same restart requirement applies to Claude Code: after installing or refresh
 
 ## Configuring The Judge Prompt Template
 
-`install.sh` also lays down `<install-root>/config/judge-prompt-template.md`. The file is optional raw markdown for future fixture-proven `strict-judge` prompt construction. It is protected config, not executable code: provider tools cannot mutate it under enforce mode, and `strict-judge` never shells, evals, or emits the template as `judge.response.v1`.
+`install.sh` also lays down `<install-root>/config/judge-prompt-template.md`. The file is optional raw markdown for fixture-proven `strict-judge` prompt construction and prompt-hash binding. It is protected config, not executable code: provider tools cannot mutate it under enforce mode, and `strict-judge` never shells, evals, or emits the template as `judge.response.v1`.
 
 To customize it, edit the file outside the running provider session and re-run the install command so the protected baseline records the new hash. Until a `judge-invocation` fixture proves a real provider judge route, `strict-judge` does not launch Claude or Codex; with no stdin cycle JSON it returns the canonical `unknown` response. The built-in local classifier can still map stdin `{history,current_response,last_user_msg,review_mode}` JSON to closed `judge.response.v1` `clean`/`challenge`/`unknown` responses without using the protected prompt template or external provider calls. In enforcing Stop hooks, `strict-hook` calls this local classifier when current assistant text is available: `challenge` emits the selected Stop continuation block, `clean` allows, and `unknown` falls back to the existing Stop guard rather than opening the gate.
 
@@ -94,11 +94,11 @@ This validates the generated `schemas/` and `matrices/` metadata against [Implem
 | FDR artifact import | Planned | Planned | Verified `strict-fdr import -- <path>` provenance and artifact schema |
 | Semantic judge route | Claude Haiku | Codex Spark | `judge-invocation` fixture proving prompt delivery, sandboxing, timeout, and state isolation |
 | Bounded worker delegation | Claude Haiku | Codex Spark | `worker-invocation` fixture proving prompt delivery, no-tool sandboxing, timeout, output JSON shape, and state isolation |
-| FDR challenge | Planned after current-turn extraction proof | Disabled until current-turn extraction fixture proof exists | Provider normalizer must prove bounded current-turn assistant-text extraction without persisting transcripts |
+| FDR challenge | Fixture required | Fixture required | Provider normalizer must prove bounded current-turn assistant-text extraction without persisting transcripts |
 
 Provider support capability, status, and proof cells are controlled contract text for `matrix.provider-feature-gate.v1`, not free-form status prose. The closed status/proof enums and exact-cell mappings live in [Implementation Readiness](specs/17-implementation-readiness.md). Changing a capability, status, or proof cell requires updating the provider-feature matrix, installer/readiness checks, and fixture expectations in the same edit.
 
-Codex FDR challenge parity is not claimed in this draft. If current-turn assistant-text extraction remains unproven for an installed Codex version/build, the installer must keep Codex FDR challenge disabled and the runtime must not silently fall back to transcript guessing.
+FDR challenge parity is claimed only for fixture-normalized current assistant text exposed by the provider Stop payload or another verified current-turn source. The runtime uses the normalized bounded text, byte count, and truncation flag for the judge prompt hash, records only hashes in `fdr.cycle.v1`, and skips with `skipped-no-turn-text` when normalized current-turn text is unavailable. Transcript scraping remains unclaimed unless a provider fixture proves bounded extraction without persisting raw transcript content.
 
 ## Safety Notes
 

@@ -469,13 +469,13 @@
       "platform": "universal.arm64e-darwin24",
       "event": "stop",
       "contract_kind": "payload-schema",
-      "payload_schema_hash": "5f2154ba9d65100eb2059d39c0e3e1d1dfbf3d205fa3520644210e8945a1f20e",
+      "payload_schema_hash": "454eacdc1ced3f549ceb22dce8a2e3cdcc227c3e558086620446e36d78a113ee",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "fixture_file_hashes": [
         {
           "path": "providers/claude/fixtures/normalized/stop/03445379ba484bfd.event.normalized.json",
-          "content_sha256": "e90f2599a9d13947627e41f77f270ebdc530cb33299ce13e6fc310b1b54db3a0"
+          "content_sha256": "cfcfe8f3b3ac95c2de7e5178866f2052d378e69f4c4e25633dc55bf79819c457"
         },
         {
           "path": "providers/claude/fixtures/payloads/stop/03445379ba484bfd.json",
@@ -496,7 +496,7 @@
 
         ]
       },
-      "fixture_record_hash": "90a55340a583065a62fd95962a4267c4ebdf9edefabc53a766f9ab7136e898b1"
+      "fixture_record_hash": "1b07aca9d7ec7b8d074430a0cc9bfd703344ed1943f7a049c8d57366c7c8ae4a"
     },
     {
       "schema_version": 1,
@@ -583,5 +583,5 @@
       "fixture_record_hash": "f14cb734da38681af2eb22eab2cd95d3767a4d3b53e2f51bd791d844aa000ff6"
     }
   ],
-  "manifest_hash": "1281d906212228f4b7b7e988a8f517afefa8d954a580c84a898f549a64b91811"
+  "manifest_hash": "4252a133ad86d4a4372c9e5a833a423e8ebd65a6967e3dd2473594cf33c2c35e"
 }

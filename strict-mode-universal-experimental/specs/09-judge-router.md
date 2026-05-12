@@ -39,6 +39,7 @@ Protected judge prompt template:
 
 - `<install-root>/config/judge-prompt-template.md` is an optional raw-text protected config loaded only after the protected install baseline is trusted.
 - The template is prompt text for future fixture-proven judge invocation. It is not an executable extension point: strict-mode never shells, evals, sources, expands, or dispatches it as code.
+- When Stop/FDR challenge constructs a semantic judge prompt, the trusted template content hash is included in the `fdr.cycle.v1` `prompt_hash` input. Prior clean/challenge reuse is valid only when the current protected template hash, judge backend, judge model, scope digest, and artifact hash match the recorded cycle binding.
 - Markdown headers, blank lines, leading whitespace, and JSON-looking output-schema examples are preserved verbatim under the same whole-file byte cap as `user-prompt-injection.md`.
 - If the file is missing, empty, malformed, or its protected baseline is untrusted, `strict-judge` must not use its bytes. A malformed or tampered template must not appear in stdout/stderr provider output or in `judge.response.v1`.
 - The template cannot widen `judge.response.v1`. Even when the template contains JSON schema examples, `strict-judge` still returns exactly one canonical judge response object with the closed field set below.

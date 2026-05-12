@@ -10,8 +10,8 @@
   "project_dir": "/Users/andrey/syntrexpowers",
   "transcript_path": "/Users/andrey/.claude/projects/-Users-andrey-syntrexpowers/43a1ba8d-2133-4c13-a4de-ddc45e0f5287.jsonl",
   "turn": {
-    "assistant_text": "",
-    "assistant_text_bytes": 0,
+    "assistant_text": "done",
+    "assistant_text_bytes": 4,
     "assistant_text_truncated": 0,
     "edit_count": 0,
     "has_fdr_context": false
@@ -63,7 +63,7 @@
     "text": ""
   },
   "assistant": {
-    "last_message": ""
+    "last_message": "done"
   },
   "raw": {
     "payload_sha256": "03445379ba484bfd17b1ab3fe7d1f5a82aa81e465dd01f7dccd6346025557514",

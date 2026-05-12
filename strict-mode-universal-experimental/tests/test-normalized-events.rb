@@ -147,6 +147,41 @@ expect_normalize(
 end
 
 expect_normalize(
+  "Codex Stop normalizes last assistant message as current turn text",
+  provider: "codex",
+  logical_event: "stop",
+  payload: {
+    "event" => "stop",
+    "thread_id" => "t1",
+    "last_assistant_message" => "0 проблем, выглядит чисто."
+  }
+) do |event, _root, _project, _cwd, output|
+  turn = event.fetch("turn")
+  text = "0 проблем, выглядит чисто."
+  record_failure("Codex Stop normalizes last assistant message as current turn text", "assistant text mismatch", output) unless turn.fetch("assistant_text") == text
+  record_failure("Codex Stop normalizes last assistant message as current turn text", "assistant byte count mismatch", output) unless turn.fetch("assistant_text_bytes") == text.bytesize
+  record_failure("Codex Stop normalizes last assistant message as current turn text", "assistant text should not be marked truncated", output) unless turn.fetch("assistant_text_truncated") == 0
+end
+
+expect_normalize(
+  "Stop current turn assistant text is bounded with truncation marker",
+  provider: "claude",
+  logical_event: "stop",
+  payload: {
+    "hook_event_name" => "Stop",
+    "session_id" => "s1",
+    "last_assistant_message" => ("a" * 40_000)
+  }
+) do |event, _root, _project, _cwd, output|
+  turn = event.fetch("turn")
+  text = turn.fetch("assistant_text")
+  record_failure("Stop current turn assistant text is bounded with truncation marker", "assistant text byte cap mismatch", output) unless turn.fetch("assistant_text_bytes") == 32_768
+  record_failure("Stop current turn assistant text is bounded with truncation marker", "assistant text bytes do not match content", output) unless text.bytesize == 32_768
+  record_failure("Stop current turn assistant text is bounded with truncation marker", "assistant text not marked truncated", output) unless turn.fetch("assistant_text_truncated") == 1
+  record_failure("Stop current turn assistant text is bounded with truncation marker", "truncation marker missing", output) unless text.include?("[strict-mode-truncated-assistant-text]")
+end
+
+expect_normalize(
   "raw payload hash uses source bytes",
   provider: "codex",
   logical_event: "stop",
