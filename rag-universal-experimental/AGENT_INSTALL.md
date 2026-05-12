@@ -85,7 +85,8 @@ Keep generated/runtime directories excluded. Common examples:
     "_tmp_payload_storage"
   ],
   "mcp": {
-    "auto_reindex_default": true
+    "auto_reindex_default": true,
+    "require_explicit_root": true
   },
   "cli": {
     "auto_reindex_default": false
@@ -109,7 +110,8 @@ For a project-local install under `.mcp/rag-server`, use this command shape in a
         ".mcp/rag-server/tools/rag.py",
         "serve-mcp",
         "--root",
-        "."
+        ".",
+        "--require-explicit-root"
       ]
     }
   }
@@ -133,7 +135,7 @@ Ready-made examples for a source-tree install are also available:
 
 The server does not branch on model/client name.
 
-Every MCP tool accepts optional per-call `root` and `config` arguments. In multi-project Codex/Claude sessions, the exposed `mcp__rag__` namespace can be backed by a long-lived MCP process that was started for a different repository. If `rag_status` reports the wrong `manifest.project_root`, pass the absolute current project path as `root` on every MCP call:
+Every MCP tool accepts per-call `root` and `config` arguments. With `--require-explicit-root` or `mcp.require_explicit_root=true`, project-scoped tools reject missing or relative roots; diagnostic `rag_status` remains callable without `root` so agents can inspect `mcp_server.server_root`, `mcp_server.effective_root`, and `mcp_server.stale_namespace_risk`. In multi-project Codex/Claude sessions, the exposed `mcp__rag__` namespace can be backed by a long-lived MCP process that was started for a different repository. If `rag_status` reports the wrong `manifest.project_root` or `mcp_server.server_root`, pass the absolute current project path as `root` on every MCP call:
 
 ```json
 {
@@ -157,7 +159,7 @@ Project-local RAG server is installed at `.mcp/rag-server`.
 
 Before design, FDR, large implementation, or unfamiliar code exploration:
 1. Call `rag_status`.
-2. If `rag_status` points at another repository, pass the absolute current project path as `root` on every MCP call or use the CLI fallback with explicit `--root`.
+2. Pass the absolute current project path as `root` on every project-scoped MCP call; if `rag_status` points at another repository or a root-required tool rejects the call, use the CLI fallback with explicit `--root`.
 3. Use `rag_search` with `with_plan=true` and the task mode; MCP auto-reindexes stale indexes by default through `mcp.auto_reindex_default=true`.
 4. Run `rag_quality_check` when installing/updating RAG or when search quality is suspect.
 5. Prefer `with_plan=true` for review/design work.

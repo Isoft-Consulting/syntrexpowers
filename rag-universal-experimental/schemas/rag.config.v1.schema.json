@@ -17,7 +17,8 @@
     "mcp": {
       "type": "object",
       "properties": {
-        "auto_reindex_default": { "type": "boolean", "default": true }
+        "auto_reindex_default": { "type": "boolean", "default": true },
+        "require_explicit_root": { "type": "boolean", "default": false }
       }
     },
     "cli": {

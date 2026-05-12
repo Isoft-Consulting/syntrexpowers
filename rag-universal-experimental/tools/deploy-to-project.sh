@@ -150,6 +150,7 @@ entry = {
         "--root",
         ".",
         "serve-mcp",
+        "--require-explicit-root",
         "--cache-storage",
         "memory"
     ]

@@ -177,6 +177,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "follow_symlinks": False,
     "mcp": {
         "auto_reindex_default": True,
+        "require_explicit_root": False,
     },
     "cli": {
         "auto_reindex_default": False,

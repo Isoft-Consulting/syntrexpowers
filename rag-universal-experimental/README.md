@@ -34,7 +34,7 @@ For project-local installs under `.mcp/rag-server/`, the default config lookup n
 Run as an MCP server:
 
 ```bash
-python3 tools/rag.py serve-mcp --root .. --config rag.config.example.json
+python3 tools/rag.py serve-mcp --root .. --config rag.config.example.json --require-explicit-root
 ```
 
 Example MCP config entry for a generic stdio MCP client:
@@ -50,6 +50,7 @@ Example MCP config entry for a generic stdio MCP client:
         "serve-mcp",
         "--root",
         ".",
+        "--require-explicit-root",
         "--config",
         "rag-universal-experimental/rag.config.example.json"
       ]
@@ -71,6 +72,7 @@ DeepSeek Code and Claude Code use the same command shape when configured through
         "serve-mcp",
         "--root",
         ".",
+        "--require-explicit-root",
         "--config",
         "rag-universal-experimental/rag.config.example.json"
       ]
@@ -83,7 +85,7 @@ Ready-to-copy examples are available in `examples/mcp.generic.json`, `examples/m
 
 The server does not branch on `clientInfo.name`; it exposes the same tool contracts to every MCP client.
 
-All MCP tools accept optional `root` and `config` arguments per call. Use an absolute `root` when a long-lived agent session may expose an `mcp__rag__` namespace from another project:
+All MCP tools accept `root` and `config` arguments per call. In hardened multi-project mode (`serve-mcp --require-explicit-root`, `RAG_MCP_REQUIRE_EXPLICIT_ROOT=1`, or `mcp.require_explicit_root=true`), every project-scoped tool except diagnostic `rag_status` rejects missing or relative roots. Use an absolute `root` when a long-lived agent session may expose an `mcp__rag__` namespace from another project:
 
 ```json
 {
@@ -94,7 +96,7 @@ All MCP tools accept optional `root` and `config` arguments per call. Use an abs
 }
 ```
 
-If `rag_status` reports a different `manifest.project_root` than the current repository, pass `root` explicitly on every MCP call or use the CLI fallback with `--root /path/to/current/project` until the MCP client restarts with the updated tool schema.
+`rag_status` can be called without `root` to inspect the server-bound root. Its `mcp_server` diagnostics include `server_root`, `effective_root`, `explicit_root`, `require_explicit_root`, and `stale_namespace_risk`. If it reports a different `manifest.project_root` or `mcp_server.server_root` than the current repository, pass an absolute `root` explicitly on every MCP call or use the CLI fallback with `--root /path/to/current/project` until the MCP client restarts with the updated tool schema.
 
 ## Tools
 

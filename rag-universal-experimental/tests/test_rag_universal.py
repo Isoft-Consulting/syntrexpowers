@@ -62,7 +62,9 @@ from rag_universal.cli import cli_auto_reindex_default
 from rag_universal.cli import resolve_cli_auto_reindex
 from rag_universal.mcp_server import handle_message
 from rag_universal.mcp_server import mcp_auto_reindex_default
+from rag_universal.mcp_server import mcp_require_explicit_root_default
 from rag_universal.mcp_server import resolve_mcp_auto_reindex
+from rag_universal.mcp_server import resolve_mcp_require_explicit_root
 from rag_universal.mcp_server import tool_definitions
 
 
@@ -387,6 +389,77 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(search_payload[0]["source"], "README.md")
         self.assertIn("beta token", search_payload[0]["preview"])
 
+    def test_mcp_hardened_mode_requires_absolute_root_for_project_tools(self) -> None:
+        root = self.make_project()
+        config_path = root / ".mcp" / "rag-server" / "rag.config.json"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text(
+            json.dumps({"schema_version": "rag.config.v1", "mcp": {"require_explicit_root": True}}),
+            encoding="utf-8",
+        )
+        build_index(root)
+
+        listed = handle_message({"jsonrpc": "2.0", "id": 7, "method": "tools/list"}, str(root), None)
+        schemas = {tool["name"]: tool["inputSchema"] for tool in listed["result"]["tools"]}
+        self.assertIn("root", schemas["rag_search"]["required"])
+        self.assertNotIn("required", schemas["rag_status"])
+
+        missing_root = handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 8,
+                "method": "tools/call",
+                "params": {"name": "rag_search", "arguments": {"query": "stop guard", "top_k": 1}},
+            },
+            str(root),
+            None,
+        )
+        self.assertIn("error", missing_root)
+        self.assertIn("explicit root required", missing_root["error"]["message"])
+
+        relative_root = handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 9,
+                "method": "tools/call",
+                "params": {"name": "rag_search", "arguments": {"root": ".", "query": "stop guard", "top_k": 1}},
+            },
+            str(root),
+            None,
+        )
+        self.assertIn("error", relative_root)
+        self.assertIn("absolute path", relative_root["error"]["message"])
+
+        status_called = handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 10,
+                "method": "tools/call",
+                "params": {"name": "rag_status", "arguments": {}},
+            },
+            str(root),
+            None,
+        )
+        status_payload = json.loads(status_called["result"]["content"][0]["text"])
+        self.assertEqual(status_payload["mcp_server"]["server_root"], str(root.resolve()))
+        self.assertEqual(status_payload["mcp_server"]["effective_root"], str(root.resolve()))
+        self.assertFalse(status_payload["mcp_server"]["explicit_root"])
+        self.assertTrue(status_payload["mcp_server"]["require_explicit_root"])
+        self.assertTrue(status_payload["mcp_server"]["stale_namespace_risk"])
+
+        absolute_root = handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/call",
+                "params": {"name": "rag_search", "arguments": {"root": str(root.resolve()), "query": "stop guard", "top_k": 1}},
+            },
+            str(root),
+            None,
+        )
+        payload = json.loads(absolute_root["result"]["content"][0]["text"])
+        self.assertEqual(payload[0]["source"], "README.md")
+
     def test_mcp_search_auto_reindex_defaults_to_configured_true(self) -> None:
         root = self.make_project()
         build_index(root)
@@ -425,9 +498,13 @@ class RagUniversalTest(unittest.TestCase):
         self.assertNotIn("default", schema["properties"]["auto_reindex"])
         self.assertTrue(mcp_auto_reindex_default({"mcp": {"auto_reindex_default": True}}))
         self.assertFalse(mcp_auto_reindex_default({"mcp": {"auto_reindex_default": False}}))
+        self.assertTrue(mcp_require_explicit_root_default({"mcp": {"require_explicit_root": True}}))
+        self.assertFalse(mcp_require_explicit_root_default({"mcp": {"require_explicit_root": False}}))
         self.assertFalse(resolve_mcp_auto_reindex({}, str(root), None))
         self.assertTrue(resolve_mcp_auto_reindex({"auto_reindex": True}, str(root), None))
         self.assertFalse(resolve_mcp_auto_reindex({"auto_reindex": False}, str(root), None))
+        self.assertFalse(resolve_mcp_require_explicit_root(str(root), None))
+        self.assertTrue(resolve_mcp_require_explicit_root(str(root), None, override=True))
         self.assertFalse(cli_auto_reindex_default({"cli": {"auto_reindex_default": False}}))
         self.assertTrue(cli_auto_reindex_default({"cli": {"auto_reindex_default": True}}))
         self.assertFalse(resolve_cli_auto_reindex(None, str(root), None))

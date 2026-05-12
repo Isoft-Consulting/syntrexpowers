@@ -124,6 +124,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="disk",
         help="MCP-only SQLite search cache storage. Use memory only for long-lived MCP processes.",
     )
+    serve_mcp.add_argument(
+        "--require-explicit-root",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Require an absolute per-call root for project-scoped MCP tools. Omit to use mcp.require_explicit_root.",
+    )
     return parser
 
 
@@ -253,5 +259,5 @@ def main(argv: list[str] | None = None) -> int:
         emit(generate_project_profile(args.root, args.output, args.project))
         return 0
     if args.command == "serve-mcp":
-        return run_stdio(args.root, args.config, args.cache_storage)
+        return run_stdio(args.root, args.config, args.cache_storage, args.require_explicit_root)
     raise RuntimeError(f"unhandled command: {args.command}")

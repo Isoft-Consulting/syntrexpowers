@@ -8,6 +8,7 @@
         "serve-mcp",
         "--root",
         ".",
+        "--require-explicit-root",
         "--config",
         "rag-universal-experimental/rag.config.example.json"
       ]

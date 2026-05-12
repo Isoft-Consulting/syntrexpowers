@@ -88,7 +88,8 @@
   "max_file_bytes": 1048576,
   "follow_symlinks": false,
   "mcp": {
-    "auto_reindex_default": true
+    "auto_reindex_default": true,
+    "require_explicit_root": true
   },
   "cli": {
     "auto_reindex_default": false

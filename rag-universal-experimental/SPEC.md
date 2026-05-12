@@ -34,7 +34,7 @@ Included in v0:
 - Dependency edge extraction for Python, Ruby, JavaScript/TypeScript, shell, and PHP import forms.
 - CLI commands: `index`, `status`, `coverage`, `search`, `watch`, `symbol`, `deps`, `quality-check`, `eval-quality`, `knowledge-build`, `knowledge-status`, `knowledge-profile`, `serve-mcp`.
 - Quality commands: `quality-check` provides an operational health/quality gate; `eval-quality` compares RAG retrieval against a keyword baseline on gold-query files.
-- MCP tools: `rag_search`, `rag_reindex`, `rag_status`, `rag_coverage`, `rag_symbol`, `rag_deps`, `rag_quality_check`, `rag_knowledge_build`, `rag_knowledge_status`, `rag_knowledge_profile`. Every MCP tool accepts optional per-call `root` and `config` overrides so multi-project agent sessions can target the current repository even when the exposed MCP namespace is backed by a long-lived process from another repository.
+- MCP tools: `rag_search`, `rag_reindex`, `rag_status`, `rag_coverage`, `rag_symbol`, `rag_deps`, `rag_quality_check`, `rag_knowledge_build`, `rag_knowledge_status`, `rag_knowledge_profile`. Every MCP tool accepts per-call `root` and `config` overrides; hardened sessions require an absolute `root` for project-scoped tools so multi-project agents cannot silently query a long-lived process from another repository. `rag_status` remains callable without `root` for server-root diagnostics.
 - JSON schemas for config and generated artifacts.
 - Provider-neutral operation: Codex, DeepSeek, Claude, or another model client can use the same stdio server command if it supports MCP.
 
@@ -108,5 +108,5 @@ Projects can loosen the rules explicitly in their own `rag.config.json`, but the
 - `knowledge-build --rules <rules.json>` may add project-specific owner mappings while keeping the generator itself project-neutral.
 - `python3 tools/rag.py knowledge-status --root <repo> --summary Docs/knowledge/rag` reports whether the generated pack is stale against the cases/rules hashes recorded in `summary.json`.
 - `python3 tools/rag.py knowledge-profile --root <repo> --output rag.knowledge.json --project <name>` writes a starter rules profile from the repository layout.
-- `python3 tools/rag.py serve-mcp --root <repo> --config <config>` speaks MCP stdio.
+- `python3 tools/rag.py serve-mcp --root <repo> --config <config> --require-explicit-root` speaks MCP stdio and requires an absolute per-call `root` for project-scoped tools in multi-project sessions.
 - Tests prove secret path exclusion, index artifact generation, search ranking, symbol lookup, dependency lookup, provider-neutral initialize handling, and MCP tool dispatch.
