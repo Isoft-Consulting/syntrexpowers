@@ -4,8 +4,10 @@
 require "digest"
 require "fileutils"
 require "json"
+require "open3"
 require "optparse"
 require "pathname"
+require "rbconfig"
 require "securerandom"
 require "time"
 require_relative "../tools/decision_contract_lib"
@@ -357,7 +359,160 @@ def fail_closed_decision(logical_event, reason_code, message)
   }
 end
 
-def enforcement_result(context, provider, logical_event, preflight, stop_hook_active: false)
+JUDGE_RESPONSE_FIELDS = %w[
+  backend
+  confidence
+  findings
+  model
+  reason
+  response_hash
+  reviewed_artifact_hash
+  reviewed_scope_digest
+  schema_version
+  verdict
+].freeze
+
+def first_payload_string(payload, *keys)
+  return "" unless payload.is_a?(Hash)
+
+  keys.each do |key|
+    value = payload[key]
+    return value if value.is_a?(String) && !value.empty?
+  end
+  ""
+end
+
+def semantic_judge_history(payload)
+  return [] unless payload.is_a?(Hash)
+
+  value = payload["strict_judge_history"] || payload["judge_history"] || payload["fdr_history"]
+  value.is_a?(Array) ? JSON.parse(JSON.generate(value)) : []
+end
+
+def semantic_judge_input(payload)
+  current_response = first_payload_string(payload, "last_assistant_message", "current_response", "assistant_text", "turn_assistant_text")
+  return nil if current_response.strip.empty?
+
+  input = {
+    "history" => semantic_judge_history(payload),
+    "current_response" => current_response
+  }
+  last_user_msg = first_payload_string(payload, "last_user_msg", "last_user_message", "user_prompt", "prompt")
+  input["last_user_msg"] = last_user_msg unless last_user_msg.empty?
+  input["review_mode"] = payload["review_mode"] if payload.is_a?(Hash) && payload.key?("review_mode")
+  input
+end
+
+def strict_judge_path
+  program = Pathname.new($PROGRAM_NAME).expand_path.cleanpath
+  sibling = program.dirname.join("strict-judge")
+  return sibling if sibling.file?
+
+  StrictModeMetadata.project_root.join("bin/strict-judge")
+end
+
+def parse_strict_judge_response(stdout, provider)
+  record = JSON.parse(stdout, object_class: StrictModeMetadata::DuplicateKeyHash)
+  raise "judge response root must be an object" unless record.is_a?(Hash)
+
+  record = JSON.parse(JSON.generate(record))
+  raise "judge response fields must be exact" unless record.keys.sort == JUDGE_RESPONSE_FIELDS.sort
+  raise "judge schema_version invalid" unless record.fetch("schema_version") == 1
+  raise "judge backend mismatch" unless record.fetch("backend") == provider
+  raise "judge response hash mismatch" unless record.fetch("response_hash") == StrictModeMetadata.hash_record(record, "response_hash")
+  raise "judge verdict invalid" unless %w[clean challenge unknown].include?(record.fetch("verdict"))
+  raise "judge reason invalid" unless %w[clean challenge judge-disabled judge-invocation-unverified judge-state-isolation-failed-until-repair timeout nonzero-exit invalid-output empty-output parse-failure].include?(record.fetch("reason"))
+  raise "judge findings must be an array" unless record.fetch("findings").is_a?(Array)
+  record.fetch("findings").each do |finding|
+    raise "judge finding fields must be exact" unless finding.is_a?(Hash) && finding.keys.sort == %w[message severity source]
+    raise "judge finding severity invalid" unless %w[critical high medium low info].include?(finding.fetch("severity"))
+    raise "judge finding source invalid" unless %w[artifact assistant-text scope-metadata].include?(finding.fetch("source"))
+    raise "judge finding message invalid" unless finding.fetch("message").is_a?(String) && !finding.fetch("message").empty?
+  end
+  raise "judge challenge requires findings" if record.fetch("verdict") == "challenge" && record.fetch("findings").empty?
+  raise "judge non-challenge findings must be empty" if record.fetch("verdict") != "challenge" && !record.fetch("findings").empty?
+
+  record
+rescue JSON::ParserError, KeyError, RuntimeError => e
+  raise "invalid judge response: #{e.message}"
+end
+
+def bounded_reason(text, limit = 4000)
+  value = text.to_s.strip
+  return value if value.bytesize <= limit
+
+  truncated = +""
+  value.each_char do |char|
+    break if truncated.bytesize + char.bytesize > limit
+
+    truncated << char
+  end
+  "#{truncated}..."
+end
+
+def judge_block_decision(logical_event, response)
+  messages = response.fetch("findings").map { |finding| finding.fetch("message", "").to_s.strip }.reject(&:empty?)
+  messages = ["semantic judge reported a challenge"] if messages.empty?
+  {
+    "schema_version" => 1,
+    "action" => "block",
+    "reason" => bounded_reason("strict-mode FDR judge challenge: #{messages.join("; ")}"),
+    "severity" => "error",
+    "additional_context" => "",
+    "metadata" => {
+      "logical_event" => logical_event,
+      "reason_code" => "judge-challenge",
+      "response_hash" => response.fetch("response_hash")
+    }
+  }
+end
+
+def judge_summary(attempted:, response: nil, reason: "")
+  summary = {
+    "attempted" => attempted,
+    "verdict" => response ? response.fetch("verdict") : "not-run",
+    "reason" => response ? response.fetch("reason") : reason,
+    "backend" => response ? response.fetch("backend") : "",
+    "model" => response ? response.fetch("model") : "",
+    "response_hash" => response ? response.fetch("response_hash") : ("0" * 64),
+    "finding_count" => response ? response.fetch("findings").length : 0
+  }
+  summary["reason"] = reason if response.nil? && !reason.empty?
+  summary
+end
+
+def attach_judge_summary(record, judge)
+  return record unless judge
+
+  record.merge("judge" => judge.reject { |key, _| key == "decision" })
+end
+
+def semantic_judge_result(provider, logical_event, payload, state_root)
+  return judge_summary(attempted: false, reason: "not-stop-like") unless stop_continuation_logical_event?(logical_event)
+
+  input = semantic_judge_input(payload)
+  return judge_summary(attempted: false, reason: "empty-current-response") unless input
+
+  cwd = hook_cwd
+  stdout, stderr, status = Open3.capture3(
+    { "STRICT_MODE_NESTED" => "1" },
+    RbConfig.ruby,
+    strict_judge_path.to_s,
+    "--provider", provider,
+    "--install-root", inferred_install_root(state_root).to_s,
+    "--state-root", state_root.to_s,
+    "--project-dir", hook_project_dir(cwd).to_s,
+    stdin_data: JSON.generate(input)
+  )
+  return judge_summary(attempted: true, reason: "nonzero-exit") unless status.success?
+
+  response = parse_strict_judge_response(stdout, provider)
+  judge_summary(attempted: true, response: response).merge("decision" => response.fetch("verdict") == "challenge" ? judge_block_decision(logical_event, response) : nil)
+rescue RuntimeError, SystemCallError, ArgumentError => e
+  judge_summary(attempted: true, reason: e.message)
+end
+
+def enforcement_result(context, provider, logical_event, preflight, stop_hook_active: false, parsed_payload: nil, state_root: nil)
   entry = enforcing_hook_entry(context, provider, logical_event)
   if stop_hook_active && stop_continuation_logical_event?(logical_event) && enforcing_hook_invocation?
     contract_id = entry ? entry.fetch("output_contract_id") : ENV["STRICT_OUTPUT_CONTRACT_ID"].to_s
@@ -427,12 +582,29 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
   contract = selected_output_contract(context, entry)
   raise "selected output contract missing for #{provider} #{logical_event} #{entry.fetch("output_contract_id")}" unless contract
 
+  judge = stop_continuation_logical_event?(logical_event) ? semantic_judge_result(provider, logical_event, parsed_payload, state_root || inferred_install_root.join("state")) : nil
+  if judge && judge.fetch("attempted") && judge.fetch("verdict") == "clean"
+    return attach_judge_summary({ "active" => true, "emitted" => false, "failed_closed" => false, "output_contract_id" => contract.fetch("contract_id"), "stop_hook_active" => stop_hook_active, "emission" => nil, "error" => "" }, judge)
+  elsif judge && judge.fetch("attempted") && judge.fetch("verdict") == "challenge"
+    metadata = provider_output_metadata(contract)
+    emission = StrictModeDecisionContract.emit_provider_output(metadata, judge.fetch("decision"))
+    return attach_judge_summary({
+      "active" => true,
+      "emitted" => true,
+      "failed_closed" => false,
+      "output_contract_id" => contract.fetch("contract_id"),
+      "stop_hook_active" => stop_hook_active,
+      "emission" => emission,
+      "error" => ""
+    }, judge)
+  end
+
   decision = StrictModeInternalDecision.from_preflight(preflight, stop_hook_active: stop_hook_active)
-  return { "active" => true, "emitted" => false, "failed_closed" => false, "output_contract_id" => contract.fetch("contract_id"), "stop_hook_active" => stop_hook_active, "emission" => nil, "error" => "" } unless decision.fetch("action") == "block"
+  return attach_judge_summary({ "active" => true, "emitted" => false, "failed_closed" => false, "output_contract_id" => contract.fetch("contract_id"), "stop_hook_active" => stop_hook_active, "emission" => nil, "error" => "" }, judge) unless decision.fetch("action") == "block"
 
   metadata = provider_output_metadata(contract)
   emission = StrictModeDecisionContract.emit_provider_output(metadata, decision)
-  {
+  attach_judge_summary({
     "active" => true,
     "emitted" => true,
     "failed_closed" => false,
@@ -440,7 +612,7 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
     "stop_hook_active" => stop_hook_active,
     "emission" => emission,
     "error" => ""
-  }
+  }, judge)
 rescue RuntimeError, ArgumentError, KeyError => e
   {
     "active" => !!entry,
@@ -528,7 +700,15 @@ stop_hook_active = provider_detection_decision == "match" &&
                    parsed_payload.is_a?(Hash) &&
                    stop_continuation_logical_event?(logical_event) &&
                    parsed_payload["stop_hook_active"] == true
-enforcement = enforcement_result(context, provider, logical_event, preflight, stop_hook_active: stop_hook_active)
+enforcement = enforcement_result(
+  context,
+  provider,
+  logical_event,
+  preflight,
+  stop_hook_active: stop_hook_active,
+  parsed_payload: parsed_payload,
+  state_root: state_root
+)
 if preflight.fetch("would_block") && !enforcement.fetch("active")
   warn "strict-hook preflight would block in enforcement: #{preflight.fetch("reason_code")} (discovery log-only)"
 end

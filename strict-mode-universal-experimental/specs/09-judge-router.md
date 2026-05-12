@@ -19,6 +19,8 @@ The command rows are templates, not ambient trust. `strict-judge` may invoke a p
 
 The provider invocation gate does not forbid deterministic local classification. When `strict-judge` receives stdin JSON with `current_response` and optional `history`, `review_mode`, and `last_user_msg`, it may classify the current FDR challenge cycle without launching Claude or Codex. This classifier is pure Ruby, shells out to nothing, reads no provider history, and emits only `judge.response.v1`. It covers the v2.5 cut-corners loop: first-cycle challenge, cut-corner admissions, explicit out-of-scope completion, denial/clean-verdict evasions, dismissive severity downgrades, repeated prior answers, review-mode detection from `last_user_msg`, and multi-line verdict/severity-pair matching. If stdin is absent, empty, malformed, has duplicate JSON object keys, or the provider route is unknown, the response remains canonical `unknown` under the rules below.
 
+In an enforcing Stop/SubagentStop hook with trusted protected context and a selected provider Stop output contract, `strict-hook` may call the local `strict-judge` binary before falling back to the generic Stop continuation guard. `verdict:"challenge"` is converted to the selected provider block/continuation output. `verdict:"clean"` allows the Stop without emitting a block. `verdict:"unknown"`, invalid judge output, empty current assistant text, or missing provider proof must not allow by itself; the caller must continue applying the existing Stop guard and other Stop gates. Follow-up Stop payloads with a trusted provider `stop_hook_active=true` skip judge invocation and allow the provider continuation to terminate without recursion.
+
 Protected runtime judge settings:
 
 ```

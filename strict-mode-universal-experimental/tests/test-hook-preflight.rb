@@ -15,6 +15,16 @@ require_relative "../tools/protected_baseline_lib"
 
 ROOT = StrictModeMetadata.project_root
 INSTALL = ROOT.join("install.sh")
+INITIAL_JUDGE_HISTORY = [{ "cycle" => 0, "classification" => "initial", "summary" => "Initial challenge fired" }].freeze
+POST_FIRST_JUDGE_HISTORY = [
+  INITIAL_JUDGE_HISTORY.first,
+  {
+    "cycle" => 1,
+    "classification" => "substantive",
+    "summary" => "Где ты схалтурил?",
+    "gaps" => "Где ты схалтурил?"
+  }
+].freeze
 
 $cases = 0
 $failures = []
@@ -336,6 +346,58 @@ with_install do |_root, home, install_root, state_root, project|
   enforcement = record.fetch("enforcement")
   assert(name, enforcement.fetch("active") == true && enforcement.fetch("emitted") == true, "stop enforcement emission not recorded", enforcement.inspect)
   assert(name, enforcement.fetch("output_contract_id") == "codex.stop.block", "wrong stop output contract", enforcement.inspect)
+  assert(name, enforcement.fetch("judge").fetch("attempted") == false, "empty stop response should not invoke judge", enforcement.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing stop emits semantic judge challenge output"
+  enable_codex_enforcement!(install_root, state_root)
+  payload = {
+    "event" => "stop",
+    "thread_id" => "t1",
+    "last_assistant_message" => "0 проблем, выглядит чисто.",
+    "strict_judge_history" => INITIAL_JUDGE_HISTORY
+  }
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "provider stop contract should control exit code", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "block", "semantic judge challenge did not block", stdout)
+  assert(name, emitted.fetch("reason").include?("FDR judge challenge"), "semantic judge reason missing prefix", stdout)
+  assert(name, emitted.fetch("reason").include?("Где ты схалтурил"), "semantic judge reason missing challenge text", stdout)
+  assert(name, stderr.empty?, "provider stop contract should keep stderr empty", stderr)
+
+  record = last_discovery_record(state_root, "stop")
+  enforcement = record.fetch("enforcement")
+  assert(name, enforcement.fetch("active") == true && enforcement.fetch("emitted") == true, "semantic judge emission not recorded", enforcement.inspect)
+  judge = enforcement.fetch("judge")
+  assert(name, judge.fetch("attempted") == true, "semantic judge was not attempted", enforcement.inspect)
+  assert(name, judge.fetch("verdict") == "challenge", "semantic judge verdict not recorded", enforcement.inspect)
+  assert(name, judge.fetch("response_hash").match?(/\A[a-f0-9]{64}\z/), "semantic judge response hash missing", enforcement.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing stop allows semantic judge clean response"
+  enable_codex_enforcement!(install_root, state_root)
+  payload = {
+    "event" => "stop",
+    "thread_id" => "t1",
+    "last_assistant_message" => "Схалтурил: не переписал старый README. Это вне текущего scope и будет follow-up PR.",
+    "strict_judge_history" => POST_FIRST_JUDGE_HISTORY
+  }
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "semantic judge clean stop should exit cleanly", stdout + stderr)
+  assert(name, stdout.empty?, "semantic judge clean should not emit block", stdout)
+  assert(name, stderr.empty?, "semantic judge clean should not warn", stderr)
+
+  record = last_discovery_record(state_root, "stop")
+  enforcement = record.fetch("enforcement")
+  assert(name, enforcement.fetch("active") == true, "semantic judge clean did not stay enforcing", enforcement.inspect)
+  assert(name, enforcement.fetch("emitted") == false, "semantic judge clean emitted a block", enforcement.inspect)
+  judge = enforcement.fetch("judge")
+  assert(name, judge.fetch("attempted") == true, "semantic judge clean was not attempted", enforcement.inspect)
+  assert(name, judge.fetch("verdict") == "clean", "semantic judge clean verdict not recorded", enforcement.inspect)
 end
 
 with_install do |_root, home, install_root, state_root, project|
@@ -344,7 +406,9 @@ with_install do |_root, home, install_root, state_root, project|
   payload = {
     "event" => "stop",
     "thread_id" => "t1",
-    "stop_hook_active" => true
+    "stop_hook_active" => true,
+    "last_assistant_message" => "0 проблем, выглядит чисто.",
+    "strict_judge_history" => INITIAL_JUDGE_HISTORY
   }
   status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", payload)
   assert_no_stacktrace(name, stdout + stderr)
@@ -360,6 +424,7 @@ with_install do |_root, home, install_root, state_root, project|
   assert(name, enforcement.fetch("failed_closed") == false, "follow-up stop failed closed", enforcement.inspect)
   assert(name, enforcement.fetch("stop_hook_active") == true, "follow-up stop was not recorded", enforcement.inspect)
   assert(name, enforcement.fetch("output_contract_id") == "codex.stop.block", "wrong follow-up stop output contract", enforcement.inspect)
+  assert(name, !enforcement.key?("judge"), "follow-up stop should not invoke semantic judge", enforcement.inspect)
 end
 
 with_install do |_root, home, install_root, state_root, project|
