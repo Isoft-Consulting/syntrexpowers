@@ -309,6 +309,10 @@ class RagUniversalTest(unittest.TestCase):
             },
             names,
         )
+        for tool in listed["result"]["tools"]:
+            properties = tool["inputSchema"]["properties"]
+            self.assertIn("root", properties)
+            self.assertIn("config", properties)
 
         called = handle_message(
             {
@@ -341,6 +345,47 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(quality_payload["schema_version"], "rag.quality-check.v1")
         self.assertEqual(quality_payload["health"]["baseline"], "keyword")
         self.assertIn("delta", quality_payload["summary"])
+
+    def test_mcp_tool_calls_can_override_server_root_per_call(self) -> None:
+        server_root = self.make_project()
+        target_root = self.make_project()
+        (target_root / "README.md").write_text(
+            "# Target\n\nMCP per-call root override beta token lives here.",
+            encoding="utf-8",
+        )
+        build_index(server_root)
+        build_index(target_root)
+
+        status_called = handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {"name": "rag_status", "arguments": {"root": str(target_root)}},
+            },
+            str(server_root),
+            None,
+        )
+        status_payload = json.loads(status_called["result"]["content"][0]["text"])
+        self.assertEqual(status_payload["manifest"]["project_root"], str(target_root.resolve()))
+        self.assertTrue(status_payload["index_dir"].startswith(str(target_root.resolve())))
+
+        search_called = handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "tools/call",
+                "params": {
+                    "name": "rag_search",
+                    "arguments": {"root": str(target_root), "query": "per-call root override beta token", "top_k": 1},
+                },
+            },
+            str(server_root),
+            None,
+        )
+        search_payload = json.loads(search_called["result"]["content"][0]["text"])
+        self.assertEqual(search_payload[0]["source"], "README.md")
+        self.assertIn("beta token", search_payload[0]["preview"])
 
     def test_mcp_search_auto_reindex_defaults_to_configured_true(self) -> None:
         root = self.make_project()

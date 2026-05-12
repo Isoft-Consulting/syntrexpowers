@@ -133,6 +133,19 @@ Ready-made examples for a source-tree install are also available:
 
 The server does not branch on model/client name.
 
+Every MCP tool accepts optional per-call `root` and `config` arguments. In multi-project Codex/Claude sessions, the exposed `mcp__rag__` namespace can be backed by a long-lived MCP process that was started for a different repository. If `rag_status` reports the wrong `manifest.project_root`, pass the absolute current project path as `root` on every MCP call:
+
+```json
+{
+  "root": "/path/to/current/project",
+  "query": "project overview",
+  "mode": "implementation",
+  "with_plan": true
+}
+```
+
+If the client has not refreshed the updated tool schema yet, use the CLI fallback with explicit `--root /path/to/current/project`.
+
 ## Agent Usage Rules
 
 Add this block to the target project's `AGENTS.md` or equivalent agent instructions:
@@ -144,10 +157,11 @@ Project-local RAG server is installed at `.mcp/rag-server`.
 
 Before design, FDR, large implementation, or unfamiliar code exploration:
 1. Call `rag_status`.
-2. Use `rag_search` with `with_plan=true` and the task mode; MCP auto-reindexes stale indexes by default through `mcp.auto_reindex_default=true`.
-3. Run `rag_quality_check` when installing/updating RAG or when search quality is suspect.
-4. Prefer `with_plan=true` for review/design work.
-5. Use task modes:
+2. If `rag_status` points at another repository, pass the absolute current project path as `root` on every MCP call or use the CLI fallback with explicit `--root`.
+3. Use `rag_search` with `with_plan=true` and the task mode; MCP auto-reindexes stale indexes by default through `mcp.auto_reindex_default=true`.
+4. Run `rag_quality_check` when installing/updating RAG or when search quality is suspect.
+5. Prefer `with_plan=true` for review/design work.
+6. Use task modes:
    - `fdr` for code review/FDR
    - `architecture` for module/spec design
    - `implementation` for coding tasks

@@ -34,7 +34,7 @@ Included in v0:
 - Dependency edge extraction for Python, Ruby, JavaScript/TypeScript, shell, and PHP import forms.
 - CLI commands: `index`, `status`, `coverage`, `search`, `watch`, `symbol`, `deps`, `quality-check`, `eval-quality`, `knowledge-build`, `knowledge-status`, `knowledge-profile`, `serve-mcp`.
 - Quality commands: `quality-check` provides an operational health/quality gate; `eval-quality` compares RAG retrieval against a keyword baseline on gold-query files.
-- MCP tools: `rag_search`, `rag_reindex`, `rag_status`, `rag_coverage`, `rag_symbol`, `rag_deps`, `rag_quality_check`, `rag_knowledge_build`, `rag_knowledge_status`, `rag_knowledge_profile`.
+- MCP tools: `rag_search`, `rag_reindex`, `rag_status`, `rag_coverage`, `rag_symbol`, `rag_deps`, `rag_quality_check`, `rag_knowledge_build`, `rag_knowledge_status`, `rag_knowledge_profile`. Every MCP tool accepts optional per-call `root` and `config` overrides so multi-project agent sessions can target the current repository even when the exposed MCP namespace is backed by a long-lived process from another repository.
 - JSON schemas for config and generated artifacts.
 - Provider-neutral operation: Codex, DeepSeek, Claude, or another model client can use the same stdio server command if it supports MCP.
 

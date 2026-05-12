@@ -20,6 +20,24 @@ from .eval_quality import quality_check
 from .knowledge import build_project_knowledge, generate_project_profile, knowledge_pack_status
 
 
+MCP_SCOPE_PROPERTIES: dict[str, dict[str, Any]] = {
+    "root": {
+        "type": ["string", "null"],
+        "default": None,
+        "description": "Project root override for this MCP call. Use an absolute path in multi-project agent sessions.",
+    },
+    "config": {
+        "type": ["string", "null"],
+        "default": None,
+        "description": "Config path override for this MCP call. Relative paths resolve against root first.",
+    },
+}
+
+
+def mcp_properties(properties: dict[str, Any]) -> dict[str, Any]:
+    return {**MCP_SCOPE_PROPERTIES, **properties}
+
+
 def tool_definitions() -> list[dict[str, Any]]:
     return [
         {
@@ -27,7 +45,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": "Search the local project RAG index with lexical vector + BM25 ranking, task modes, and optional read plan.",
             "inputSchema": {
                 "type": "object",
-                "properties": {
+                "properties": mcp_properties({
                     "query": {"type": "string"},
                     "top_k": {"type": "integer", "default": 5, "minimum": 1, "maximum": 50},
                     "filter_source": {"type": ["string", "null"], "default": None},
@@ -42,32 +60,32 @@ def tool_definitions() -> list[dict[str, Any]]:
                         "type": "boolean",
                         "description": "When omitted, uses mcp.auto_reindex_default from rag.config.json; project default is true.",
                     },
-                },
+                }),
                 "required": ["query"],
             },
         },
         {
             "name": "rag_reindex",
             "description": "Rebuild the local project RAG index.",
-            "inputSchema": {"type": "object", "properties": {}},
+            "inputSchema": {"type": "object", "properties": mcp_properties({})},
         },
         {
             "name": "rag_status",
             "description": "Return local RAG index status and manifest counts.",
-            "inputSchema": {"type": "object", "properties": {}},
+            "inputSchema": {"type": "object", "properties": mcp_properties({})},
         },
         {
             "name": "rag_coverage",
             "description": "Report whether specific project paths are present in the local RAG index.",
             "inputSchema": {
                 "type": "object",
-                "properties": {
+                "properties": mcp_properties({
                     "paths": {
                         "type": "array",
                         "items": {"type": "string"},
                         "minItems": 1,
                     }
-                },
+                }),
                 "required": ["paths"],
             },
         },
@@ -76,11 +94,11 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": "Exact symbol lookup by name and optional kind.",
             "inputSchema": {
                 "type": "object",
-                "properties": {
+                "properties": mcp_properties({
                     "name": {"type": "string"},
                     "kind": {"type": ["string", "null"], "default": None},
                     "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 50},
-                },
+                }),
                 "required": ["name"],
             },
         },
@@ -89,11 +107,11 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": "Look up forward or reverse import dependency edges.",
             "inputSchema": {
                 "type": "object",
-                "properties": {
+                "properties": mcp_properties({
                     "target": {"type": "string"},
                     "direction": {"type": "string", "enum": ["reverse", "forward"], "default": "reverse"},
                     "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 50},
-                },
+                }),
                 "required": ["target"],
             },
         },
@@ -102,12 +120,12 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": "Build a normalized lessons/patterns/owner-map knowledge pack from review or eval cases.",
             "inputSchema": {
                 "type": "object",
-                "properties": {
+                "properties": mcp_properties({
                     "cases": {"type": "string"},
                     "output": {"type": "string", "default": "Docs/knowledge/rag"},
                     "project": {"type": "string", "default": "project"},
                     "rules": {"type": ["string", "null"], "default": None},
-                },
+                }),
                 "required": ["cases"],
             },
         },
@@ -116,7 +134,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": "Run RAG health and comparative quality metrics against a keyword baseline.",
             "inputSchema": {
                 "type": "object",
-                "properties": {
+                "properties": mcp_properties({
                     "cases": {"type": ["string", "null"], "default": None},
                     "case_limit": {"type": "integer", "default": 25, "minimum": 1, "maximum": 200},
                     "top_k": {"type": "integer", "default": 10, "minimum": 1, "maximum": 50},
@@ -130,7 +148,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "min_cases": {"type": "integer", "default": 5, "minimum": 1},
                     "min_top3_ratio": {"type": "number", "default": 0.6},
                     "min_mrr": {"type": "number", "default": 0.4},
-                },
+                }),
             },
         },
         {
@@ -138,10 +156,10 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": "Generate a starter project-specific knowledge rules profile from repository layout.",
             "inputSchema": {
                 "type": "object",
-                "properties": {
+                "properties": mcp_properties({
                     "output": {"type": "string", "default": "rag.knowledge.json"},
                     "project": {"type": "string", "default": "project"},
-                },
+                }),
             },
         },
         {
@@ -149,9 +167,9 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": "Report whether a generated knowledge pack is stale against its cases/rules inputs.",
             "inputSchema": {
                 "type": "object",
-                "properties": {
+                "properties": mcp_properties({
                     "summary": {"type": "string", "default": "Docs/knowledge/rag/summary.json"},
-                },
+                }),
             },
         },
     ]
@@ -184,14 +202,23 @@ def resolve_mcp_auto_reindex(arguments: dict[str, Any], root: str | None, config
     return mcp_auto_reindex_default(load_config(resolve_root(root), config))
 
 
+def resolve_mcp_scope(arguments: dict[str, Any], root: str | None, config: str | None) -> tuple[str | None, str | None]:
+    requested_root = arguments.get("root")
+    requested_config = arguments.get("config")
+    effective_root = str(requested_root) if requested_root not in (None, "") else root
+    effective_config = str(requested_config) if requested_config not in (None, "") else config
+    return effective_root, effective_config
+
+
 def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: str | None) -> Any:
+    tool_root, tool_config = resolve_mcp_scope(arguments, root, config)
     if name == "rag_search":
         search_fn = search_index_with_plan if bool(arguments.get("with_plan", False)) else search_index
-        auto_reindex = resolve_mcp_auto_reindex(arguments, root, config)
+        auto_reindex = resolve_mcp_auto_reindex(arguments, tool_root, tool_config)
         return text_content(
             search_fn(
-                root,
-                config,
+                tool_root,
+                tool_config,
                 str(arguments.get("query", "")),
                 int(arguments.get("top_k", 5)),
                 arguments.get("filter_source"),
@@ -201,18 +228,18 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
             )
         )
     if name == "rag_reindex":
-        return text_content(build_index(root, config))
+        return text_content(build_index(tool_root, tool_config))
     if name == "rag_status":
-        return text_content(index_status(root, config))
+        return text_content(index_status(tool_root, tool_config))
     if name == "rag_coverage":
         raw_paths = arguments.get("paths", [])
         paths = [str(item) for item in raw_paths] if isinstance(raw_paths, list) else [str(raw_paths)]
-        return text_content(index_coverage(root, config, paths))
+        return text_content(index_coverage(tool_root, tool_config, paths))
     if name == "rag_symbol":
         return text_content(
             lookup_symbol(
-                root,
-                config,
+                tool_root,
+                tool_config,
                 str(arguments.get("name", "")),
                 arguments.get("kind"),
                 int(arguments.get("limit", 20)),
@@ -221,8 +248,8 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
     if name == "rag_deps":
         return text_content(
             lookup_deps(
-                root,
-                config,
+                tool_root,
+                tool_config,
                 str(arguments.get("target", "")),
                 str(arguments.get("direction", "reverse")),
                 int(arguments.get("limit", 20)),
@@ -231,7 +258,7 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
     if name == "rag_knowledge_build":
         return text_content(
             build_project_knowledge(
-                root,
+                tool_root,
                 str(arguments.get("cases", "")),
                 str(arguments.get("output", "Docs/knowledge/rag")),
                 str(arguments.get("project", "project")),
@@ -241,8 +268,8 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
     if name == "rag_quality_check":
         return text_content(
             quality_check(
-                root,
-                config,
+                tool_root,
+                tool_config,
                 arguments.get("cases"),
                 int(arguments.get("case_limit", 25)),
                 int(arguments.get("top_k", 10)),
@@ -257,13 +284,13 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
     if name == "rag_knowledge_profile":
         return text_content(
             generate_project_profile(
-                root,
+                tool_root,
                 str(arguments.get("output", "rag.knowledge.json")),
                 str(arguments.get("project", "project")),
             )
         )
     if name == "rag_knowledge_status":
-        return text_content(knowledge_pack_status(root, str(arguments.get("summary", "Docs/knowledge/rag/summary.json"))))
+        return text_content(knowledge_pack_status(tool_root, str(arguments.get("summary", "Docs/knowledge/rag/summary.json"))))
     raise ValueError(f"unknown tool: {name}")
 
 

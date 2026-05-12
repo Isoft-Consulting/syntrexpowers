@@ -490,6 +490,7 @@ def config_hash(config: dict[str, Any]) -> str:
 
 
 def get_index_dir(root: Path, config: dict[str, Any]) -> Path:
+    root = root.resolve()
     configured = Path(str(config.get("index_dir", ".rag-index")))
     index_dir = configured if configured.is_absolute() else root / configured
     resolved = index_dir.resolve()

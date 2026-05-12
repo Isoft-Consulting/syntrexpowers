@@ -83,6 +83,19 @@ Ready-to-copy examples are available in `examples/mcp.generic.json`, `examples/m
 
 The server does not branch on `clientInfo.name`; it exposes the same tool contracts to every MCP client.
 
+All MCP tools accept optional `root` and `config` arguments per call. Use an absolute `root` when a long-lived agent session may expose an `mcp__rag__` namespace from another project:
+
+```json
+{
+  "root": "/path/to/current/project",
+  "query": "current task",
+  "mode": "implementation",
+  "with_plan": true
+}
+```
+
+If `rag_status` reports a different `manifest.project_root` than the current repository, pass `root` explicitly on every MCP call or use the CLI fallback with `--root /path/to/current/project` until the MCP client restarts with the updated tool schema.
+
 ## Tools
 
 | Tool | Surface | Purpose |
