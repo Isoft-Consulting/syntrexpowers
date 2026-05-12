@@ -12,6 +12,7 @@ require "securerandom"
 require "time"
 require_relative "../tools/decision_contract_lib"
 require_relative "../tools/destructive_gate_lib"
+require_relative "../tools/fdr_cycle_lib"
 require_relative "../tools/fixture_readiness_lib"
 require_relative "../tools/internal_decision_lib"
 require_relative "../tools/normalized_event_lib"
@@ -450,32 +451,50 @@ def bounded_reason(text, limit = 4000)
   "#{truncated}..."
 end
 
-def judge_block_decision(logical_event, response)
+def judge_block_decision(logical_event, response, fdr_cycle_record_hash = nil)
   messages = response.fetch("findings").map { |finding| finding.fetch("message", "").to_s.strip }.reject(&:empty?)
   messages = ["semantic judge reported a challenge"] if messages.empty?
+  metadata = {
+    "logical_event" => logical_event,
+    "reason_code" => "judge-challenge",
+    "response_hash" => response.fetch("response_hash")
+  }
+  metadata["fdr_cycle_record_hash"] = fdr_cycle_record_hash if fdr_cycle_record_hash
   {
     "schema_version" => 1,
     "action" => "block",
     "reason" => bounded_reason("strict-mode FDR judge challenge: #{messages.join("; ")}"),
     "severity" => "error",
     "additional_context" => "",
+    "metadata" => metadata
+  }
+end
+
+def judge_reuse_block_decision(logical_event, original_record)
+  {
+    "schema_version" => 1,
+    "action" => "block",
+    "reason" => bounded_reason("strict-mode FDR judge challenge: reused blocking challenge #{original_record.fetch("record_hash")}"),
+    "severity" => "error",
+    "additional_context" => "",
     "metadata" => {
       "logical_event" => logical_event,
-      "reason_code" => "judge-challenge",
-      "response_hash" => response.fetch("response_hash")
+      "reason_code" => "judge-challenge-reused",
+      "response_hash" => original_record.fetch("response_hash"),
+      "fdr_cycle_record_hash" => original_record.fetch("record_hash")
     }
   }
 end
 
-def judge_summary(attempted:, response: nil, reason: "")
+def judge_summary(attempted:, response: nil, reason: "", verdict: nil, backend: "", model: "", response_hash: nil, finding_count: nil)
   summary = {
     "attempted" => attempted,
-    "verdict" => response ? response.fetch("verdict") : "not-run",
+    "verdict" => response ? response.fetch("verdict") : (verdict || "not-run"),
     "reason" => response ? response.fetch("reason") : reason,
-    "backend" => response ? response.fetch("backend") : "",
-    "model" => response ? response.fetch("model") : "",
-    "response_hash" => response ? response.fetch("response_hash") : ("0" * 64),
-    "finding_count" => response ? response.fetch("findings").length : 0
+    "backend" => response ? response.fetch("backend") : backend,
+    "model" => response ? response.fetch("model") : model,
+    "response_hash" => response ? response.fetch("response_hash") : (response_hash || ("0" * 64)),
+    "finding_count" => response ? response.fetch("findings").length : (finding_count || 0)
   }
   summary["reason"] = reason if response.nil? && !reason.empty?
   summary
@@ -487,27 +506,158 @@ def attach_judge_summary(record, judge)
   record.merge("judge" => judge.reject { |key, _| key == "decision" })
 end
 
+def attach_fdr_cycle_summary(summary, cycle_record)
+  return summary unless cycle_record
+
+  summary.merge(
+    "fdr_cycle_record_hash" => cycle_record.fetch("record_hash", ""),
+    "fdr_cycle_ledger_record_hash" => cycle_record.fetch("ledger_record_hash", "")
+  )
+end
+
+def append_fdr_cycle_safely(state_root, context, **kwargs)
+  StrictModeFdrCycle.append_cycle!(state_root, context, **kwargs)
+rescue RuntimeError, SystemCallError, ArgumentError => e
+  warn "strict-hook FDR cycle append failed: #{e.message}"
+  nil
+end
+
 def semantic_judge_result(provider, logical_event, payload, state_root)
   return judge_summary(attempted: false, reason: "not-stop-like") unless stop_continuation_logical_event?(logical_event)
 
-  input = semantic_judge_input(payload)
-  return judge_summary(attempted: false, reason: "empty-current-response") unless input
-
   cwd = hook_cwd
+  project_dir = hook_project_dir(cwd)
+  cycle_context = if payload.is_a?(Hash)
+                    StrictModeFdrCycle.context(provider: provider, payload: payload, cwd: cwd, project_dir: project_dir)
+                  end
+  input = semantic_judge_input(payload)
+  unless input
+    cycle_record = append_fdr_cycle_safely(
+      state_root,
+      cycle_context,
+      decision: "skipped-no-turn-text",
+      challenge_reason: "no-normalized-turn-text"
+    ) if cycle_context
+    return attach_fdr_cycle_summary(judge_summary(attempted: false, reason: "empty-current-response"), cycle_record)
+  end
+
+  if cycle_context
+    reusable = StrictModeFdrCycle.reusable_result(state_root, cycle_context)
+    if reusable && reusable.fetch("decision") == "judge-clean"
+      return judge_summary(
+        attempted: false,
+        verdict: "clean",
+        reason: "judge-clean-reused",
+        backend: reusable.fetch("record").fetch("judge_backend"),
+        model: reusable.fetch("record").fetch("judge_model"),
+        response_hash: reusable.fetch("record").fetch("response_hash")
+      ).merge("reused" => true, "fdr_cycle_record_hash" => reusable.fetch("record").fetch("record_hash"))
+    elsif reusable && reusable.fetch("decision") == "judge-challenge"
+      original = reusable.fetch("record")
+      cycle_record = append_fdr_cycle_safely(
+        state_root,
+        cycle_context,
+        decision: "blocked-reused",
+        challenge_reason: "reused-blocking-challenge",
+        original_challenge_record_hash: original.fetch("record_hash")
+      )
+      summary = judge_summary(
+        attempted: false,
+        verdict: "challenge",
+        reason: "blocked-reused",
+        backend: original.fetch("judge_backend"),
+        model: original.fetch("judge_model"),
+        response_hash: original.fetch("response_hash")
+      ).merge("reused" => true, "decision" => judge_reuse_block_decision(logical_event, original))
+      return attach_fdr_cycle_summary(summary, cycle_record)
+    end
+  end
+
   stdout, stderr, status = Open3.capture3(
     { "STRICT_MODE_NESTED" => "1" },
     RbConfig.ruby,
     strict_judge_path.to_s,
     "--provider", provider,
+    "--reviewed-scope-digest", cycle_context ? cycle_context.fetch("scope_digest") : StrictModeFdrCycle::ZERO_HASH,
+    "--reviewed-artifact-hash", cycle_context ? cycle_context.fetch("artifact_hash") : StrictModeFdrCycle::ZERO_HASH,
     "--install-root", inferred_install_root(state_root).to_s,
     "--state-root", state_root.to_s,
-    "--project-dir", hook_project_dir(cwd).to_s,
+    "--project-dir", project_dir.to_s,
     stdin_data: JSON.generate(input)
   )
-  return judge_summary(attempted: true, reason: "nonzero-exit") unless status.success?
+  unless status.success?
+    failure_hash = cycle_context ? StrictModeFdrCycle.failure_response_hash(cycle_context, reason_code: "nonzero-exit", timed_out: false, exit_status: status.exitstatus, stdout: stdout, stderr: stderr) : StrictModeFdrCycle::ZERO_HASH
+    cycle_record = append_fdr_cycle_safely(
+      state_root,
+      cycle_context,
+      decision: "judge-unknown",
+      challenge_reason: "nonzero-exit",
+      prompt_hash: cycle_context ? StrictModeFdrCycle.prompt_hash(cycle_context, judge_backend: "", judge_model: "") : StrictModeFdrCycle::ZERO_HASH,
+      response_hash: failure_hash
+    ) if cycle_context
+    return attach_fdr_cycle_summary(judge_summary(attempted: true, reason: "nonzero-exit", verdict: "unknown", response_hash: failure_hash), cycle_record)
+  end
 
-  response = parse_strict_judge_response(stdout, provider)
-  judge_summary(attempted: true, response: response).merge("decision" => response.fetch("verdict") == "challenge" ? judge_block_decision(logical_event, response) : nil)
+  begin
+    response = parse_strict_judge_response(stdout, provider)
+    if cycle_context
+      raise "invalid judge response: reviewed_scope_digest mismatch" unless response.fetch("reviewed_scope_digest") == cycle_context.fetch("scope_digest")
+      raise "invalid judge response: reviewed_artifact_hash mismatch" unless response.fetch("reviewed_artifact_hash") == cycle_context.fetch("artifact_hash")
+    end
+  rescue RuntimeError => e
+    failure_hash = cycle_context ? StrictModeFdrCycle.failure_response_hash(cycle_context, reason_code: "parse-failure", timed_out: false, exit_status: status.exitstatus, stdout: stdout, stderr: stderr) : StrictModeFdrCycle::ZERO_HASH
+    cycle_record = append_fdr_cycle_safely(
+      state_root,
+      cycle_context,
+      decision: "judge-unknown",
+      challenge_reason: "parse-failure",
+      prompt_hash: cycle_context ? StrictModeFdrCycle.prompt_hash(cycle_context, judge_backend: "", judge_model: "") : StrictModeFdrCycle::ZERO_HASH,
+      response_hash: failure_hash
+    ) if cycle_context
+    return attach_fdr_cycle_summary(judge_summary(attempted: true, reason: "parse-failure", verdict: "unknown", response_hash: failure_hash), cycle_record)
+  end
+
+  prompt_hash = cycle_context ? StrictModeFdrCycle.prompt_hash(cycle_context, judge_backend: response.fetch("backend"), judge_model: response.fetch("model")) : StrictModeFdrCycle::ZERO_HASH
+  cycle_record = if cycle_context
+                   case response.fetch("verdict")
+                   when "clean"
+                     append_fdr_cycle_safely(
+                       state_root,
+                       cycle_context,
+                       decision: "judge-clean",
+                       challenge_reason: "judge-clean",
+                       judge_backend: response.fetch("backend"),
+                       judge_model: response.fetch("model"),
+                       prompt_hash: prompt_hash,
+                       response_hash: response.fetch("response_hash")
+                     )
+                   when "challenge"
+                     append_fdr_cycle_safely(
+                       state_root,
+                       cycle_context,
+                       decision: "judge-challenge",
+                       challenge_reason: "judge-reported-challenge",
+                       judge_backend: response.fetch("backend"),
+                       judge_model: response.fetch("model"),
+                       prompt_hash: prompt_hash,
+                       response_hash: response.fetch("response_hash")
+                     )
+                   else
+                     append_fdr_cycle_safely(
+                       state_root,
+                       cycle_context,
+                       decision: "judge-unknown",
+                       challenge_reason: response.fetch("reason"),
+                       judge_backend: response.fetch("backend"),
+                       judge_model: response.fetch("model"),
+                       prompt_hash: prompt_hash,
+                       response_hash: response.fetch("response_hash")
+                     )
+                   end
+                 end
+  summary = judge_summary(attempted: true, response: response)
+  summary = attach_fdr_cycle_summary(summary, cycle_record)
+  summary.merge("decision" => response.fetch("verdict") == "challenge" ? judge_block_decision(logical_event, response, cycle_record && cycle_record.fetch("record_hash")) : nil)
 rescue RuntimeError, SystemCallError, ArgumentError => e
   judge_summary(attempted: true, reason: e.message)
 end
@@ -583,9 +733,9 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
   raise "selected output contract missing for #{provider} #{logical_event} #{entry.fetch("output_contract_id")}" unless contract
 
   judge = stop_continuation_logical_event?(logical_event) ? semantic_judge_result(provider, logical_event, parsed_payload, state_root || inferred_install_root.join("state")) : nil
-  if judge && judge.fetch("attempted") && judge.fetch("verdict") == "clean"
+  if judge && judge.fetch("verdict") == "clean"
     return attach_judge_summary({ "active" => true, "emitted" => false, "failed_closed" => false, "output_contract_id" => contract.fetch("contract_id"), "stop_hook_active" => stop_hook_active, "emission" => nil, "error" => "" }, judge)
-  elsif judge && judge.fetch("attempted") && judge.fetch("verdict") == "challenge"
+  elsif judge && judge.fetch("verdict") == "challenge"
     metadata = provider_output_metadata(contract)
     emission = StrictModeDecisionContract.emit_provider_output(metadata, judge.fetch("decision"))
     return attach_judge_summary({

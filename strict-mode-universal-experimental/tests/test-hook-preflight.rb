@@ -7,6 +7,7 @@ require "open3"
 require "pathname"
 require "tmpdir"
 require_relative "../tools/decision_contract_lib"
+require_relative "../tools/fdr_cycle_lib"
 require_relative "../tools/fixture_readiness_lib"
 require_relative "../tools/hook_entry_plan_lib"
 require_relative "../tools/metadata_lib"
@@ -298,6 +299,42 @@ def last_discovery_record(state_root, event = "pre-tool-use")
   JSON.parse(log.read.lines.last)
 end
 
+def fdr_session_identity(thread_id = "t1")
+  StrictModeFdrCycle.session_identity("codex", { "thread_id" => thread_id })
+end
+
+def fdr_cycle_path(state_root, thread_id = "t1")
+  identity = fdr_session_identity(thread_id)
+  StrictModeFdrCycle.cycle_path(state_root, "codex", identity.fetch("session_key"))
+end
+
+def fdr_ledger_path(state_root, thread_id = "t1")
+  identity = fdr_session_identity(thread_id)
+  StrictModeFdrCycle.ledger_path(state_root, "codex", identity.fetch("session_key"))
+end
+
+def fdr_cycle_records(state_root, thread_id = "t1")
+  StrictModeFdrCycle.load_cycle_records(fdr_cycle_path(state_root, thread_id))
+end
+
+def fdr_ledger_records(state_root, thread_id = "t1")
+  StrictModeFdrCycle.load_session_ledger_records(fdr_ledger_path(state_root, thread_id))
+end
+
+def assert_fdr_cycle_and_ledger(name, state_root, expected_decisions)
+  cycles = fdr_cycle_records(state_root)
+  ledgers = fdr_ledger_records(state_root)
+  assert(name, StrictModeFdrCycle.validate_cycle_chain(fdr_cycle_path(state_root)).empty?, "FDR cycle chain invalid", cycles.inspect)
+  assert(name, StrictModeFdrCycle.validate_session_ledger_chain(fdr_ledger_path(state_root)).empty?, "FDR session ledger chain invalid", ledgers.inspect)
+  assert(name, cycles.map { |record| record.fetch("decision") } == expected_decisions, "FDR cycle decisions mismatch", cycles.inspect)
+  assert(name, ledgers.length == cycles.length, "FDR cycle ledger coverage mismatch", ledgers.inspect)
+  cycles.zip(ledgers).each do |cycle, ledger|
+    assert(name, ledger.fetch("related_record_hash") == cycle.fetch("record_hash"), "ledger related hash does not bind cycle", ledger.inspect)
+    assert(name, ledger.fetch("target_class") == "fdr-cycle-log" && ledger.fetch("operation") == "append", "ledger target/operation mismatch", ledger.inspect)
+  end
+  cycles
+end
+
 with_install do |_root, home, install_root, state_root, project|
   name = "enforcing pre-tool emits provider block output from selected contract"
   enable_codex_enforcement!(install_root, state_root)
@@ -347,6 +384,51 @@ with_install do |_root, home, install_root, state_root, project|
   assert(name, enforcement.fetch("active") == true && enforcement.fetch("emitted") == true, "stop enforcement emission not recorded", enforcement.inspect)
   assert(name, enforcement.fetch("output_contract_id") == "codex.stop.block", "wrong stop output contract", enforcement.inspect)
   assert(name, enforcement.fetch("judge").fetch("attempted") == false, "empty stop response should not invoke judge", enforcement.inspect)
+  cycles = assert_fdr_cycle_and_ledger(name, state_root, ["skipped-no-turn-text"])
+  assert(name, cycles.first.fetch("challenge_reason") == "no-normalized-turn-text", "empty response cycle reason mismatch", cycles.inspect)
+end
+
+with_install do |_root, _home, _install_root, state_root, project|
+  name = "FDR cycle append refusal preserves occupied session lock"
+  payload = { "event" => "stop", "thread_id" => "t1" }
+  context = StrictModeFdrCycle.context(provider: "codex", payload: payload, cwd: project, project_dir: project)
+  lock_path = StrictModeFdrCycle.lock_path(state_root, "codex", context.fetch("session_key"))
+  lock_path.mkpath
+  lock_path.join("owner.json").write("occupied\n")
+  begin
+    StrictModeFdrCycle.append_cycle!(
+      state_root,
+      context,
+      decision: "skipped-no-turn-text",
+      challenge_reason: "no-normalized-turn-text"
+    )
+    assert(name, false, "append unexpectedly acquired occupied lock")
+  rescue RuntimeError => e
+    assert(name, e.message.include?("another session transaction is active"), "wrong occupied-lock diagnostic", e.message)
+  end
+  assert(name, lock_path.directory?, "occupied lock directory was removed")
+  assert(name, lock_path.join("owner.json").read == "occupied\n", "occupied lock owner was modified")
+end
+
+with_install do |_root, _home, _install_root, state_root, project|
+  name = "FDR cycle append rolls back cycle file when session ledger append fails"
+  payload = { "event" => "stop", "thread_id" => "t1" }
+  context = StrictModeFdrCycle.context(provider: "codex", payload: payload, cwd: project, project_dir: project)
+  cycle_path = StrictModeFdrCycle.cycle_path(state_root, "codex", context.fetch("session_key"))
+  ledger_path = StrictModeFdrCycle.ledger_path(state_root, "codex", context.fetch("session_key"))
+  ledger_path.mkpath
+  begin
+    StrictModeFdrCycle.append_cycle!(
+      state_root,
+      context,
+      decision: "skipped-no-turn-text",
+      challenge_reason: "no-normalized-turn-text"
+    )
+    assert(name, false, "append unexpectedly succeeded with ledger path directory")
+  rescue RuntimeError => e
+    assert(name, e.message.include?("session ledger"), "wrong ledger failure diagnostic", e.message)
+  end
+  assert(name, !cycle_path.exist?, "cycle file was left behind without ledger coverage")
 end
 
 with_install do |_root, home, install_root, state_root, project|
@@ -374,6 +456,85 @@ with_install do |_root, home, install_root, state_root, project|
   assert(name, judge.fetch("attempted") == true, "semantic judge was not attempted", enforcement.inspect)
   assert(name, judge.fetch("verdict") == "challenge", "semantic judge verdict not recorded", enforcement.inspect)
   assert(name, judge.fetch("response_hash").match?(/\A[a-f0-9]{64}\z/), "semantic judge response hash missing", enforcement.inspect)
+  cycles = assert_fdr_cycle_and_ledger(name, state_root, ["judge-challenge"])
+  cycle = cycles.first
+  assert(name, cycle.fetch("challenge_reason") == "judge-reported-challenge", "challenge cycle reason mismatch", cycle.inspect)
+  assert(name, cycle.fetch("cycle_index") == 1 && cycle.fetch("max_cycles") == 2, "challenge cycle index mismatch", cycle.inspect)
+  assert(name, cycle.fetch("prompt_hash") != StrictModeFdrCycle::ZERO_HASH, "challenge prompt hash missing", cycle.inspect)
+  assert(name, cycle.fetch("response_hash") == judge.fetch("response_hash"), "challenge response hash mismatch", cycle.inspect)
+  assert(name, !JSON.generate(cycle).include?("0 проблем"), "FDR cycle leaked assistant text", JSON.generate(cycle))
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing stop reuses prior semantic judge challenge without a second judge call"
+  enable_codex_enforcement!(install_root, state_root)
+  payload = {
+    "event" => "stop",
+    "thread_id" => "t1",
+    "last_assistant_message" => "0 проблем, выглядит чисто.",
+    "strict_judge_history" => INITIAL_JUDGE_HISTORY
+  }
+  first_status, first_stdout, first_stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", payload)
+  assert_no_stacktrace(name, first_stdout + first_stderr)
+  assert(name, first_status.zero?, "first semantic judge challenge should exit through provider contract", first_stdout + first_stderr)
+
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "reused semantic judge challenge should exit through provider contract", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "block", "reused semantic judge challenge did not block", stdout)
+  assert(name, emitted.fetch("reason").include?("reused blocking challenge"), "reused challenge reason missing", stdout)
+  assert(name, stderr.empty?, "provider stop contract should keep stderr empty", stderr)
+
+  record = last_discovery_record(state_root, "stop")
+  judge = record.fetch("enforcement").fetch("judge")
+  assert(name, judge.fetch("attempted") == false, "reused challenge should not invoke semantic judge", judge.inspect)
+  assert(name, judge.fetch("verdict") == "challenge" && judge.fetch("reused") == true, "reused challenge summary mismatch", judge.inspect)
+  cycles = assert_fdr_cycle_and_ledger(name, state_root, %w[judge-challenge blocked-reused])
+  assert(name, cycles[1].fetch("original_challenge_record_hash") == cycles[0].fetch("record_hash"), "blocked-reused did not bind original challenge", cycles.inspect)
+  assert(name, cycles[1].fetch("cycle_index") == cycles[0].fetch("cycle_index"), "blocked-reused changed cycle index", cycles.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing stop reuses last semantic judge challenge after max FDR cycles"
+  enable_codex_enforcement!(install_root, state_root)
+  payload_for = lambda do |artifact_hash|
+    {
+      "event" => "stop",
+      "thread_id" => "t1",
+      "last_assistant_message" => "0 проблем, выглядит чисто.",
+      "strict_judge_history" => INITIAL_JUDGE_HISTORY,
+      "fdr_artifact" => {
+        "artifact_state" => "clean",
+        "artifact_hash" => artifact_hash,
+        "artifact_verdict" => "clean",
+        "finding_count" => 0
+      }
+    }
+  end
+
+  [("a" * 64), ("b" * 64)].each do |artifact_hash|
+    status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", payload_for.call(artifact_hash))
+    assert_no_stacktrace(name, stdout + stderr)
+    assert(name, status.zero?, "semantic judge challenge should exit through provider contract", stdout + stderr)
+    assert(name, JSON.parse(stdout).fetch("decision") == "block", "semantic judge challenge did not block", stdout)
+  end
+
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", payload_for.call("c" * 64))
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "max-cycle reused challenge should exit through provider contract", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "block", "max-cycle reused challenge did not block", stdout)
+  assert(name, emitted.fetch("reason").include?("reused blocking challenge"), "max-cycle reused challenge reason missing", stdout)
+  assert(name, stderr.empty?, "provider stop contract should keep stderr empty", stderr)
+
+  record = last_discovery_record(state_root, "stop")
+  judge = record.fetch("enforcement").fetch("judge")
+  assert(name, judge.fetch("attempted") == false && judge.fetch("reused") == true, "max-cycle reuse should not invoke semantic judge", judge.inspect)
+  cycles = assert_fdr_cycle_and_ledger(name, state_root, %w[judge-challenge judge-challenge blocked-reused])
+  assert(name, cycles[0].fetch("cycle_index") == 1 && cycles[1].fetch("cycle_index") == 2, "max-cycle challenge indexes mismatch", cycles.inspect)
+  assert(name, cycles[2].fetch("original_challenge_record_hash") == cycles[1].fetch("record_hash"), "max-cycle reuse did not bind last challenge", cycles.inspect)
+  assert(name, cycles[2].fetch("cycle_index") == 2, "max-cycle reuse changed original cycle index", cycles.inspect)
 end
 
 with_install do |_root, home, install_root, state_root, project|
@@ -398,6 +559,12 @@ with_install do |_root, home, install_root, state_root, project|
   judge = enforcement.fetch("judge")
   assert(name, judge.fetch("attempted") == true, "semantic judge clean was not attempted", enforcement.inspect)
   assert(name, judge.fetch("verdict") == "clean", "semantic judge clean verdict not recorded", enforcement.inspect)
+  cycles = assert_fdr_cycle_and_ledger(name, state_root, ["judge-clean"])
+  cycle = cycles.first
+  assert(name, cycle.fetch("challenge_reason") == "judge-clean", "clean cycle reason mismatch", cycle.inspect)
+  assert(name, cycle.fetch("cycle_index") == 0, "clean cycle index mismatch", cycle.inspect)
+  assert(name, cycle.fetch("prompt_hash") != StrictModeFdrCycle::ZERO_HASH, "clean prompt hash missing", cycle.inspect)
+  assert(name, cycle.fetch("response_hash") == judge.fetch("response_hash"), "clean response hash mismatch", cycle.inspect)
 end
 
 with_install do |_root, home, install_root, state_root, project|
