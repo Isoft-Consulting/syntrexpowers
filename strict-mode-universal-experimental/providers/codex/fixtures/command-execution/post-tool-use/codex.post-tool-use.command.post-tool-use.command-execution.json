@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "proof_kind": "codex.command-execution.observed",
+  "provider": "codex",
+  "provider_version": "0.128.0",
+  "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+  "event": "post-tool-use",
+  "contract_id": "codex.post-tool-use.command",
+  "hook_command_executed": true,
+  "hook_argv": [
+    "strict-hook",
+    "--provider",
+    "codex",
+    "post-tool-use"
+  ],
+  "hook_exit_status": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "discovery_recorded_at": "2026-05-07T15:25:21Z",
+  "provider_detection_decision": "match",
+  "payload_sha256": "22f083bb063b7f9b686e8c206931fb5e54ebaf29124e0488ec28fdf64d02cfc5",
+  "raw_payload_captured": true,
+  "raw_payload_path": "/tmp/syntrexpowers-codex-discovery-state/discovery/raw/codex/post-tool-use/20260507T152521-2972014-af175dfc-22f083bb063b.payload",
+  "hook_mode": "discovery-log-only"
+}

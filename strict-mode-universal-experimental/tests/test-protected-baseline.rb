@@ -56,6 +56,13 @@ def write_file(path, bytes)
   path
 end
 
+def atomic_rewrite(path, bytes)
+  tmp = path.dirname.join(".#{path.basename}.tmp")
+  tmp.write(bytes)
+  File.chmod(0o600, tmp)
+  File.rename(tmp, path)
+end
+
 def rewrite_inode_index_provider!(baseline, path, kind, provider)
   baseline.fetch("protected_file_inode_index").each_value do |entries|
     entries.each do |entry|
@@ -104,6 +111,55 @@ with_install do |_root, home, install_root, state_root, project|
   assert(name, loaded.fetch("protected_inodes").any? { |entry| entry.fetch("path") == install_root.join("config/runtime.env").to_s }, "runtime.env inode missing")
   assert(name, loaded.fetch("protected_inodes").any? { |entry| entry.fetch("kind") == "install-manifest" && entry.fetch("path") == install_root.join("install-manifest.json").to_s }, "install manifest inode missing")
   assert(name, loaded.fetch("destructive_patterns").empty?, "comment-only destructive template should load empty records")
+end
+
+with_install(provider: "codex") do |_root, home, install_root, _state_root, project|
+  name = "codex hook trust state can change without invalidating protected config"
+  config = home.join(".codex/config.toml")
+  hook_key = "#{home}/.codex/hooks.json:pre_tool_use:0:0"
+  atomic_rewrite(config, "#{config.read}\n[hooks.state]\n\n[hooks.state.\"#{hook_key}\"]\ntrusted_hash = \"sha256:#{"a" * 64}\"\n")
+
+  loaded = StrictModeProtectedBaseline.load(install_root: install_root, project_dir: project, home: home)
+  assert(name, loaded.fetch("trusted"), "Codex hooks.state drift should remain trusted", loaded.fetch("errors").join("\n"))
+  assert(name, loaded.fetch("protected_inodes").any? { |entry| entry.fetch("path") == config.to_s && entry.fetch("mutable_provider_state") == true }, "mutable Codex config.toml current inode missing")
+
+  alias_path = project.join("codex-config-hardlink")
+  File.link(config, alias_path)
+  direct = StrictModeDestructiveGate.classify_tool(
+    { "kind" => "write", "file_path" => alias_path.to_s },
+    cwd: project,
+    project_dir: project,
+    protected_roots: loaded.fetch("protected_roots"),
+    protected_inodes: loaded.fetch("protected_inodes"),
+    destructive_patterns: loaded.fetch("destructive_patterns"),
+    home: home,
+    install_root: install_root
+  )
+  assert(name, direct.fetch("decision") == "block" && direct.fetch("reason_code") == "protected-root", "Codex config hardlink alias did not block", direct.inspect)
+end
+
+with_install(provider: "codex") do |_root, home, install_root, _state_root, project|
+  name = "codex non-state config drift remains protected"
+  config = home.join(".codex/config.toml")
+  hook_state = "\n[hooks.state]\n\n[hooks.state.\"#{home}/.codex/hooks.json:pre_tool_use:0:0\"]\ntrusted_hash = \"sha256:#{"b" * 64}\"\n"
+  atomic_rewrite(config, config.read.sub("codex_hooks = true", "codex_hooks = false") + hook_state)
+
+  loaded = StrictModeProtectedBaseline.load(install_root: install_root, project_dir: project, home: home)
+  assert(name, !loaded.fetch("trusted"), "Codex feature flag drift loaded as trusted")
+  assert(name, loaded.fetch("errors").any? { |message| message.include?("content_sha256 mismatch") }, "missing Codex stable content diagnostic", loaded.fetch("errors").join("\n"))
+end
+
+with_install(provider: "claude") do |_root, home, install_root, _state_root, project|
+  name = "claude settings.json content drift makes protected baseline untrusted"
+  settings = home.join(".claude/settings.json")
+  parsed = JSON.parse(settings.read)
+  parsed["theme"] = "tampered-theme-value"
+  atomic_rewrite(settings, JSON.pretty_generate(parsed) + "\n")
+
+  loaded = StrictModeProtectedBaseline.load(install_root: install_root, project_dir: project, home: home)
+  assert(name, !loaded.fetch("trusted"), "Claude settings.json drift must invalidate trust — Claude has no mutable trust-state carrier analog to Codex [hooks.state]")
+  assert(name, loaded.fetch("errors").any? { |message| message.include?("content_sha256 mismatch") }, "missing Claude content hash diagnostic", loaded.fetch("errors").join("\n"))
+  assert(name, !loaded.fetch("protected_inodes").any? { |entry| entry.fetch("path") == settings.to_s && entry["mutable_provider_state"] == true }, "Claude settings.json must not carry mutable_provider_state flag")
 end
 
 custom_config = lambda do |_root, _home, install_root, project|
@@ -187,7 +243,7 @@ with_install do |_root, home, install_root, state_root, project|
   baseline = read_json(baseline_path)
   entries = manifest.fetch("managed_hook_entries")
   stop = entries.find { |entry| entry.fetch("provider") == "codex" && entry.fetch("logical_event") == "stop" }
-  stop["command"] = "STRICT_HOOK_TIMEOUT_MS=60000 \"/tmp/other-strict/active/bin/strict-hook\" --provider codex stop"
+  stop["command"] = "STRICT_HOOK_TIMEOUT_MS=60000 STRICT_STATE_ROOT=\"#{state_root}\" \"/tmp/other-strict/active/bin/strict-hook\" --provider codex stop"
   stop["removal_selector"] = StrictModeHookEntryPlan.removal_selector_for(stop)
   manifest["managed_hook_entries"] = entries
   write_hash_bound_json(manifest_path, manifest, "manifest_hash")

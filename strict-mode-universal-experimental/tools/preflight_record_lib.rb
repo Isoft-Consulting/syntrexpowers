@@ -51,7 +51,6 @@ module StrictModePreflightRecord
     shell-read-only-or-unmatched
     non-write-tool
     write-targets-disjoint
-    trusted-fdr-import
   ].freeze
   CLASSIFIER_BLOCK_REASON_CODES = %w[
     invalid-identity
@@ -63,6 +62,8 @@ module StrictModePreflightRecord
     unknown-write-target
     protected-target-unknown
     trusted-import-invalid
+    trusted-import-unavailable
+    stub-detected
   ].freeze
   CLASSIFIER_REASON_CODES = (CLASSIFIER_ALLOW_REASON_CODES + CLASSIFIER_BLOCK_REASON_CODES).freeze
   REASON_CODES = (NOT_ATTEMPTED_REASON_CODES + UNTRUSTED_REASON_CODES + CLASSIFIER_REASON_CODES).freeze

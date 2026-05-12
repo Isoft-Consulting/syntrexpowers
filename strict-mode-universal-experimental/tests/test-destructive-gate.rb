@@ -250,11 +250,10 @@ with_project do |_root, project, cwd, home, install, protected_roots|
 end
 
 with_project do |_root, project, cwd, home, install, protected_roots|
-  name = "exact strict-fdr import allows trusted project source"
-  source = write_file(project.join("review.md"), "# review\n")
+  name = "exact strict-fdr import is unavailable until artifact importer is ready"
+  write_file(project.join("review.md"), "# review\n")
   result = shell_result("\"#{install.join('active/bin/strict-fdr')}\" import -- ../review.md", project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
-  expect_result(name, result, "allow", "trusted-fdr-import")
-  record_failure(name, "trusted source metadata mismatch", result.inspect) unless result.fetch("metadata").fetch("trusted_import_source") == source.to_s
+  expect_result(name, result, "block", "trusted-import-unavailable")
 end
 
 with_project do |_root, project, cwd, home, install, protected_roots|
@@ -314,6 +313,30 @@ with_project do |_root, project, cwd, home, install, protected_roots|
 end
 
 with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "fd-duplication 2>&1 followed by ; is not a parse error"
+  result = shell_result("echo a 2>&1 ; echo b", project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "allow", "shell-read-only-or-unmatched")
+end
+
+with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "fd-duplication 2>&1 followed by pipe is not a parse error"
+  result = shell_result("ruby tests/foo.rb 2>&1 | tail -5", project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "allow", "shell-read-only-or-unmatched")
+end
+
+with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "fd-duplication 1>&2 in chained command is not a parse error"
+  result = shell_result("echo warning 1>&2 && echo ok", project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "allow", "shell-read-only-or-unmatched")
+end
+
+with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "fd-close 2>&- is not a parse error"
+  result = shell_result("printf hello 2>&-", project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "allow", "shell-read-only-or-unmatched")
+end
+
+with_project do |_root, project, cwd, home, install, protected_roots|
   name = "inline interpreter blocks unknown write target"
   result = shell_result("python -c \"open('x','w').write('y')\"", project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
   expect_result(name, result, "block", "unknown-write-target")
@@ -323,6 +346,42 @@ with_project do |_root, project, cwd, home, install, protected_roots|
   name = "shell wrapper with script body blocks unknown write target"
   result = shell_result("sh -c 'touch generated.txt'", project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
   expect_result(name, result, "block", "unknown-write-target")
+end
+
+# === Orchestration tools (no file_paths) — должны проходить, не fail-close'иться ===
+# Эти тесты закрывают reported finding о Universal classify_direct_paths fail-closed
+# для ScheduleWakeup/TaskCreate/Skill/etc — orchestration tools без file_paths больше
+# не получают protected-target-unknown, потому что write_like_tool? возвращает false
+# для "other"/"unknown" kind когда tool не экспонирует пути к файлам.
+
+with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "other-kind tool without file_paths passes as non-write"
+  tool = { "name" => "ScheduleWakeup", "kind" => "other", "write_intent" => "unknown", "file_path" => "", "file_paths" => [] }
+  result = classify(tool, project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "allow", "non-write-tool")
+end
+
+with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "unknown-kind tool without file_paths passes as non-write"
+  tool = { "name" => "TaskCreate", "kind" => "unknown", "write_intent" => "unknown", "file_path" => "", "file_paths" => [] }
+  result = classify(tool, project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "allow", "non-write-tool")
+end
+
+with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "other-kind tool WITH file_path remains write-like and checked against protected roots"
+  unknown_tool_target = project.join("src/safe.txt").to_s
+  tool = { "name" => "MysteryWriter", "kind" => "other", "write_intent" => "unknown", "file_path" => unknown_tool_target, "file_paths" => [unknown_tool_target] }
+  result = classify(tool, project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "allow", "write-targets-disjoint")
+end
+
+with_project do |_root, project, cwd, home, install, protected_roots|
+  name = "other-kind tool WITH protected-root file_path is still blocked"
+  protected_target = install.join("active/something").to_s
+  tool = { "name" => "MysteryWriter", "kind" => "other", "write_intent" => "unknown", "file_path" => protected_target, "file_paths" => [protected_target] }
+  result = classify(tool, project: project, cwd: cwd, home: home, install: install, protected_roots: protected_roots)
+  expect_result(name, result, "block", "protected-root")
 end
 
 if $failures.empty?

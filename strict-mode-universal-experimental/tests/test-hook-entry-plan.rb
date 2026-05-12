@@ -22,6 +22,7 @@ def hook_event_for(logical_event)
     "pre-tool-use" => "PreToolUse",
     "post-tool-use" => "PostToolUse",
     "stop" => "Stop",
+    "subagent-stop" => "SubagentStop",
     "permission-request" => "PermissionRequest"
   }.fetch(logical_event)
 end
@@ -29,7 +30,7 @@ end
 def entry_for(provider, logical_event, output_contract_id: "", enforcing: false, matcher: "")
   hook_event = hook_event_for(logical_event)
   matcher = ".*" if matcher.empty? && %w[pre-tool-use post-tool-use permission-request].include?(logical_event)
-  command = "STRICT_HOOK_TIMEOUT_MS=5000 \"/tmp/strict root/active/bin/strict-hook\" --provider #{provider} #{logical_event}"
+  command = "STRICT_HOOK_TIMEOUT_MS=5000 STRICT_STATE_ROOT=\"/tmp/strict state\" \"/tmp/strict root/active/bin/strict-hook\" --provider #{provider} #{logical_event}"
   entry = {
     "provider" => provider,
     "provider_version" => "unknown",
@@ -100,7 +101,7 @@ run_case do
   ]
   selected = [
     selected_output("codex", "pre-tool-use", "codex.pre.block"),
-    selected_output("codex", "stop", "codex.stop.deny", provider_action: "deny"),
+    selected_output("codex", "stop", "codex.stop.block", provider_action: "block"),
     selected_output("codex", "permission-request", "codex.permission.deny", provider_action: "deny")
   ]
   planned = StrictModeHookEntryPlan.apply(entries, selected_output_contracts: selected, enforce: true)
@@ -109,7 +110,7 @@ run_case do
   stop = planned.find { |entry| entry.fetch("logical_event") == "stop" }
   permission = planned.find { |entry| entry.fetch("logical_event") == "permission-request" }
   assert(name, pre.fetch("enforcing") == true && pre.fetch("output_contract_id") == "codex.pre.block", "pre-tool-use binding mismatch", planned.inspect)
-  assert(name, stop.fetch("enforcing") == true && stop.fetch("output_contract_id") == "codex.stop.deny", "stop binding mismatch", planned.inspect)
+  assert(name, stop.fetch("enforcing") == true && stop.fetch("output_contract_id") == "codex.stop.block", "stop binding mismatch", planned.inspect)
   assert(name, permission.fetch("enforcing") == true && permission.fetch("output_contract_id") == "codex.permission.deny", "permission-request binding mismatch", planned.inspect)
   assert(name, post.fetch("enforcing") == false && post.fetch("output_contract_id") == "", "post-tool-use must stay non-blocking", planned.inspect)
   errors = StrictModeHookEntryPlan.validate(planned, selected_output_contracts: selected, enforce: true)
@@ -129,6 +130,26 @@ run_case do
 end
 
 run_case do
+  name = "enforcing plan binds Claude subagent-stop after selected output proof"
+  entries = [
+    entry_for("claude", "pre-tool-use"),
+    entry_for("claude", "stop"),
+    entry_for("claude", "subagent-stop")
+  ]
+  selected = [
+    selected_output("claude", "pre-tool-use", "claude.pre.block"),
+    selected_output("claude", "stop", "claude.stop.block"),
+    selected_output("claude", "subagent-stop", "claude.subagent-stop.block")
+  ]
+  planned = StrictModeHookEntryPlan.apply(entries, selected_output_contracts: selected, enforce: true)
+  subagent = planned.find { |entry| entry.fetch("logical_event") == "subagent-stop" }
+  assert(name, subagent.fetch("hook_event") == "SubagentStop", "wrong provider hook event", subagent.inspect)
+  assert(name, subagent.fetch("enforcing") == true && subagent.fetch("output_contract_id") == "claude.subagent-stop.block", "subagent-stop output contract not bound", planned.inspect)
+  errors = StrictModeHookEntryPlan.validate(planned, selected_output_contracts: selected, enforce: true)
+  assert(name, errors.empty?, "planned entries failed validation", errors.join("\n"))
+end
+
+run_case do
   name = "selected output contracts reject duplicate provider event tuples"
   selected = [
     selected_output("codex", "pre-tool-use", "codex.pre.block"),
@@ -143,7 +164,21 @@ run_case do
   bad = selected_output("codex", "stop", "codex.stop.warn")
   bad["provider_action"] = "warn"
   errors = StrictModeHookEntryPlan.selected_output_contract_errors([bad])
-  assert(name, errors.any? { |error| error.include?("provider_action must be block or deny") }, "missing provider_action diagnostic", errors.join("\n"))
+  assert(name, errors.any? { |error| error.include?("provider_action must be block for stop and subagent-stop or block/deny") }, "missing provider_action diagnostic", errors.join("\n"))
+end
+
+run_case do
+  name = "selected output contracts reject stop deny actions"
+  bad = selected_output("codex", "stop", "codex.stop.deny", provider_action: "deny")
+  errors = StrictModeHookEntryPlan.selected_output_contract_errors([bad])
+  assert(name, errors.any? { |error| error.include?("provider_action must be block for stop and subagent-stop or block/deny") }, "missing stop provider_action diagnostic", errors.join("\n"))
+end
+
+run_case do
+  name = "selected output contracts reject subagent-stop deny actions"
+  bad = selected_output("claude", "subagent-stop", "claude.subagent-stop.deny", provider_action: "deny")
+  errors = StrictModeHookEntryPlan.selected_output_contract_errors([bad])
+  assert(name, errors.any? { |error| error.include?("provider_action must be block for stop and subagent-stop or block/deny") }, "missing subagent-stop provider_action diagnostic", errors.join("\n"))
 end
 
 run_case do
@@ -161,7 +196,7 @@ end
 run_case do
   name = "validation rejects managed hook command not using lexical active strict-hook"
   entry = entry_for("codex", "stop")
-  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 \"/tmp/strict root/releases/tx/bin/strict-hook\" --provider codex stop"
+  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 STRICT_STATE_ROOT=\"/tmp/strict state\" \"/tmp/strict root/releases/tx/bin/strict-hook\" --provider codex stop"
   entry["removal_selector"] = StrictModeHookEntryPlan.removal_selector_for(entry)
   errors = StrictModeHookEntryPlan.validate([entry], selected_output_contracts: [], enforce: false)
   assert(name, errors.any? { |error| error.include?("must end with /active/bin/strict-hook") }, "missing lexical active path diagnostic", errors.join("\n"))
@@ -171,7 +206,7 @@ end
 run_case do
   name = "validation rejects managed hook command provider and event drift"
   entry = entry_for("codex", "pre-tool-use")
-  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 \"/tmp/strict root/active/bin/strict-hook\" --provider claude stop"
+  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 STRICT_STATE_ROOT=\"/tmp/strict state\" \"/tmp/strict root/active/bin/strict-hook\" --provider claude stop"
   entry["removal_selector"] = StrictModeHookEntryPlan.removal_selector_for(entry)
   errors = StrictModeHookEntryPlan.validate([entry], selected_output_contracts: [], enforce: false)
   assert(name, errors.any? { |error| error.include?("command provider argv mismatch") }, "missing provider argv diagnostic", errors.join("\n"))
@@ -186,12 +221,49 @@ run_case do
 end
 
 run_case do
+  name = "validation rejects managed hook command outside state root when state root is known"
+  entry = entry_for("codex", "stop")
+  errors = StrictModeHookEntryPlan.validate([entry], selected_output_contracts: [], enforce: false, state_root: "/other/strict state")
+  assert(name, errors.any? { |error| error.include?("command state root must match state_root") }, "missing state-root command diagnostic", errors.join("\n"))
+end
+
+run_case do
   name = "validation rejects shell wrapper or extra managed hook command argv"
   entry = entry_for("codex", "stop")
-  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 \"/tmp/strict root/active/bin/strict-hook\" --provider codex stop && echo bypass"
+  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 STRICT_STATE_ROOT=\"/tmp/strict state\" \"/tmp/strict root/active/bin/strict-hook\" --provider codex stop && echo bypass"
   entry["removal_selector"] = StrictModeHookEntryPlan.removal_selector_for(entry)
   errors = StrictModeHookEntryPlan.validate([entry], selected_output_contracts: [], enforce: false)
   assert(name, errors.any? { |error| error.include?("command must be STRICT_HOOK_TIMEOUT_MS") }, "missing command shape diagnostic", errors.join("\n"))
+end
+
+run_case do
+  name = "validation rejects unquoted managed hook command paths"
+  entry = entry_for("codex", "stop", output_contract_id: "codex.stop.block", enforcing: true)
+  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 STRICT_STATE_ROOT=/tmp/strict-state STRICT_ENFORCING_HOOK=1 STRICT_OUTPUT_CONTRACT_ID=codex.stop.block /tmp/strict-root/active/bin/strict-hook --provider codex stop"
+  entry["removal_selector"] = StrictModeHookEntryPlan.removal_selector_for(entry)
+  errors = StrictModeHookEntryPlan.validate(
+    [entry],
+    selected_output_contracts: [selected_output("codex", "stop", "codex.stop.block")],
+    enforce: true,
+    install_root: "/tmp/strict-root",
+    state_root: "/tmp/strict-state"
+  )
+  assert(name, errors.any? { |error| error.include?("command must be STRICT_HOOK_TIMEOUT_MS") }, "missing unquoted command shape diagnostic", errors.join("\n"))
+end
+
+run_case do
+  name = "validation rejects unquoted managed hook command paths for claude"
+  entry = entry_for("claude", "stop", output_contract_id: "claude.stop.block", enforcing: true)
+  entry["command"] = "STRICT_HOOK_TIMEOUT_MS=5000 STRICT_STATE_ROOT=/tmp/strict-state STRICT_ENFORCING_HOOK=1 STRICT_OUTPUT_CONTRACT_ID=claude.stop.block /tmp/strict-root/active/bin/strict-hook --provider claude stop"
+  entry["removal_selector"] = StrictModeHookEntryPlan.removal_selector_for(entry)
+  errors = StrictModeHookEntryPlan.validate(
+    [entry],
+    selected_output_contracts: [selected_output("claude", "stop", "claude.stop.block")],
+    enforce: true,
+    install_root: "/tmp/strict-root",
+    state_root: "/tmp/strict-state"
+  )
+  assert(name, errors.any? { |error| error.include?("command must be STRICT_HOOK_TIMEOUT_MS") }, "missing unquoted command shape diagnostic", errors.join("\n"))
 end
 
 run_case do

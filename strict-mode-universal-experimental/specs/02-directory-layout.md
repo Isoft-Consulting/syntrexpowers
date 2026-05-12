@@ -64,10 +64,8 @@ universal-experimental/
     strict-fdr
   lib/
     detect-provider.sh
-    normalize-event.sh
-    emit-decision.sh
-    state.sh
     json.sh
+    require-ruby.sh
   schemas/
     schema-registry.json
     *.schema.json
@@ -87,30 +85,34 @@ universal-experimental/
     normalize-event.rb
     decision_contract_lib.rb
     validate-decision-contract.rb
+    internal_decision_lib.rb
     preflight_record_lib.rb
     validate-preflight-record.rb
     protected_config_lib.rb
     validate-protected-config.rb
     destructive_gate_lib.rb
+    stub_detection_lib.rb
     protected_baseline_lib.rb
+    provider_config_fingerprint_lib.rb
     fixture_manifest_lib.rb
     generate-fixture-manifests.rb
     validate-fixtures.rb
     import-discovery-fixture.rb
+    import-contract-fixture.rb
+    import-raw-captures.rb
+    plan-fixture-capture.rb
+    report-enforcement-readiness.rb
     fixture_readiness_lib.rb
     check-fixture-readiness.rb
     hook_entry_plan_lib.rb
+    install_hook_plan_lib.rb
+    install_runtime.rb
+    rollback_runtime.rb
+    uninstall_runtime.rb
+    global_ledger_lib.rb
+    global_lock_lib.rb
+    transaction_marker_lib.rb
   core/
-    stub-scan.sh
-    pre-write-scan.sh
-    record-edit.sh
-    stop-guard.sh
-    fdr-challenge.sh
-    fdr-validate.sh
-    is-trivial-diff.sh
-    destructive-gate.sh
-    static-prepass.sh
-    prompt-inject.sh
     health-check.sh
   providers/
     claude/
@@ -127,20 +129,28 @@ universal-experimental/
     network-allowlist.txt
     destructive-patterns.txt
     stub-allowlist.txt
+    user-prompt-injection.md
   tests/
     run-tests.sh
     test-provider-detection.rb
     test-normalized-events.rb
     test-decisions.rb
+    test-internal-decision.rb
     test-protected-config.rb
     test-destructive-gate.rb
+    test-stub-detection.rb
     test-protected-baseline.rb
+    test-provider-config-fingerprint.rb
     test-preflight-record.rb
     test-hook-preflight.rb
+    test-fdr-cli.rb
+    test-judge.rb
     test-fixtures.rb
     test-fixture-readiness.rb
     test-hook-entry-plan.rb
+    test-install-hook-plan.rb
     test-installer.rb
+    test-require-ruby.sh
     fixtures/
       claude/
       codex/

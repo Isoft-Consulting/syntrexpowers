@@ -34,14 +34,14 @@ v0 is acceptable when:
 - strict-mode runtime/state/config forgery attempts through provider tools, including project `.strict-mode/` edits, are blocked
 - protected path enforcement rejects symlink/path traversal and hardlink aliases to protected files before write/edit/patch execution
 - write/edit/patch or unknown write-like tools with missing target path evidence block before execution in enforcing mode
-- provider shell execution of strict-mode runtime scripts is blocked except exact verified `strict-fdr import -- <path>`
+- provider shell execution of strict-mode runtime scripts is blocked; the exact verified `strict-fdr import -- <path>` provider exception remains planned and currently fails closed with `trusted-import-unavailable` until the artifact importer exists
 - provider hook matchers cover every required shell/write-like tool or enforcing activation fails
 - Codex enforcing activation is refused unless fixture discovery proves the exact installed hook feature flag, hook config path, event names, matcher syntax, command execution, payload, and decision-output contract
 - provider hook config tampering attempts through provider tools are blocked
 - install manifest and protected install baseline exact schemas, hashes, permissions, path identities, and disk fingerprints are verified before hooks are considered active
 - schema and matrix metadata files are installed as protected runtime files, parse under fixed shared-core metadata bootstrap parsers before metadata-driven parsing is trusted, and are covered by install manifest, protected install baseline, active runtime self-check, and rollback verification
 - install activation uses a recoverable commit with atomic per-file renames, and rollback restores active runtime package files or symlink as well as provider configs, runtime config, protected config, manifests, and baselines
-- activation refuses unrecognized directories at `<install-root>/active`; legacy active runtime directories are moved aside and restored only when previous manifest/baseline fingerprints prove strict-mode ownership
+- activation refuses directories at `<install-root>/active` in the current discovery skeleton; legacy active runtime directory migration remains reserved until backup, ledger, and rollback proof exists
 - rollback uses a hash-bound transaction backup manifest with previous install manifest/baseline hashes, runtime config records, and active runtime fingerprints, then verifies restored files before success
 - default uninstall deactivates provider hooks without deleting runtime/state only after verifying the current protected install baseline, active-runtime-link/target, provider config, and fixture metadata fingerprints, then rewrites and verifies manifest/baseline metadata so trusted install state matches the post-uninstall provider configs and installer-backup ledger coverage
 - interrupted uninstall writes an unsettled transaction marker with empty `staged_runtime_path` plus post-uninstall candidate hashes, makes hooks fail closed, and resumes idempotently or refuses with repair guidance before trusted install state can be considered settled
@@ -68,9 +68,9 @@ v0 is acceptable when:
 - expired pending approval or marker deletion requires matching `expired` audit plus trusted-state ledger records; otherwise the delete is protected-state forgery
 - user-prompt-hook-created confirmations and bypasses do not deadlock on min-age, while pre-existing files still require min-age
 - confirmation and bypass consumption happen under lock before allow and append consumed audit/ledger evidence that hash-binds the marker, active marker path, tombstone path, pre/post rename fingerprints, and ledger relation
-- trusted FDR artifacts are created only by `strict-fdr import -- <path>`, not direct provider writes to state
+- trusted FDR artifacts are not created by provider tools in the current discovery skeleton; when artifact import is enabled, the only provider-initiated path is `strict-fdr import -- <path>`, never direct provider writes to state
 - enforcing v0 does not accept `STRICT_NO_ARTIFACT_GATE=1` as a global missing/stale artifact bypass
-- trusted FDR import freezes dirty-snapshot scope and coverage cutoffs before validation; only verified exact-schema import provenance is excluded from review coverage
+- trusted FDR import, when enabled, freezes dirty-snapshot scope and coverage cutoffs before validation; only verified exact-schema import provenance is excluded from review coverage
 - Stop import-freeze handling is compare-only and cannot silently append covered edit records after trusted import
 - trusted state writes use the session transaction lock for session-scoped records and the global transaction lock for unscoped audit/install records, with fixed global-then-session ordering for mixed writes
 - installer/admin trusted state writes are allowed only outside provider tool execution; provider tools cannot invoke those entrypoints to create trusted state
@@ -79,7 +79,7 @@ v0 is acceptable when:
 - active tool-intent/permission-decision/tool/edit and prompt sequence state are never compacted; prompt event logs, permission-decision logs, trusted ledgers, and FDR cycle logs are protected from rotation unless strict-mode writes a trusted checkpoint
 - approval audit logs, consumed tombstones, session/turn/dirty/protected baselines, and trusted FDR artifacts are exact evidence files, not checkpointable streams; v0 rotation must not checkpoint, truncate, or delete them
 - trusted checkpoint records are exact-schema, hash-bound, ledger-bound to `writer="repair"` plus `operation="checkpoint"` on a checkpointable target class, and cannot cover evidence still referenced by pending approval/import/challenge or unresolved blocked Stop scope
-- trusted FDR import command matching uses exact argv parsing and rejects wrappers, redirections, substitutions, globs, out-of-project sources, protected-root sources, symlink paths, protected-root hardlinks, devices, FIFOs, sockets, directories, and oversize source files
+- trusted FDR import command matching uses exact argv parsing and currently fails closed with `trusted-import-unavailable` for an otherwise valid import command; it rejects wrappers, redirections, substitutions, globs, out-of-project sources, protected-root sources, symlink paths, protected-root hardlinks, devices, FIFOs, sockets, directories, and oversize source files
 - Codex PermissionRequest cannot approve risky operations unless strict-mode's deny/block contract for that event is fixture-verified; approval-capable PermissionRequest without verified deny contract prevents enforcing provider activation
 - PermissionRequest network/filesystem approvals are deny-by-default unless exact protected allowlist and path/mode rules apply, and filesystem read allowlists cannot expose protected files through hardlink aliases
 - judge router selects Haiku for Claude and Spark for Codex

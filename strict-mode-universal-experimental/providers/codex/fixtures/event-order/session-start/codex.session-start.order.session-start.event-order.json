@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "proof_kind": "codex.event-order.observed",
+  "provider": "codex",
+  "provider_version": "0.128.0",
+  "provider_build_hash": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9",
+  "event": "session-start",
+  "contract_id": "codex.session-start.order",
+  "early_baseline_events_before_tool": true,
+  "observed_order": [
+    {
+      "event": "session-start",
+      "recorded_at": "2026-05-07T15:25:18Z",
+      "payload_sha256": "7f47abc95f2d537ff28fd02cb7e2581a1e2101da5e863c4813adc4fcc5567825"
+    },
+    {
+      "event": "user-prompt-submit",
+      "recorded_at": "2026-05-07T15:25:18Z",
+      "payload_sha256": "35db9d84b5a9dc1784b374c477d3c70b506f5e4d85a45628cb05f965ebe666b7"
+    },
+    {
+      "event": "pre-tool-use",
+      "recorded_at": "2026-05-07T15:25:20Z",
+      "payload_sha256": "72d98e256589b24b8d24fac645d93902dcf84cbd3e70bac5bb8b734b281ff093"
+    }
+  ]
+}

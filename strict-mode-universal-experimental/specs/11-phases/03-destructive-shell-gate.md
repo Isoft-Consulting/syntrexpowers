@@ -19,10 +19,10 @@ Deliverables:
 
 Current implementation status:
 
-- The repository currently contains a pure `tools/destructive_gate_lib.rb` classifier with tests for shell parsing, configured destructive patterns, protected roots, write-capable utility target extraction, shell wrapper handling, direct write targets, protected hardlink aliases, runtime executable blocking, and the exact `strict-fdr import -- <path>` exception.
+- The repository currently contains a pure `tools/destructive_gate_lib.rb` classifier with tests for shell parsing, configured destructive patterns, protected roots, write-capable utility target extraction, shell wrapper handling, direct write targets, protected hardlink aliases, runtime executable blocking, and fail-closed `strict-fdr import -- <path>` handling while the artifact importer is unavailable.
 - `tools/protected_baseline_lib.rb` now verifies the installed manifest/baseline hashes, active runtime target, current protected file hashes and `dev+inode` tuples, then exports protected roots, protected inode entries, and parsed destructive patterns for the classifier.
-- `strict-hook pre-tool-use` now runs the normalizer, protected baseline loader, and destructive classifier in discovery/log-only preflight mode after provider proof matches. It writes hash-bound `hook.preflight.v1` discovery records, logs would-block decisions and untrusted-baseline diagnostics, but still exits provider-allow because provider block/deny output is not fixture-proven.
-- The classifier is not wired into enforcing `strict-hook` behavior yet. Provider block/deny output fixtures, approval records, transaction locks, and confirmation consumption must land before Phase 3 can be marked enforcing-ready.
+- `strict-hook pre-tool-use` now runs the normalizer, protected baseline loader, and destructive classifier after provider proof matches. Discovery installs write hash-bound `hook.preflight.v1` records and return provider-allow; enforcing installs with a selected pre-tool output contract emit the fixture-bound provider block output when the protected/destructive preflight blocks.
+- Approval records, transaction locks, confirmation consumption, and permission-request enforcement are still incomplete. Those pieces must land before Phase 3 can be marked fully enforcing-ready across both providers.
 
 Acceptance:
 
@@ -35,8 +35,8 @@ Acceptance:
 - protected path matching resolves symlink/path-traversal targets and protected `dev+inode` hardlink aliases for direct write/edit/patch tools
 - dynamic protected-root changes missed by pre-tool matching are detected by integrity verification and block Stop
 - shell commands with unprovable write targets are blocked when they could affect protected roots
-- provider shell commands cannot execute strict-mode runtime scripts except exact verified `strict-fdr import -- <path>`
-- exact `strict-fdr import -- <path>` is the only allowed provider shell command that may create trusted state-root artifacts
+- provider shell commands cannot execute strict-mode runtime scripts; exact verified `strict-fdr import -- <path>` is a planned exception and currently blocks with `trusted-import-unavailable`
+- exact `strict-fdr import -- <path>` will be the only allowed provider shell command that may create trusted state-root artifacts after the artifact importer exists
 - project opt-out files created during the current turn are ignored
 - project opt-out files first appearing after session baseline require explicit later user approval before becoming active
 - current opt-out capture in `turn-baseline` cannot promote a newly created opt-out into active state; activation is based on immutable session baseline or exact approval evidence only

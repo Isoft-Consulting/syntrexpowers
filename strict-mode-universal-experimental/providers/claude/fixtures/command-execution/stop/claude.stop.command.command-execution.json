@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "proof_kind": "claude.command-execution.observed",
+  "provider": "claude",
+  "provider_version": "unknown",
+  "provider_build_hash": "",
+  "event": "stop",
+  "contract_id": "claude.stop.command",
+  "hook_command_executed": true,
+  "hook_argv": [
+    "strict-hook",
+    "--provider",
+    "claude",
+    "stop"
+  ],
+  "hook_exit_status": 0,
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "discovery_recorded_at": "2026-05-11T10:18:22Z",
+  "provider_detection_decision": "match",
+  "payload_sha256": "19063fbe1d8c693d261a3e9e9f496c9e0758361a78e012ad314a416b2edb56d7",
+  "raw_payload_captured": true,
+  "raw_payload_path": "/Users/andrey/.strict-mode/state/discovery/raw/claude/stop/20260511T101822-29379-19dd18b4-19063fbe1d8c.payload",
+  "hook_mode": "discovery-log-only"
+}

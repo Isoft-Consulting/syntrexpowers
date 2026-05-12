@@ -159,7 +159,7 @@
         "fixture hashes"
       ],
       "rules": [
-        "selected block/deny output proof"
+        "selected event-specific output proof"
       ]
     }
   },
@@ -236,15 +236,17 @@
         "managed hook entry"
       ],
       "requires": [
-        "STRICT_HOOK_TIMEOUT_MS=<ms> \"<install-root>/active/bin/strict-hook\" --provider <provider> <logical_event>",
-        "timeout/provider/event parity"
+        "STRICT_HOOK_TIMEOUT_MS=<ms> STRICT_STATE_ROOT=\"<state-root>\" [STRICT_ENFORCING_HOOK=1 STRICT_OUTPUT_CONTRACT_ID=\"<selected-output-contract-id>\"] \"<install-root>/active/bin/strict-hook\" --provider <provider> <logical_event>",
+        "timeout/state-root/provider/event parity",
+        "enforcing output-contract parity"
       ],
       "forbids": [
         "release realpath",
         "outside install root",
         "shell wrapper",
         "extra argv",
-        "provider drift"
+        "provider drift",
+        "enforcing output-contract drift"
       ]
     }
   },
@@ -339,5 +341,5 @@
   "fixture_requirements": [
     "install manifest parser and nested managed-hook record validator"
   ],
-  "profile_hash": "d1c2e2282a5e5e34ea6a6fb9ec576d0e78bf82299af6cae8de0f87d3c01b8674"
+  "profile_hash": "1d6dccf0ba116bb7845f0d09829ab139a45f02aa5c8429021fdad38b5a8eb875"
 }

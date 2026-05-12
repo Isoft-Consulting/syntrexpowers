@@ -2,4 +2,6 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$SCRIPT_DIR/lib/require-ruby.sh"
+
 exec ruby "$SCRIPT_DIR/tools/install_runtime.rb" "$@"

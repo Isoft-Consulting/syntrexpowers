@@ -64,6 +64,14 @@ def trusted_block
   )
 end
 
+def trusted_unavailable_import_block
+  StrictModePreflightRecord.trusted_from_classifier(
+    "pre-tool-use",
+    { "decision" => "block", "reason_code" => "trusted-import-unavailable", "reason" => "strict-fdr import requires the artifact importer", "metadata" => {} },
+    { "kind" => "shell", "write_intent" => "write", "name" => "exec_command", "command" => "\"/strict/active/bin/strict-fdr\" import -- review.md", "file_paths" => [] }
+  )
+end
+
 run_case("valid not-attempted preflight") do |name|
   assert_valid(name, StrictModePreflightRecord.not_attempted("stop"))
 end
@@ -80,6 +88,10 @@ end
 
 run_case("valid trusted block preflight") do |name|
   assert_valid(name, trusted_block)
+end
+
+run_case("valid trusted unavailable import block preflight") do |name|
+  assert_valid(name, trusted_unavailable_import_block)
 end
 
 run_case("valid untrusted baseline preflight") do |name|

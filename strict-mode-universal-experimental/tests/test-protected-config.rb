@@ -68,10 +68,54 @@ with_root do |_root|
     "destructive-patterns.txt" => "destructive-patterns",
     "stub-allowlist.txt" => "stub-allowlist",
     "filesystem-read-allowlist.txt" => "filesystem-read-allowlist",
-    "network-allowlist.txt" => "network-allowlist"
+    "network-allowlist.txt" => "network-allowlist",
+    "user-prompt-injection.md" => "user-prompt-injection"
   }.each do |file, kind|
     expect_valid(name, ROOT.join("templates/#{file}"), kind)
   end
+end
+
+with_root do |root|
+  name = "user-prompt-injection raw-text parser preserves markdown content"
+  raw_content = <<~TEXT
+    # STRICT MODE RULES
+    1. No stubs.
+    2. After ANY edit, run FDR.
+
+       Indented item with **bold**.
+    Free-text paragraph.
+  TEXT
+  path = write_file(root.join("user-prompt-injection.md"), raw_content)
+  result = StrictModeProtectedConfig.parse_file(path, kind: "user-prompt-injection")
+  $cases += 1
+  record_failure(name, "expected trusted parse, got errors: #{result.fetch("errors").inspect}") unless result.fetch("trusted")
+  records = result.fetch("records")
+  record_failure(name, "expected single record with full text, got #{records.length}") unless records.length == 1
+  if records.length == 1
+    content = records.first.fetch("content")
+    record_failure(name, "content lost `# STRICT MODE RULES` markdown header (was stripped as comment)") unless content.include?("# STRICT MODE RULES")
+    record_failure(name, "content lost leading whitespace") unless content.include?("   Indented item")
+    record_failure(name, "content lost final newline boundary marker") unless content.include?("Free-text paragraph.\n")
+  end
+end
+
+with_root do |root|
+  name = "user-prompt-injection empty file yields no records"
+  path = write_file(root.join("user-prompt-injection.md"), "")
+  result = StrictModeProtectedConfig.parse_file(path, kind: "user-prompt-injection")
+  $cases += 1
+  record_failure(name, "empty file must be trusted (no errors)") unless result.fetch("trusted")
+  record_failure(name, "empty file must yield zero records") unless result.fetch("records").empty?
+end
+
+with_root do |root|
+  name = "user-prompt-injection rejects content exceeding bound"
+  big = "x" * (StrictModeProtectedConfig::DEFAULT_LINE_MAX_BYTES * 256 + 1)
+  path = write_file(root.join("user-prompt-injection.md"), big)
+  result = StrictModeProtectedConfig.parse_file(path, kind: "user-prompt-injection")
+  $cases += 1
+  record_failure(name, "oversized content must fail validation") if result.fetch("trusted")
+  record_failure(name, "error message must mention size bound") unless result.fetch("errors").any? { |e| e.include?("exceeds") }
 end
 
 with_root do |root|

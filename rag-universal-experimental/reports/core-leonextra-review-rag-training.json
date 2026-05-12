@@ -1,0 +1,73 @@
+{
+  "source": "Closed Isoft-Consulting/core PR review/reply threads involving leonextra, fetched via GitHub API on 2026-05-07",
+  "core_head": "7d72c74dd",
+  "raw_cases": 1406,
+  "indexable_cases": 1405,
+  "skipped_cases": [
+    {
+      "id": "pr74-path-1134",
+      "pr": 74,
+      "path": "uier-spa/node_modules/.bin/vitest",
+      "reason": "excluded_dir",
+      "source": "uier-spa/node_modules/vitest/vitest.mjs"
+    }
+  ],
+  "fdr_metrics_indexable": {
+    "cases": 1405,
+    "quality": {
+      "total": 1405,
+      "top1": 1405,
+      "top3": 1405,
+      "top5": 1405,
+      "top10": 1405,
+      "mrr": 1.0
+    },
+    "latency_ms": {
+      "median": 252.8,
+      "mean": 277.3
+    },
+    "misses": []
+  },
+  "fdr_metrics_indexable_v6_rag_only": {
+    "cases": 1405,
+    "quality": {
+      "total": 1405,
+      "top1": 1405,
+      "top3": 1405,
+      "top5": 1405,
+      "top10": 1405,
+      "mrr": 1.0
+    },
+    "wall_time": "6:40.73",
+    "baseline": null,
+    "misses": []
+  },
+  "fdr_metrics_all": {
+    "cases": 1406,
+    "quality": {
+      "total": 1406,
+      "top1": 1405,
+      "top3": 1405,
+      "top5": 1405,
+      "top10": 1405,
+      "mrr": 0.999
+    },
+    "latency_ms": {
+      "median": 253.2,
+      "mean": 274.1
+    },
+    "misses": [
+      {
+        "id": "pr74-path-1134",
+        "pr": 74,
+        "expected": [
+          "uier-spa/node_modules/.bin/vitest"
+        ],
+        "top5": [
+          "bin/migrate_pg.php"
+        ],
+        "query": "PR #74 review/reply evidence. Target file: uier-spa/node_modules/.bin/vitest. Cited files: uier-spa/node_modules/.bin/vitest. Context: FDR update по current head `8cc295165a8500ff34d217555d2d4391a5a64cb4`: часть прошлых findings закрыта, но PR всё ещё **not mergeable**. 1. **HIGH — PG migration for views is invalid: FK column type does not match referenced UUID.** Source: `migrations/pg/20260427_040000_dt3_jobs.php:39`, referenced table `migrations/pg/20260427_010000_dt3_runtime_foundation.php:1"
+      }
+    ]
+  }
+}

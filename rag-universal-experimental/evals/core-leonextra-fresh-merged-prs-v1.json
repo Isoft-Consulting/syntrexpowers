@@ -1,0 +1,117 @@
+[
+  {
+    "id": "pr85-update-node-dead-job-type",
+    "pr": 85,
+    "author": "leonextra",
+    "kind": "review",
+    "query": "rollout endpoint creates update_node queued job but dispatcher returns unknown_job_type Stage A non-dry-run dead job type",
+    "expected_sources": [
+      "app/Http/Controllers/ControlPlaneNodeController.php",
+      "bin/control_plane_job_dispatcher.php"
+    ]
+  },
+  {
+    "id": "pr85-rollout-gate-flag",
+    "pr": 85,
+    "author": "leonextra",
+    "kind": "review",
+    "query": "Stage A rollout should reject non-dry-run submit until Stage B ships update_node dispatcher contract and rollout enable flag",
+    "expected_sources": [
+      "app/Http/Controllers/ControlPlaneNodeController.php",
+      "config/ops.php"
+    ]
+  },
+  {
+    "id": "pr86-verify-health-missing-node-id",
+    "pr": 86,
+    "author": "leonextra",
+    "kind": "review",
+    "query": "verify_health update_node HTTP step lacks node_id invalid_step mark_updated never reached and status ok body must be validated",
+    "expected_sources": [
+      "app/Domain/ControlPlane/NodeUpdater.php",
+      "bin/control_plane_job_dispatcher.php"
+    ]
+  },
+  {
+    "id": "pr86-compose-regeneration-topology-loss",
+    "pr": 86,
+    "author": "leonextra",
+    "kind": "review",
+    "query": "uploadComposeUpdate loses compose_override clickhouse_s3_mode bootstrap profiles and first rollout can overwrite runtime topology",
+    "expected_sources": [
+      "app/Domain/ControlPlane/NodeUpdater.php",
+      "app/Domain/ControlPlane/NodeProvisioner.php",
+      "app/Domain/ControlPlane/DockerComposeGenerator.php"
+    ]
+  },
+  {
+    "id": "pr86-uier-migration-runner-broken",
+    "pr": 86,
+    "author": "leonextra",
+    "kind": "review",
+    "query": "uier-api run_migrations path broken MigrationFileDiscovery scan and App Core Migration interface make uier bin migrate php non-executable",
+    "expected_sources": [
+      "uier/bin/migrate.php",
+      "app/Support/MigrationFileDiscovery.php",
+      "app/Core/Migration.php"
+    ]
+  },
+  {
+    "id": "pr86-dispatcher-private-tmp-lock",
+    "pr": 86,
+    "author": "leonextra",
+    "kind": "review",
+    "query": "single-worker flock on tmp is not shared with systemd PrivateTmp and dispatcher lock file must live in shared writable path",
+    "expected_sources": [
+      "bin/control_plane_job_dispatcher.php",
+      "deploy/systemd/core/control-plane-job-dispatcher.service",
+      "deploy/systemd/core/core-control-plane-dispatcher.service"
+    ]
+  },
+  {
+    "id": "pr88-caller-role-missing",
+    "pr": 88,
+    "author": "leonextra",
+    "kind": "review",
+    "query": "owner_caller_credentials caller_role field missing Foundation caller registry root_central deputy dispatch authorization",
+    "expected_sources": [
+      "app/Domain/ControlPlane/OwnerV2/Repositories/OwnerCallerCredentialRepository.php",
+      "migrations/20260508_120013_owner_node_v2_phase1_a_caller_credentials.php"
+    ]
+  },
+  {
+    "id": "pr88-capability-snapshot-versioning-gap",
+    "pr": 88,
+    "author": "leonextra",
+    "kind": "review",
+    "query": "node capability snapshots re-provision absurdity versioned snapshot push can_act_as_deputy_control_plane delegated_node_management",
+    "expected_sources": [
+      "app/Domain/ControlPlane/OwnerV2/Repositories/OwnerNodeRepository.php",
+      "migrations/20260508_120000_owner_node_v2_phase1_a_owner_nodes.php"
+    ]
+  },
+  {
+    "id": "pr88-audit-two-phase-correlation-gap",
+    "pr": 88,
+    "author": "leonextra",
+    "kind": "review",
+    "query": "owner_audit_log audit_entry_id two-phase audit write operation correlation owner_operations",
+    "expected_sources": [
+      "migrations/20260508_120006_owner_node_v2_phase1_a_audit_log.php",
+      "app/Domain/ControlPlane/OwnerV2/Repositories/OwnerAuditChainRepository.php",
+      "migrations/20260508_120003_owner_node_v2_phase1_a_operations.php"
+    ]
+  },
+  {
+    "id": "pr88-sandbox-lifecycle-check-gap",
+    "pr": 88,
+    "author": "leonextra",
+    "kind": "review",
+    "query": "sandbox lifecycle CHECK constraint migrating migrating_in migrated quarantined deprovisioned owner_sandbox_shadows",
+    "expected_sources": [
+      "migrations/20260508_120002_owner_node_v2_phase1_a_sandbox_shadows.php",
+      "app/Domain/ControlPlane/OwnerV2/Enums/LifecycleState.php",
+      "app/Domain/ControlPlane/OwnerV2/Repositories/OwnerSandboxShadowRepository.php"
+    ]
+  }
+]

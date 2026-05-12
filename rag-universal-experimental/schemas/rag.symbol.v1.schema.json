@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "rag.symbol.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "name", "kind", "source", "line"],
+  "properties": {
+    "schema_version": { "const": "rag.symbol.v1" },
+    "name": { "type": "string" },
+    "kind": { "type": "string" },
+    "source": { "type": "string" },
+    "line": { "type": "integer", "minimum": 1 }
+  }
+}

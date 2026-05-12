@@ -8,7 +8,7 @@ Goal: shared artifact gate independent of provider.
 Deliverables:
 
 - universal `fdr-validate.sh`
-- `strict-fdr import` through the verified active runtime
+- fail-closed `strict-fdr import` command path through the verified active runtime, followed by the enforcing artifact importer
 - provider-scoped artifact names
 - strict-mode-owned artifact import from untrusted project markdown
 - discovery-only `STRICT_NO_ARTIFACT_GATE=1` downgrade before Phase 5 enforcement
@@ -21,7 +21,7 @@ Acceptance:
 - missing or stale artifact blocks Stop in Phase 5/enforcing v0 unless an approved project quality-gate opt-out covers the gate
 - `STRICT_NO_ARTIFACT_GATE=1` is rejected as a protected config error once Phase 5/enforcing v0 is active
 - FDR challenge state represents missing artifacts with `artifact_state=missing` and `artifact_hash` as 64 zeroes
-- trusted import runs dirty-snapshot merge and freezes coverage cutoffs before validating artifact coverage
+- trusted import, when enabled, runs dirty-snapshot merge and freezes coverage cutoffs before validating artifact coverage
 - trusted import ignores source-supplied tuple, freshness, coverage, path-list, and provenance fields and recomputes them from trusted state
 - trusted import provenance command is excluded from review coverage only when exact argv/hash/source/artifact/provider/session/raw-session/cwd/project match
 - trusted import post-tool record exclusion requires exactly one matching trusted post-cutoff tool record bound by `pre_tool_intent_seq/hash`, command hash/source, tuple, and zero edit records
@@ -31,7 +31,7 @@ Acceptance:
 - artifact edited path list must match current-turn edit scope
 - stale artifact whose exact sequence lists or log digests do not cover current-turn tool-intent/tool/edit entries blocks stop
 - provider tools cannot directly create trusted state-root FDR artifacts
-- `strict-fdr import -- <path>` is the only v0 path for creating trusted FDR artifacts from project markdown
-- `strict-fdr import` command fingerprint is verified before it may write trusted artifact state
+- `strict-fdr import -- <path>` is the only planned v0 path for creating trusted FDR artifacts from project markdown; the current command path blocks with `trusted-import-unavailable`
+- `strict-fdr import` command fingerprint is verified before it may write trusted artifact state after the artifact importer exists
 - trusted import command matching uses argv/shell-lexer parsing, not regex-only matching
 - trusted import rejects out-of-project sources, protected-root sources, symlink components, devices, FIFOs, sockets, directories, oversize files, and protected-root hardlinks through `dev+inode` comparison

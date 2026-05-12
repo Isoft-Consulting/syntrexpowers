@@ -373,7 +373,7 @@ Every field profile named in 17.2.2 must have exactly one row here. `field_detai
 | `install.manifest.v1` | `provider_config_records` | `array` | provider; path; fingerprint | provider config manifest |
 | `install.manifest.v1` | `protected_config_records` | `array` | path; fingerprint; inode tuple | protected config manifest |
 | `install.manifest.v1` | `fixture_manifest_records` | `array` | contract id; fixture hash | fixture proof manifest |
-| `install.manifest.v1` | `selected_output_contracts` | `array` | provider; event; contract id; provider action; decision hash; fixture hashes | selected block/deny output proof |
+| `install.manifest.v1` | `selected_output_contracts` | `array` | provider; event; contract id; provider action; decision hash; fixture hashes | selected event-specific output proof |
 | `install.baseline.v1` | `managed_hook_entries` | `array` | provider; hook event; command; env | lexical active strict-hook command binding; active hook baseline |
 | `install.baseline.v1` | `generated_hook_commands` | `array` | provider; hook event; command argv | generated command proof; no outside install-root command |
 | `install.baseline.v1` | `generated_hook_env` | `object-map` | env key; env value | protected env proof |
@@ -382,7 +382,7 @@ Every field profile named in 17.2.2 must have exactly one row here. `field_detai
 | `install.baseline.v1` | `provider_config_records` | `array` | provider; path; fingerprint | provider config baseline |
 | `install.baseline.v1` | `protected_config_records` | `array` | path; fingerprint; inode tuple | protected config baseline |
 | `install.baseline.v1` | `fixture_manifest_records` | `array` | contract id; fixture hash | fixture proof baseline |
-| `install.baseline.v1` | `selected_output_contracts` | `array` | provider; event; contract id; provider action; decision hash; fixture hashes | selected block/deny output baseline |
+| `install.baseline.v1` | `selected_output_contracts` | `array` | provider; event; contract id; provider action; decision hash; fixture hashes | selected event-specific output baseline |
 | `install.baseline.v1` | `protected_file_inode_index` | `object-map` | dev+inode; protected path | protected file swap detection |
 | `install.backup-manifest.v1` | `previous_active_runtime_fingerprint` | `nested-object` | state.ledger-fingerprint.v1 | kind-specific active runtime proof |
 | `install.backup-manifest.v1` | `provider_config_records` | `array` | provider; path; backup fingerprint | provider config rollback source |
@@ -422,7 +422,7 @@ Every enum family named in 17.2.2 must have exactly one row here. `enum_values` 
 | `decision.provider-output.v1` | `stderr_mode` | `empty`, `plain-text`, `json`, `provider-native-json` |
 | `hook.preflight.v1` | `logical_event` | `session-start`, `user-prompt-submit`, `pre-tool-use`, `post-tool-use`, `stop`, `subagent-stop`, `permission-request`, `unknown` |
 | `hook.preflight.v1` | `decision` | `allow`, `block`, `unknown` |
-| `hook.preflight.v1` | `reason_code` | `not-applicable`, `payload-untrusted`, `provider-untrusted`, `payload-truncated`, `protected-baseline-untrusted`, `preflight-error`, `shell-read-only-or-unmatched`, `non-write-tool`, `write-targets-disjoint`, `trusted-fdr-import`, `invalid-identity`, `shell-command-missing`, `shell-parse-error`, `protected-runtime-execution`, `destructive-command`, `protected-root`, `unknown-write-target`, `protected-target-unknown`, `trusted-import-invalid` |
+| `hook.preflight.v1` | `reason_code` | `not-applicable`, `payload-untrusted`, `provider-untrusted`, `payload-truncated`, `protected-baseline-untrusted`, `preflight-error`, `shell-read-only-or-unmatched`, `non-write-tool`, `write-targets-disjoint`, `invalid-identity`, `shell-command-missing`, `shell-parse-error`, `protected-runtime-execution`, `destructive-command`, `protected-root`, `unknown-write-target`, `protected-target-unknown`, `trusted-import-invalid`, `trusted-import-unavailable`, `stub-detected` |
 | `hook.preflight.v1` | `tool_kind` | `shell`, `write`, `edit`, `multi-edit`, `patch`, `read`, `other`, `unknown` |
 | `hook.preflight.v1` | `tool_write_intent` | `none`, `read`, `write`, `unknown` |
 | `fixture.manifest.v1` | `provider` | `claude`, `codex` |
@@ -634,7 +634,7 @@ Every variant requirement named in 17.2.2 must have exactly one row here. `varia
 | `worker.result.v1` | `confidence decimal bounds` | confidence present | decimal 0..1 up to 3 fractional digits | out-of-range confidence |
 | `install.manifest.v1` | `enforcing hook entry output contract required` | hook enforcing=true | fixture_manifest_records decision-output | missing output contract |
 | `install.manifest.v1` | `discovery entry output contract empty allowed` | hook enforcing=false | empty output contract allowed | required deny output |
-| `install.manifest.v1` | `lexical active strict-hook command binding` | managed hook entry | `STRICT_HOOK_TIMEOUT_MS=<ms> "<install-root>/active/bin/strict-hook" --provider <provider> <logical_event>`; timeout/provider/event parity | release realpath; outside install root; shell wrapper; extra argv; provider drift |
+| `install.manifest.v1` | `lexical active strict-hook command binding` | managed hook entry | `STRICT_HOOK_TIMEOUT_MS=<ms> STRICT_STATE_ROOT="<state-root>" [STRICT_ENFORCING_HOOK=1 STRICT_OUTPUT_CONTRACT_ID="<selected-output-contract-id>"] "<install-root>/active/bin/strict-hook" --provider <provider> <logical_event>`; timeout/state-root/provider/event parity; enforcing output-contract parity | release realpath; outside install root; shell wrapper; extra argv; provider drift; enforcing output-contract drift |
 | `install.baseline.v1` | `protected baseline-only fields required` | kind=protected-install-baseline | protected_file_inode_index; generated_hook_commands | missing protected inode index |
 | `install.baseline.v1` | `manifest-only fields forbidden` | baseline record | no removal selector; no manifest-only plan fields | manifest-only fields present |
 | `install.transaction-marker.v1` | `pending marker unsettled phase` | phase!=complete | .pending.json path; staged hashes | .complete.json path |
@@ -743,7 +743,7 @@ The provider-feature matrix also owns exact mappings for the `Required proof bef
 - `config-merge-baseline`: "Structured config merge tests plus protected install baseline"
 - `event-order-before-tools`: "Event-order proof before model tool execution"
 - `payload-matcher-command-decision-output`: "Payload schema, matcher, command execution, and decision-output fixtures"
-- `stop-payload-output`: "Stop payload and block/continue output contract fixtures"
+- `stop-payload-output`: "Stop payload and block/continuation output contract fixtures"
 - `event-payload-decision-output`: "Event name, payload, and decision-output fixtures"
 - `approval-capable-permission`: "Required if fixtures show Codex can approve risky tools outside `pre-tool-use`"
 - `block-deny-baseline`: "Exact provider block/deny contract and protected baseline verification"

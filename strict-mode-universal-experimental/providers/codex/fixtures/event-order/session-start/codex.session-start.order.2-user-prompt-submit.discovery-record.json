@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-05-07T15:25:18Z",
+  "provider": "codex",
+  "event": "user-prompt-submit",
+  "mode": "discovery-log-only",
+  "provider_detection_decision": "match",
+  "payload_sha256": "35db9d84b5a9dc1784b374c477d3c70b506f5e4d85a45628cb05f965ebe666b7",
+  "raw_payload_captured": true,
+  "raw_payload_path": "/tmp/syntrexpowers-codex-discovery-state/discovery/raw/codex/user-prompt-submit/20260507T152518-2971379-418bf4bf-35db9d84b5a9.payload",
+  "provider_proof_hash": "0729add2090f62f22e9b2d1ade15bb61825fa1bd97c5b20c9d745b819483a7b1"
+}

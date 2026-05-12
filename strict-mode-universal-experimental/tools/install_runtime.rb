@@ -7,6 +7,7 @@ require "json"
 require "optparse"
 require "pathname"
 require "securerandom"
+require "shellwords"
 require "time"
 require_relative "fixture_readiness_lib"
 require_relative "global_ledger_lib"
@@ -15,6 +16,7 @@ require_relative "hook_entry_plan_lib"
 require_relative "install_hook_plan_lib"
 require_relative "metadata_lib"
 require_relative "protected_config_lib"
+require_relative "provider_config_fingerprint_lib"
 require_relative "transaction_marker_lib"
 
 ZERO_HASH = "0" * 64
@@ -50,8 +52,8 @@ def double_quote_shell(path)
   StrictModeInstallHookPlan.double_quote_shell(path)
 end
 
-def command_for(install_root, provider, logical_event, timeout_ms)
-  StrictModeInstallHookPlan.command_for(install_root, provider, logical_event, timeout_ms)
+def command_for(install_root, state_root, provider, logical_event, timeout_ms)
+  StrictModeInstallHookPlan.command_for(install_root, state_root, provider, logical_event, timeout_ms)
 end
 
 def json_hash(record, field)
@@ -158,7 +160,7 @@ def file_record(path, kind, provider = "")
     "dev" => stat ? stat.dev : 0,
     "inode" => stat ? stat.ino : 0,
     "size_bytes" => stat ? stat.size : 0,
-    "content_sha256" => exists == 1 ? sha256_file(path) : ZERO_HASH
+    "content_sha256" => StrictModeProviderConfigFingerprint.content_sha256(path, kind, provider)
   }
 end
 
@@ -170,6 +172,7 @@ def protected_file_inode_index(records)
   index = {}
   records.flatten.each do |record|
     next unless record.fetch("exists", 0) == 1
+    next if StrictModeProviderConfigFingerprint.mutable_provider_state_record?(record.fetch("path"), record.fetch("kind"), record.fetch("provider", ""))
 
     dev = record.fetch("dev", 0)
     inode = record.fetch("inode", 0)
@@ -301,6 +304,7 @@ def backup_subjects_for(providers, home, install_root, state_root)
     network-allowlist.txt
     destructive-patterns.txt
     stub-allowlist.txt
+    user-prompt-injection.md
   ].each do |name|
     subjects << [config_root.join(name), "protected-config", ""]
   end
@@ -378,7 +382,8 @@ def ensure_config_files(install_root)
     "filesystem-read-allowlist.txt" => "filesystem-read-allowlist.txt",
     "network-allowlist.txt" => "network-allowlist.txt",
     "destructive-patterns.txt" => "destructive-patterns.txt",
-    "stub-allowlist.txt" => "stub-allowlist.txt"
+    "stub-allowlist.txt" => "stub-allowlist.txt",
+    "user-prompt-injection.md" => "user-prompt-injection.md"
   }.each do |target, template|
     path = config_root.join(target)
     raise "#{path}: protected config must not be a symlink" if path.symlink?
@@ -401,6 +406,7 @@ def protected_config_records(config_root)
     network-allowlist.txt
     destructive-patterns.txt
     stub-allowlist.txt
+    user-prompt-injection.md
   ].map { |name| file_record(config_root.join(name), "protected-config") })
 end
 
@@ -411,7 +417,8 @@ def validate_config_files(config_root, install_root, state_root)
     "filesystem-read-allowlist.txt" => "filesystem-read-allowlist",
     "network-allowlist.txt" => "network-allowlist",
     "destructive-patterns.txt" => "destructive-patterns",
-    "stub-allowlist.txt" => "stub-allowlist"
+    "stub-allowlist.txt" => "stub-allowlist",
+    "user-prompt-injection.md" => "user-prompt-injection"
   }
   protected_roots = [install_root, state_root, config_root].map(&:to_s).uniq
   mapping.each do |file, kind|
@@ -441,7 +448,8 @@ def preflight_existing_config_files(config_root, install_root, state_root)
     "filesystem-read-allowlist.txt" => "filesystem-read-allowlist",
     "network-allowlist.txt" => "network-allowlist",
     "destructive-patterns.txt" => "destructive-patterns",
-    "stub-allowlist.txt" => "stub-allowlist"
+    "stub-allowlist.txt" => "stub-allowlist",
+    "user-prompt-injection.md" => "user-prompt-injection"
   }
   protected_roots = [install_root, state_root, config_root].map(&:to_s).uniq
   mapping.each do |file, kind|
@@ -461,15 +469,20 @@ def preflight_existing_config_files(config_root, install_root, state_root)
   end
 end
 
-def hook_specs(provider, include_permission_request: false)
-  StrictModeInstallHookPlan.hook_specs(provider, include_permission_request: include_permission_request)
+def hook_specs(provider, include_permission_request: false, include_subagent_stop: false)
+  StrictModeInstallHookPlan.hook_specs(
+    provider,
+    include_permission_request: include_permission_request,
+    include_subagent_stop: include_subagent_stop
+  )
 end
 
-def managed_entries(provider, config_path, install_root, selected_output_contracts: [], enforce: false)
+def managed_entries(provider, config_path, install_root, state_root, selected_output_contracts: [], enforce: false)
   StrictModeInstallHookPlan.managed_entries(
     provider,
     config_path,
     install_root,
+    state_root: state_root,
     selected_output_contracts: selected_output_contracts,
     enforce: enforce
   )
@@ -479,9 +492,27 @@ def hook_config_entry(entry)
   StrictModeInstallHookPlan.hook_config_entry(entry)
 end
 
-def remove_managed_hooks(root, commands)
+def managed_command_identity(command)
+  parts = Shellwords.split(command.to_s)
+  hook_index = parts.index { |part| part.end_with?("/active/bin/strict-hook") }
+  return nil unless hook_index
+  return nil unless parts[hook_index + 1] == "--provider"
+
+  provider = parts[hook_index + 2]
+  logical_event = parts[hook_index + 3]
+  return nil if provider.to_s.empty? || logical_event.to_s.empty?
+
+  [parts[hook_index], provider, logical_event]
+rescue ArgumentError
+  nil
+end
+
+def remove_managed_hooks(root, entries)
   hooks = root["hooks"]
   return unless hooks.is_a?(Hash)
+
+  commands = entries.map { |entry| entry.fetch("command") }
+  managed_identities = entries.map { |entry| managed_command_identity(entry.fetch("command")) }.compact
 
   hooks.each_value do |entries|
     next unless entries.is_a?(Array)
@@ -490,7 +521,12 @@ def remove_managed_hooks(root, commands)
       hook_list = entry.is_a?(Hash) ? entry["hooks"] : nil
       next false unless hook_list.is_a?(Array)
 
-      hook_list.reject! { |hook| hook.is_a?(Hash) && commands.include?(hook["command"]) }
+      hook_list.reject! do |hook|
+        next false unless hook.is_a?(Hash)
+
+        command = hook["command"]
+        commands.include?(command) || managed_identities.include?(managed_command_identity(command))
+      end
       hook_list.empty?
     end
   end
@@ -499,7 +535,7 @@ end
 def install_json_hooks(path, entries)
   root = load_json(path)
   root["hooks"] = {} unless root["hooks"].is_a?(Hash)
-  remove_managed_hooks(root, entries.map { |entry| entry.fetch("command") })
+  remove_managed_hooks(root, entries)
   entries.each do |entry|
     event = entry.fetch("hook_event")
     root["hooks"][event] = [] unless root["hooks"][event].is_a?(Array)
@@ -640,13 +676,26 @@ def provider_config_plan_paths(providers, home)
   end.map(&:to_s).sort
 end
 
-def build_install_plan(home, install_root, state_root, providers, enforce:)
-  selected_output_contracts = enforce ? StrictModeFixtureReadiness.selected_output_contracts(StrictModeMetadata.project_root, providers) : []
+def provider_version_plan(providers, provider_versions)
+  providers.each_with_object({}) do |provider, result|
+    result[provider] = provider_versions.fetch(provider, "unknown")
+  end
+end
+
+def provider_build_hash_plan(providers, provider_build_hashes)
+  providers.each_with_object({}) do |provider, result|
+    result[provider] = provider_build_hashes.fetch(provider, "")
+  end
+end
+
+def build_install_plan(home, install_root, state_root, providers, enforce:, provider_versions: {}, provider_build_hashes: {})
+  selected_output_contracts = enforce ? StrictModeFixtureReadiness.selected_output_contracts(StrictModeMetadata.project_root, providers, provider_versions, provider_build_hashes) : []
   provider_entries = providers.flat_map do |provider|
     managed_entries(
       provider,
       provider_hook_config_path(provider, home),
       install_root,
+      state_root,
       selected_output_contracts: selected_output_contracts,
       enforce: enforce
     )
@@ -658,13 +707,20 @@ def build_install_plan(home, install_root, state_root, providers, enforce:)
     "plan_only" => true,
     "enforce" => enforce,
     "providers" => providers,
+    "provider_versions" => provider_version_plan(providers, provider_versions),
+    "provider_build_hashes" => provider_build_hash_plan(providers, provider_build_hashes),
     "install_root" => install_root.to_s,
     "state_root" => state_root.to_s,
     "active_runtime_link" => install_root.join("active").to_s,
     "provider_config_paths" => provider_config_plan_paths(providers, home),
     "managed_hook_entries" => provider_entries,
     "generated_hook_commands" => provider_entries.map { |entry| entry.slice("provider", "hook_event", "logical_event", "command") },
-    "generated_hook_env" => { "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix" },
+    "generated_hook_env" => {
+      "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix",
+      "STRICT_ENFORCING_HOOK" => "per-enforcing hook command prefix",
+      "STRICT_OUTPUT_CONTRACT_ID" => "per-enforcing hook command prefix",
+      "STRICT_STATE_ROOT" => "per-install command prefix"
+    },
     "fixture_manifest_records" => StrictModeFixtureReadiness.fixture_manifest_records(StrictModeMetadata.project_root, providers),
     "selected_output_contracts" => selected_output_contracts
   }
@@ -675,17 +731,31 @@ options = {
   install_root: ENV["STRICT_INSTALL_ROOT"],
   state_root: ENV["STRICT_STATE_ROOT"],
   enforce: false,
-  plan_only: false
+  plan_only: false,
+  provider_versions: {},
+  provider_build_hashes: {}
 }
 
-OptionParser.new do |opts|
-  opts.on("--provider PROVIDER") { |value| options[:provider] = value }
-  opts.on("--install-root PATH") { |value| options[:install_root] = value }
-  opts.on("--state-root PATH") { |value| options[:state_root] = value }
-  opts.on("--enforce") { options[:enforce] = true }
-  opts.on("--plan-only") { options[:plan_only] = true }
-  opts.on("--dry-run") { options[:plan_only] = true }
-end.parse!(ARGV)
+begin
+  OptionParser.new do |opts|
+    opts.on("--provider PROVIDER") { |value| options[:provider] = value }
+    opts.on("--install-root PATH") { |value| options[:install_root] = value }
+    opts.on("--state-root PATH") { |value| options[:state_root] = value }
+    opts.on("--enforce") { options[:enforce] = true }
+    opts.on("--plan-only") { options[:plan_only] = true }
+    opts.on("--dry-run") { options[:plan_only] = true }
+    opts.on("--provider-version PROVIDER=VERSION") do |value|
+      provider, version = StrictModeFixtureReadiness.parse_provider_version_assignment(value)
+      options[:provider_versions][provider] = version
+    end
+    opts.on("--provider-build-hash PROVIDER=SHA256") do |value|
+      provider, build_hash = StrictModeFixtureReadiness.parse_provider_build_hash_assignment(value)
+      options[:provider_build_hashes][provider] = build_hash
+    end
+  end.parse!(ARGV)
+rescue OptionParser::ParseError, ArgumentError => e
+  usage_error(e.message)
+end
 usage_error("unexpected arguments: #{ARGV.join(" ")}") unless ARGV.empty?
 
 home = expand_path(ENV.fetch("HOME"))
@@ -694,19 +764,26 @@ state_root = expand_path(options[:state_root] || install_root.join("state"))
 fail_install("install root must not contain NUL, newline, or carriage return") if install_root.to_s.match?(/[\0\n\r]/)
 fail_install("state root must not contain NUL, newline, or carriage return") if state_root.to_s.match?(/[\0\n\r]/)
 providers = provider_list(options[:provider])
+begin
+  StrictModeFixtureReadiness.validate_provider_versions!(options[:provider_versions], providers)
+  StrictModeFixtureReadiness.validate_provider_build_hashes!(options[:provider_build_hashes], providers)
+rescue ArgumentError => e
+  usage_error(e.message)
+end
+selected_output_contracts = []
 if options[:enforce]
-  readiness_errors = StrictModeFixtureReadiness.enforcing_errors(StrictModeMetadata.project_root, providers)
+  readiness_errors = StrictModeFixtureReadiness.enforcing_errors(StrictModeMetadata.project_root, providers, options[:provider_versions], options[:provider_build_hashes])
   unless readiness_errors.empty?
     fail_install("enforcing activation fixture readiness failed:\n#{readiness_errors.map { |error| "- #{error}" }.join("\n")}")
   end
+  selected_output_contracts = StrictModeFixtureReadiness.selected_output_contracts(StrictModeMetadata.project_root, providers, options[:provider_versions], options[:provider_build_hashes])
   if options[:plan_only]
-    puts JSON.pretty_generate(build_install_plan(home, install_root, state_root, providers, enforce: true))
+    puts JSON.pretty_generate(build_install_plan(home, install_root, state_root, providers, enforce: true, provider_versions: options[:provider_versions], provider_build_hashes: options[:provider_build_hashes]))
     exit 0
   end
-  fail_install("enforcing activation requires implemented shared-core enforcement and is not available in the discovery skeleton")
 end
 if options[:plan_only]
-  puts JSON.pretty_generate(build_install_plan(home, install_root, state_root, providers, enforce: false))
+  puts JSON.pretty_generate(build_install_plan(home, install_root, state_root, providers, enforce: false, provider_versions: options[:provider_versions], provider_build_hashes: options[:provider_build_hashes]))
   exit 0
 end
 transaction_id = "#{Time.now.utc.strftime("%Y%m%d%H%M%S")}-#{$$}-#{SecureRandom.hex(4)}"
@@ -808,7 +885,7 @@ begin
     case provider
     when "claude"
       path = home.join(".claude/settings.json")
-      entries = managed_entries(provider, path, install_root)
+      entries = managed_entries(provider, path, install_root, state_root, selected_output_contracts: selected_output_contracts, enforce: options[:enforce])
       install_json_hooks(path, entries)
       provider_entries.concat(entries)
       provider_config_paths[provider] = path
@@ -817,7 +894,7 @@ begin
       hooks_path = home.join(".codex/hooks.json")
       config_path = home.join(".codex/config.toml")
       ensure_codex_hooks_feature(config_path)
-      entries = managed_entries(provider, hooks_path, install_root)
+      entries = managed_entries(provider, hooks_path, install_root, state_root, selected_output_contracts: selected_output_contracts, enforce: options[:enforce])
       install_json_hooks(hooks_path, entries)
       provider_entries.concat(entries)
       provider_config_paths[provider] = hooks_path
@@ -852,7 +929,6 @@ begin
   runtime_config = runtime_config_records(config_root)
   protected_config = protected_config_records(config_root)
   fixture_manifest_records = StrictModeFixtureReadiness.fixture_manifest_records(StrictModeMetadata.project_root, providers)
-  selected_output_contracts = []
 
   manifest = {
     "schema_version" => 1,
@@ -890,7 +966,12 @@ begin
     "provider_config_paths" => provider_config_records.map { |record| record.fetch("path") }.sort,
     "managed_hook_entries" => provider_entries,
     "generated_hook_commands" => provider_entries.map { |entry| entry.slice("provider", "hook_event", "logical_event", "command") },
-    "generated_hook_env" => { "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix" },
+    "generated_hook_env" => {
+      "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix",
+      "STRICT_ENFORCING_HOOK" => "per-enforcing hook command prefix",
+      "STRICT_OUTPUT_CONTRACT_ID" => "per-enforcing hook command prefix",
+      "STRICT_STATE_ROOT" => "per-install command prefix"
+    },
     "package_version" => PACKAGE_VERSION,
     "install_manifest_hash" => manifest.fetch("manifest_hash"),
     "runtime_file_records" => runtime_records,
@@ -934,7 +1015,8 @@ begin
 
   StrictModeTransactionMarker.delete_pending_marker_after_complete!(state_root, "install", pending_path, complete_marker)
 
-  puts "installed strict-mode discovery skeleton at #{install_root}"
+  mode = options[:enforce] ? "enforcing" : "discovery"
+  puts "installed strict-mode #{mode} runtime at #{install_root}"
 rescue SystemCallError, RuntimeError, JSON::ParserError => e
   failure_message = e.message
   begin

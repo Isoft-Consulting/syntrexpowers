@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-05-11T10:18:19Z",
+  "provider": "claude",
+  "event": "pre-tool-use",
+  "mode": "discovery-log-only",
+  "provider_detection_decision": "match",
+  "provider_proof_hash": "3ab4aa6bfb402cfb128740e90009014f20a2fd2cf604de85a1672cc04ed79f97",
+  "payload_sha256": "bd94c314f7e91f3d822d22c4216668246691846e56db738b547057160828e2e9",
+  "raw_payload_captured": true,
+  "raw_payload_path": "/Users/andrey/.strict-mode/state/discovery/raw/claude/pre-tool-use/20260511T101819-29328-da5eff30-bd94c314f7e9.payload"
+}

@@ -8,6 +8,7 @@ require_relative "fixture_readiness_lib"
 require_relative "hook_entry_plan_lib"
 require_relative "metadata_lib"
 require_relative "protected_config_lib"
+require_relative "provider_config_fingerprint_lib"
 
 module StrictModeProtectedBaseline
   extend self
@@ -19,9 +20,15 @@ module StrictModeProtectedBaseline
     "filesystem-read-allowlist.txt" => "filesystem-read-allowlist",
     "network-allowlist.txt" => "network-allowlist",
     "destructive-patterns.txt" => "destructive-patterns",
-    "stub-allowlist.txt" => "stub-allowlist"
+    "stub-allowlist.txt" => "stub-allowlist",
+    "user-prompt-injection.md" => "user-prompt-injection"
   }.freeze
-  EXPECTED_GENERATED_HOOK_ENV = { "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix" }.freeze
+  EXPECTED_GENERATED_HOOK_ENV = {
+    "STRICT_HOOK_TIMEOUT_MS" => "per-hook command prefix",
+    "STRICT_ENFORCING_HOOK" => "per-enforcing hook command prefix",
+    "STRICT_OUTPUT_CONTRACT_ID" => "per-enforcing hook command prefix",
+    "STRICT_STATE_ROOT" => "per-install command prefix"
+  }.freeze
   FILE_RECORD_KINDS = %w[
     runtime-file
     runtime-config
@@ -124,7 +131,16 @@ module StrictModeProtectedBaseline
     baseline_path = state_path.join("protected-install-baseline.json")
     manifest = load_json(manifest_path, errors)
     baseline = load_json(baseline_path, errors)
-    return result(false, errors, config_errors) unless manifest && baseline
+    unless manifest && baseline
+      return result(false, errors, config_errors).merge(
+        "install_root" => install_path.to_s,
+        "state_root" => state_path.to_s,
+        "project_dir" => project_path ? project_path.to_s : "",
+        "home" => home_path.to_s,
+        "manifest" => manifest || {},
+        "baseline" => baseline || {}
+      )
+    end
 
     verify_hash(manifest, "manifest_hash", manifest_path, errors)
     verify_hash(baseline, "baseline_hash", baseline_path, errors)
@@ -159,6 +175,7 @@ module StrictModeProtectedBaseline
     config_results = parse_config_files(config_root, builtin_roots, protected_inodes, errors, config_errors)
     configured_roots = protected_path_roots(config_results.fetch("protected-paths.txt", nil))
     destructive_patterns = config_results.fetch("destructive-patterns.txt", { "records" => [] }).fetch("records")
+    stub_allowlist_records = config_results.fetch("stub-allowlist.txt", { "records" => [] }).fetch("records")
 
     roots = canonical_paths(builtin_roots + configured_roots)
     result(errors.empty?, errors, config_errors).merge(
@@ -172,6 +189,7 @@ module StrictModeProtectedBaseline
       "protected_roots" => roots,
       "protected_inodes" => protected_inodes,
       "destructive_patterns" => destructive_patterns,
+      "stub_allowlist" => stub_allowlist_records,
       "config_results" => config_results
     )
   end
@@ -193,6 +211,7 @@ module StrictModeProtectedBaseline
       "protected_roots" => [],
       "protected_inodes" => [],
       "destructive_patterns" => [],
+      "stub_allowlist" => [],
       "config_results" => {}
     }
   end
@@ -385,7 +404,8 @@ module StrictModeProtectedBaseline
       manifest_entries,
       selected_output_contracts: manifest_outputs,
       enforce: enforcing_hook_plan?(manifest_entries, manifest_outputs),
-      install_root: manifest["install_root"]
+      install_root: manifest["install_root"],
+      state_root: manifest["state_root"]
     )
     errors.concat(plan_errors.map { |message| "managed hook entry plan invalid: #{message}" })
   end
@@ -548,9 +568,14 @@ module StrictModeProtectedBaseline
 
       stat = path.stat
       expected_hash = record.fetch("content_sha256", "")
-      current_hash = Digest::SHA256.file(path).hexdigest
+      mutable_provider_state = StrictModeProviderConfigFingerprint.mutable_provider_state_record?(record.fetch("path", ""), record.fetch("kind", ""), record.fetch("provider", ""))
+      current_hash = StrictModeProviderConfigFingerprint.content_sha256(path, record.fetch("kind", ""), record.fetch("provider", ""))
       errors << "#{path}: content_sha256 mismatch" unless expected_hash == current_hash
-      if record.key?("dev") && record.key?("inode") && record["dev"].to_i.positive? && record["inode"].to_i.positive?
+      if mutable_provider_state
+        # Codex owns [hooks.state] in config.toml and may rewrite the file after
+        # hook trust prompts. Keep the stable TOML content protected, but do not
+        # bind this provider-managed state file to inode or byte-size drift.
+      elsif record.key?("dev") && record.key?("inode") && record["dev"].to_i.positive? && record["inode"].to_i.positive?
         errors << "#{path}: dev/inode mismatch" unless record["dev"] == stat.dev && record["inode"] == stat.ino
       else
         errors << "#{path}: protected file record missing dev/inode"
@@ -570,13 +595,15 @@ module StrictModeProtectedBaseline
       else
         errors << "#{path}: protected file record missing mode"
       end
-      if record.key?("size_bytes") && record["size_bytes"].is_a?(Integer)
+      if mutable_provider_state
+        errors << "#{path}: size_bytes must be an integer" unless record.key?("size_bytes") && record["size_bytes"].is_a?(Integer)
+      elsif record.key?("size_bytes") && record["size_bytes"].is_a?(Integer)
         errors << "#{path}: size_bytes mismatch" unless record["size_bytes"] == stat.size
       else
         errors << "#{path}: protected file record missing size_bytes"
       end
 
-      inodes << {
+      inode_record = {
         "dev" => stat.dev,
         "inode" => stat.ino,
         "path" => path.to_s,
@@ -584,6 +611,8 @@ module StrictModeProtectedBaseline
         "provider" => record.fetch("provider", ""),
         "content_sha256" => current_hash
       }
+      inode_record["mutable_provider_state"] = true if mutable_provider_state
+      inodes << inode_record
     rescue KeyError => e
       errors << "#{path || '<unknown>'}: file record missing #{e.key}"
     rescue SystemCallError => e
@@ -623,7 +652,7 @@ module StrictModeProtectedBaseline
     end
     errors << "protected_file_inode_index must not be empty" if index.empty?
     indexed_keys = index.keys.sort
-    expected_keys = protected_inodes.map { |inode| "#{inode.fetch("dev")}:#{inode.fetch("inode")}" }.uniq.sort
+    expected_keys = expected_inode_index(protected_inodes).keys.sort
     missing = expected_keys - indexed_keys
     extra = indexed_keys - expected_keys
     errors << "protected_file_inode_index missing keys #{missing.join(", ")}" unless missing.empty?
@@ -644,6 +673,8 @@ module StrictModeProtectedBaseline
   def expected_inode_index(protected_inodes)
     grouped = {}
     protected_inodes.each do |inode|
+      next if StrictModeProviderConfigFingerprint.mutable_provider_state_record?(inode.fetch("path"), inode.fetch("kind"), inode.fetch("provider", ""))
+
       key = "#{inode.fetch("dev")}:#{inode.fetch("inode")}"
       grouped[key] ||= []
       grouped[key] << {

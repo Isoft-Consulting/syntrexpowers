@@ -57,25 +57,46 @@ def write_json(path, record)
   path
 end
 
-def provider_output_metadata(provider: "claude", event: "stop", contract_id: "claude.stop.block")
+def provider_output_metadata(
+  provider: "claude",
+  event: "stop",
+  contract_id: "claude.stop.block",
+  provider_action: "block",
+  stdout_mode: "json",
+  stdout_required_fields: %w[decision reason],
+  stderr_mode: "empty",
+  stderr_required_fields: [],
+  exit_code: 0
+)
   record = {
     "schema_version" => 1,
     "contract_id" => contract_id,
     "provider" => provider,
     "event" => event,
     "logical_event" => event,
-    "provider_action" => "block",
-    "stdout_mode" => "json",
-    "stdout_required_fields" => %w[decision reason],
-    "stderr_mode" => "empty",
-    "stderr_required_fields" => [],
-    "exit_code" => 0,
-    "blocks_or_denies" => 1,
-    "injects_context" => 0,
+    "provider_action" => provider_action,
+    "stdout_mode" => stdout_mode,
+    "stdout_required_fields" => stdout_required_fields,
+    "stderr_mode" => stderr_mode,
+    "stderr_required_fields" => stderr_required_fields,
+    "exit_code" => exit_code,
+    "blocks_or_denies" => %w[block deny].include?(provider_action) ? 1 : 0,
+    "injects_context" => provider_action == "inject" ? 1 : 0,
     "decision_contract_hash" => ""
   }
   record["decision_contract_hash"] = StrictModeDecisionContract.provider_output_hash(record)
   record
+end
+
+def internal_decision(action: "block", reason: "blocked", severity: "error", additional_context: "")
+  {
+    "schema_version" => 1,
+    "action" => action,
+    "reason" => reason,
+    "severity" => severity,
+    "additional_context" => additional_context,
+    "metadata" => {}
+  }
 end
 
 def fixture_hash_entry(root, path)
@@ -163,6 +184,57 @@ with_root do |root|
   status, output = run_cmd(VALIDATOR, "--provider-output", metadata_path, "--stdout", stdout_path, "--stderr", stderr_path, "--exit-code", "0")
   assert_no_stacktrace(name, output)
   record_failure(name, "expected provider output validation success", output) unless status.zero?
+end
+
+with_root do |_root|
+  name = "provider output emission renders fixture-bound JSON block"
+  metadata = provider_output_metadata
+  decision = internal_decision(reason: "delete blocked")
+  emitted = StrictModeDecisionContract.emit_provider_output(metadata, decision)
+  parsed = JSON.parse(emitted.fetch("stdout"))
+  record_failure(name, "stdout decision mismatch", emitted.inspect) unless parsed.fetch("decision") == "block"
+  record_failure(name, "stdout reason mismatch", emitted.inspect) unless parsed.fetch("reason") == "delete blocked"
+  record_failure(name, "stderr should be empty", emitted.inspect) unless emitted.fetch("stderr") == ""
+  record_failure(name, "exit code mismatch", emitted.inspect) unless emitted.fetch("exit_code") == 0
+end
+
+with_root do |_root|
+  name = "provider output emission renders plain-text injection"
+  metadata = provider_output_metadata(
+    contract_id: "claude.user-prompt.inject",
+    event: "user-prompt-submit",
+    provider_action: "inject",
+    stdout_mode: "plain-text",
+    stdout_required_fields: []
+  )
+  decision = internal_decision(action: "inject", reason: "", severity: "info", additional_context: "strict reminder")
+  emitted = StrictModeDecisionContract.emit_provider_output(metadata, decision)
+  record_failure(name, "plain text context mismatch", emitted.inspect) unless emitted.fetch("stdout") == "strict reminder"
+  record_failure(name, "stderr should be empty", emitted.inspect) unless emitted.fetch("stderr") == ""
+end
+
+with_root do |_root|
+  name = "provider output emission rejects incompatible action"
+  metadata = provider_output_metadata
+  decision = internal_decision(action: "allow", reason: "", severity: "info")
+  begin
+    StrictModeDecisionContract.emit_provider_output(metadata, decision)
+    record_failure(name, "expected incompatible action rejection")
+  rescue RuntimeError => e
+    record_failure(name, "wrong rejection", e.message) unless e.message.include?("not compatible")
+  end
+end
+
+with_root do |_root|
+  name = "provider output emission rejects unsupported JSON fields"
+  metadata = provider_output_metadata(stdout_required_fields: %w[provider_decision])
+  decision = internal_decision(reason: "blocked")
+  begin
+    StrictModeDecisionContract.emit_provider_output(metadata, decision)
+    record_failure(name, "expected unsupported field rejection")
+  rescue RuntimeError => e
+    record_failure(name, "wrong rejection", e.message) unless e.message.include?("unsupported provider output field")
+  end
 end
 
 with_root do |root|

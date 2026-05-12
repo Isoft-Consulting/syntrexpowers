@@ -56,7 +56,7 @@ module StrictModeHookEntryPlan
     fixture_manifest_hash
   ].freeze
 
-  BLOCKING_EVENTS = %w[pre-tool-use stop permission-request].freeze
+  BLOCKING_EVENTS = %w[pre-tool-use stop subagent-stop permission-request].freeze
   PROVIDERS = %w[claude codex].freeze
   PROVIDER_ACTIONS = %w[block deny].freeze
   PROVIDER_TIMEOUT_FIELDS = ["", "timeout"].freeze
@@ -66,15 +66,16 @@ module StrictModeHookEntryPlan
     "pre-tool-use" => "PreToolUse",
     "post-tool-use" => "PostToolUse",
     "stop" => "Stop",
+    "subagent-stop" => "SubagentStop",
     "permission-request" => "PermissionRequest"
   }.freeze
   SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze
 
-  def apply(entries, selected_output_contracts:, enforce:, install_root: nil)
+  def apply(entries, selected_output_contracts:, enforce:, install_root: nil, state_root: nil)
     planned = deep_copy(entries)
     selected = deep_copy(selected_output_contracts || [])
     normalize_removal_selectors(planned)
-    preflight_errors = validate_entry_shapes(planned, install_root)
+    preflight_errors = validate_entry_shapes(planned, install_root, state_root, require_enforcing_command_env: false)
     raise preflight_errors.join("; ") unless preflight_errors.empty?
 
     if enforce
@@ -92,6 +93,7 @@ module StrictModeHookEntryPlan
           entry["enforcing"] = false
           entry["output_contract_id"] = ""
         end
+        sync_command_enforcement_assignments!(entry)
         entry["removal_selector"] = removal_selector_for(entry)
       end
     else
@@ -99,18 +101,19 @@ module StrictModeHookEntryPlan
         ensure_entry_object!(entry, index)
         entry["enforcing"] = false
         entry["output_contract_id"] = ""
+        sync_command_enforcement_assignments!(entry)
         entry["removal_selector"] = removal_selector_for(entry)
       end
     end
 
     planned = sort_entries(planned)
-    errors = validate(planned, selected_output_contracts: selected, enforce: enforce, install_root: install_root)
+    errors = validate(planned, selected_output_contracts: selected, enforce: enforce, install_root: install_root, state_root: state_root)
     raise errors.join("; ") unless errors.empty?
 
     planned
   end
 
-  def validate(entries, selected_output_contracts:, enforce:, install_root: nil)
+  def validate(entries, selected_output_contracts:, enforce:, install_root: nil, state_root: nil)
     return ["managed hook entries must be an array"] unless entries.is_a?(Array)
 
     errors = []
@@ -130,7 +133,7 @@ module StrictModeHookEntryPlan
         next
       end
 
-      errors.concat(entry_shape_errors(entry, index, install_root))
+      errors.concat(entry_shape_errors(entry, index, install_root, state_root, require_enforcing_command_env: true))
       next unless exact_entry_shape?(entry)
 
       sortable_entries << entry
@@ -224,7 +227,9 @@ module StrictModeHookEntryPlan
       errors << "selected output contract #{index}: event must match logical_event" unless event == logical_event
       errors << "selected output contract #{index}: logical_event must be blocking" unless BLOCKING_EVENTS.include?(logical_event)
       errors << "selected output contract #{index}: contract_kind must be decision-output" unless record.fetch("contract_kind") == "decision-output"
-      errors << "selected output contract #{index}: provider_action must be block or deny" unless PROVIDER_ACTIONS.include?(record.fetch("provider_action"))
+      unless provider_action_valid_for_event?(record.fetch("logical_event"), record.fetch("provider_action"))
+        errors << "selected output contract #{index}: provider_action must be block for stop and subagent-stop or block/deny for pre-tool-use and permission-request"
+      end
       errors << "selected output contract #{index}: contract_id must be non-empty" unless contract_id.is_a?(String) && !contract_id.empty?
       %w[decision_contract_hash fixture_record_hash fixture_manifest_hash].each do |field|
         errors << "selected output contract #{index}: #{field} must be lowercase SHA-256" unless record.fetch(field).is_a?(String) && record.fetch(field).match?(SHA256_PATTERN)
@@ -280,6 +285,44 @@ module StrictModeHookEntryPlan
 
   private
 
+  def double_quote_shell(value)
+    %("#{value.to_s.gsub(/["\\$`]/) { |char| "\\#{char}" }}")
+  end
+
+  def parsed_command_parts(entry)
+    parts = Shellwords.split(entry.fetch("command").to_s)
+    return nil unless [6, 8].include?(parts.size)
+
+    state_root_match = parts.fetch(1).match(/\ASTRICT_STATE_ROOT=(.+)\z/)
+    return nil unless state_root_match
+
+    cursor = 2
+    cursor = 4 if parts.size == 8
+    {
+      "state_root" => state_root_match[1],
+      "hook_path" => parts.fetch(cursor),
+      "provider" => parts.fetch(cursor + 2),
+      "logical_event" => parts.fetch(cursor + 3)
+    }
+  rescue ArgumentError, IndexError, KeyError
+    nil
+  end
+
+  def sync_command_enforcement_assignments!(entry)
+    parsed = parsed_command_parts(entry)
+    return unless parsed
+
+    assignments = [
+      "STRICT_HOOK_TIMEOUT_MS=#{entry.fetch("self_timeout_ms")}",
+      "STRICT_STATE_ROOT=#{double_quote_shell(parsed.fetch("state_root"))}"
+    ]
+    if entry.fetch("enforcing") && !entry.fetch("output_contract_id").empty?
+      assignments << "STRICT_ENFORCING_HOOK=1"
+      assignments << "STRICT_OUTPUT_CONTRACT_ID=#{double_quote_shell(entry.fetch("output_contract_id"))}"
+    end
+    entry["command"] = "#{assignments.join(" ")} #{double_quote_shell(parsed.fetch("hook_path"))} --provider #{entry.fetch("provider")} #{entry.fetch("logical_event")}"
+  end
+
   def deep_copy(value)
     JSON.parse(JSON.generate(value))
   end
@@ -288,12 +331,12 @@ module StrictModeHookEntryPlan
     raise "hook entry #{index}: must be an object" unless entry.is_a?(Hash)
   end
 
-  def validate_entry_shapes(entries, install_root)
+  def validate_entry_shapes(entries, install_root, state_root, require_enforcing_command_env:)
     return ["managed hook entries must be an array"] unless entries.is_a?(Array)
 
     entries.each_with_index.each_with_object([]) do |(entry, index), errors|
       if entry.is_a?(Hash)
-        errors.concat(entry_shape_errors(entry, index, install_root))
+        errors.concat(entry_shape_errors(entry, index, install_root, state_root, require_enforcing_command_env: require_enforcing_command_env))
       else
         errors << "hook entry #{index}: must be an object"
       end
@@ -323,7 +366,7 @@ module StrictModeHookEntryPlan
       (entry["removal_selector"].keys - REMOVAL_SELECTOR_FIELDS).empty?
   end
 
-  def entry_shape_errors(entry, index, install_root)
+  def entry_shape_errors(entry, index, install_root, state_root, require_enforcing_command_env:)
     errors = []
     missing = ENTRY_FIELDS - entry.keys
     extra = entry.keys - ENTRY_FIELDS
@@ -360,7 +403,7 @@ module StrictModeHookEntryPlan
       end
     end
     errors << "hook entry #{index}: enforcing must be boolean" unless [true, false].include?(entry.fetch("enforcing"))
-    errors.concat(command_errors(entry, index, install_root))
+    errors.concat(command_errors(entry, index, install_root, state_root, require_enforcing_command_env: require_enforcing_command_env))
     if entry.fetch("logical_event").is_a?(String)
       expected_hook_event = LOGICAL_EVENT_TO_HOOK_EVENT[entry.fetch("logical_event")]
       errors << "hook entry #{index}: unsupported logical_event #{entry.fetch("logical_event").inspect}" unless expected_hook_event
@@ -410,19 +453,18 @@ module StrictModeHookEntryPlan
     ["hook entry #{index}: removal_selector hash verification failed: #{e.message}"]
   end
 
-  def command_errors(entry, index, install_root)
+  def command_errors(entry, index, install_root, state_root, require_enforcing_command_env:)
     return [] unless entry.fetch("command").is_a?(String)
 
     command = entry.fetch("command")
     errors = []
-    unless command.match?(/\ASTRICT_HOOK_TIMEOUT_MS=\d+\s+"(?:[^"\\]|\\.)+"\s+--provider\s+\S+\s+\S+\z/)
-      errors << "hook entry #{index}: command must be STRICT_HOOK_TIMEOUT_MS=<ms> \"<install-root>/active/bin/strict-hook\" --provider <provider> <logical_event>"
+    unless command.match?(/\ASTRICT_HOOK_TIMEOUT_MS=\d+\s+STRICT_STATE_ROOT="(?:[^"\\]|\\.)+"\s+(?:STRICT_ENFORCING_HOOK=1\s+STRICT_OUTPUT_CONTRACT_ID="(?:[^"\\]|\\.)+"\s+)?"(?:[^"\\]|\\.)+"\s+--provider\s+\S+\s+\S+\z/)
+      errors << "hook entry #{index}: command must be STRICT_HOOK_TIMEOUT_MS=<ms> STRICT_STATE_ROOT=\"<state-root>\" [STRICT_ENFORCING_HOOK=1 STRICT_OUTPUT_CONTRACT_ID=\"<id>\"] \"<install-root>/active/bin/strict-hook\" --provider <provider> <logical_event>"
       return errors
     end
-
     parts = Shellwords.split(command)
-    unless parts.size == 5
-      errors << "hook entry #{index}: command must have exactly timeout assignment, hook path, --provider, provider, logical_event"
+    unless [6, 8].include?(parts.size)
+      errors << "hook entry #{index}: command must be STRICT_HOOK_TIMEOUT_MS=<ms> STRICT_STATE_ROOT=\"<state-root>\" [STRICT_ENFORCING_HOOK=1 STRICT_OUTPUT_CONTRACT_ID=\"<id>\"] \"<install-root>/active/bin/strict-hook\" --provider <provider> <logical_event>"
       return errors
     end
 
@@ -430,7 +472,42 @@ module StrictModeHookEntryPlan
     unless timeout_match && entry.fetch("self_timeout_ms").is_a?(Integer) && timeout_match[1].to_i == entry.fetch("self_timeout_ms")
       errors << "hook entry #{index}: command STRICT_HOOK_TIMEOUT_MS must match self_timeout_ms"
     end
-    hook_path = Pathname.new(parts.fetch(1))
+    state_root_match = parts.fetch(1).match(/\ASTRICT_STATE_ROOT=(.+)\z/)
+    unless state_root_match
+      errors << "hook entry #{index}: command must include STRICT_STATE_ROOT assignment"
+      return errors
+    end
+    state_root_path = Pathname.new(state_root_match[1])
+    errors << "hook entry #{index}: command state root must be absolute" unless state_root_path.absolute?
+    errors << "hook entry #{index}: command state root must be canonical lexical path" unless state_root_path.cleanpath.to_s == state_root_path.to_s
+    if state_root
+      expected_state_root = Pathname.new(state_root).to_s
+      errors << "hook entry #{index}: command state root must match state_root" unless state_root_path.to_s == expected_state_root
+    end
+    cursor = 2
+    enforcing_env = false
+    command_output_contract_id = ""
+    if parts.size == 8
+      enforcing_env_match = parts.fetch(cursor).match(/\ASTRICT_ENFORCING_HOOK=(.+)\z/)
+      errors << "hook entry #{index}: command enforcing hook assignment must be STRICT_ENFORCING_HOOK=1" unless enforcing_env_match && enforcing_env_match[1] == "1"
+      enforcing_env = enforcing_env_match && enforcing_env_match[1] == "1"
+      cursor += 1
+      output_match = parts.fetch(cursor).match(/\ASTRICT_OUTPUT_CONTRACT_ID=(.+)\z/)
+      if output_match
+        command_output_contract_id = output_match[1]
+        errors << "hook entry #{index}: command output contract id must be non-empty" if command_output_contract_id.empty?
+      else
+        errors << "hook entry #{index}: command must include STRICT_OUTPUT_CONTRACT_ID assignment after STRICT_ENFORCING_HOOK"
+      end
+      cursor += 1
+    end
+    if require_enforcing_command_env && entry.fetch("enforcing")
+      errors << "hook entry #{index}: enforcing command must include STRICT_ENFORCING_HOOK=1" unless enforcing_env
+      errors << "hook entry #{index}: enforcing command output contract id mismatch" unless command_output_contract_id == entry.fetch("output_contract_id")
+    elsif require_enforcing_command_env && !entry.fetch("enforcing")
+      errors << "hook entry #{index}: discovery command must not include enforcing output assignments" if enforcing_env || !command_output_contract_id.empty?
+    end
+    hook_path = Pathname.new(parts.fetch(cursor))
     errors << "hook entry #{index}: command hook path must be absolute" unless hook_path.absolute?
     errors << "hook entry #{index}: command hook path must be canonical lexical path" unless hook_path.cleanpath.to_s == hook_path.to_s
     errors << "hook entry #{index}: command hook path must end with /active/bin/strict-hook" unless hook_path.to_s.end_with?("/active/bin/strict-hook")
@@ -439,9 +516,9 @@ module StrictModeHookEntryPlan
       expected_hook_path = Pathname.new(install_root).join("active/bin/strict-hook").to_s
       errors << "hook entry #{index}: command hook path must match install_root active strict-hook" unless hook_path.to_s == expected_hook_path
     end
-    errors << "hook entry #{index}: command argv must include --provider" unless parts.fetch(2) == "--provider"
-    errors << "hook entry #{index}: command provider argv mismatch" unless parts.fetch(3) == entry.fetch("provider")
-    errors << "hook entry #{index}: command logical_event argv mismatch" unless parts.fetch(4) == entry.fetch("logical_event")
+    errors << "hook entry #{index}: command argv must include --provider" unless parts.fetch(cursor + 1) == "--provider"
+    errors << "hook entry #{index}: command provider argv mismatch" unless parts.fetch(cursor + 2) == entry.fetch("provider")
+    errors << "hook entry #{index}: command logical_event argv mismatch" unless parts.fetch(cursor + 3) == entry.fetch("logical_event")
     errors
   rescue ArgumentError => e
     ["hook entry #{index}: command shell parsing failed: #{e.message}"]
@@ -472,5 +549,11 @@ module StrictModeHookEntryPlan
     records.each_with_object({}) do |record, map|
       map[[record.fetch("provider"), record.fetch("logical_event")]] = record
     end
+  end
+
+  def provider_action_valid_for_event?(logical_event, provider_action)
+    return provider_action == "block" if %w[stop subagent-stop].include?(logical_event)
+
+    PROVIDER_ACTIONS.include?(provider_action)
   end
 end

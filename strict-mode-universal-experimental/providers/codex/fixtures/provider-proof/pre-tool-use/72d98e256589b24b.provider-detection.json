@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "provider_arg": "codex",
+  "provider_arg_source": "fixture-import",
+  "payload_sha256": "72d98e256589b24b8d24fac645d93902dcf84cbd3e70bac5bb8b734b281ff093",
+  "detected_provider": "codex",
+  "decision": "match",
+  "claude_indicators": [
+
+  ],
+  "codex_indicators": [
+    "key:turn_id",
+    "path:codex-transcript"
+  ],
+  "conflict_indicators": [
+
+  ],
+  "fixture_usable": true,
+  "enforcement_usable": false,
+  "diagnostic": "provider codex matched payload indicators",
+  "provider_proof_hash": "592e1c7c9b19133339d819fcfbe890048b400a17e54f697dac2b80fae1e68232"
+}

@@ -44,6 +44,57 @@ module StrictModeFixtures
   ].freeze
   FIXTURE_FILE_FIELDS = %w[path content_sha256].freeze
   COMPATIBILITY_FIELDS = %w[mode min_version max_version version_comparator provider_build_hashes].freeze
+  TYPED_GENERIC_CONTRACT_KINDS = %w[command-execution event-order matcher].freeze
+  COMMAND_EXECUTION_PROOF_FIELDS = %w[
+    schema_version
+    proof_kind
+    provider
+    provider_version
+    provider_build_hash
+    event
+    contract_id
+    hook_command_executed
+    hook_argv
+    hook_exit_status
+    stdout_sha256
+    stderr_sha256
+    discovery_recorded_at
+    provider_detection_decision
+    payload_sha256
+    raw_payload_captured
+    raw_payload_path
+    hook_mode
+  ].freeze
+  EVENT_ORDER_PROOF_FIELDS = %w[
+    schema_version
+    proof_kind
+    provider
+    provider_version
+    provider_build_hash
+    event
+    contract_id
+    early_baseline_events_before_tool
+    observed_order
+  ].freeze
+  EVENT_ORDER_ITEM_FIELDS = %w[event recorded_at payload_sha256].freeze
+  MATCHER_PROOF_FIELDS = %w[
+    schema_version
+    proof_kind
+    provider
+    provider_version
+    provider_build_hash
+    event
+    contract_id
+    matcher
+    matched_tool_event
+    provider_detection_decision
+    payload_sha256
+    raw_payload_path
+    preflight_trusted
+    tool_kind
+  ].freeze
+  HOOK_MODES = %w[discovery-log-only enforcing].freeze
+  TOOL_KINDS = %w[shell write edit multi-edit patch read other unknown].freeze
   CONTRACT_ID_PATTERN = /\A[a-z0-9][a-z0-9._-]*\z/
   SHA256_PATTERN = /\A[a-f0-9]{64}\z/
 
@@ -219,6 +270,7 @@ module StrictModeFixtures
     validate_fixture_file_hashes(errors, root, manifest_path, record, index)
     validate_payload_schema_fixture(errors, root, manifest_path, record, index) if record["contract_kind"] == "payload-schema"
     validate_decision_output_fixture(errors, root, manifest_path, record, index) if record["contract_kind"] == "decision-output"
+    validate_typed_generic_contract_fixture(errors, root, manifest_path, record, index) if TYPED_GENERIC_CONTRACT_KINDS.include?(record["contract_kind"])
     expect_iso8601(errors, manifest_path, record["captured_at"], "records[#{index}].captured_at")
     validate_compatibility(errors, manifest_path, record, index)
     expect_sha(errors, manifest_path, record["fixture_record_hash"], "records[#{index}].fixture_record_hash")
@@ -392,6 +444,357 @@ module StrictModeFixtures
 
   def load_decision_contract_helpers
     require_relative "decision_contract_lib" unless defined?(StrictModeDecisionContract)
+  end
+
+  def typed_generic_contract_kind?(contract_kind)
+    TYPED_GENERIC_CONTRACT_KINDS.include?(contract_kind)
+  end
+
+  def load_typed_contract_proof(path)
+    record = JSON.parse(Pathname.new(path).read, object_class: DuplicateKeyHash)
+    raise "#{path}: typed contract proof must be a JSON object" unless record.is_a?(Hash)
+
+    JSON.parse(JSON.generate(record))
+  rescue JSON::ParserError, SystemCallError, RuntimeError => e
+    raise "#{path}: malformed typed contract proof JSON: #{e.message}"
+  end
+
+  def typed_contract_proof_hash(record, proof)
+    Digest::SHA256.hexdigest(StrictModeMetadata.canonical_json({
+      "schema_version" => 1,
+      "kind" => "strict-mode.#{record.fetch("contract_kind")}.proof",
+      "provider" => record.fetch("provider"),
+      "event" => record.fetch("event"),
+      "contract_id" => record.fetch("contract_id"),
+      "proof" => proof
+    }))
+  end
+
+  def validate_typed_contract_proof(proof, provider:, event:, contract_kind:, contract_id:, provider_version:, provider_build_hash:)
+    errors = []
+    unless proof.is_a?(Hash)
+      return ["typed contract proof must be a JSON object"]
+    end
+
+    expected_fields = case contract_kind
+                      when "command-execution" then COMMAND_EXECUTION_PROOF_FIELDS
+                      when "event-order" then EVENT_ORDER_PROOF_FIELDS
+                      when "matcher" then MATCHER_PROOF_FIELDS
+                      else
+                        return []
+                      end
+    errors << "fields must be exact" unless proof.keys.sort == expected_fields.sort
+    expect_proof_common(errors, proof, provider, event, contract_kind, contract_id, provider_version, provider_build_hash)
+    case contract_kind
+    when "command-execution"
+      validate_command_execution_proof(errors, proof, provider, event)
+    when "event-order"
+      validate_event_order_proof(errors, proof, event)
+    when "matcher"
+      validate_matcher_proof(errors, proof)
+    end
+    errors
+  end
+
+  def expect_proof_common(errors, proof, provider, event, contract_kind, contract_id, provider_version, provider_build_hash)
+    errors << "schema_version must be 1" unless proof["schema_version"] == 1
+    errors << "proof_kind must be #{provider}.#{contract_kind}.observed" unless proof["proof_kind"] == "#{provider}.#{contract_kind}.observed"
+    errors << "provider must match fixture record" unless proof["provider"] == provider
+    errors << "provider_version must match fixture record" unless proof["provider_version"] == provider_version
+    errors << "provider_build_hash must match fixture record" unless proof["provider_build_hash"] == provider_build_hash
+    errors << "event must match fixture record" unless proof["event"] == event
+    errors << "contract_id must match fixture record" unless proof["contract_id"] == contract_id
+  end
+
+  def validate_command_execution_proof(errors, proof, provider, event)
+    errors << "hook_command_executed must be true" unless proof["hook_command_executed"] == true
+    errors << "hook_argv must be a non-empty string array" unless proof["hook_argv"].is_a?(Array) && !proof["hook_argv"].empty? && proof["hook_argv"].all? { |item| item.is_a?(String) && !item.empty? }
+    if proof["hook_argv"].is_a?(Array)
+      errors << "hook_argv must include --provider and provider" unless proof["hook_argv"].each_cons(2).any? { |left, right| left == "--provider" && right == provider }
+      errors << "hook_argv must include event name" unless proof["hook_argv"].include?(event)
+    end
+    errors << "hook_exit_status must be integer 0..255" unless proof["hook_exit_status"].is_a?(Integer) && proof["hook_exit_status"].between?(0, 255)
+    errors << "stdout_sha256 must be lowercase SHA-256" unless sha?(proof["stdout_sha256"])
+    errors << "stderr_sha256 must be lowercase SHA-256" unless sha?(proof["stderr_sha256"])
+    expect_iso8601_proof(errors, proof["discovery_recorded_at"], "discovery_recorded_at")
+    errors << "provider_detection_decision must be match" unless proof["provider_detection_decision"] == "match"
+    errors << "payload_sha256 must be lowercase SHA-256" unless sha?(proof["payload_sha256"])
+    errors << "raw_payload_captured must be boolean" unless proof["raw_payload_captured"] == true || proof["raw_payload_captured"] == false
+    errors << "raw_payload_path must be a string" unless proof["raw_payload_path"].is_a?(String)
+    errors << "hook_mode must be discovery-log-only or enforcing" unless HOOK_MODES.include?(proof["hook_mode"])
+  end
+
+  def validate_command_execution_external_binding(errors, root, manifest_path, record, proof, roles, label)
+    expect(errors, manifest_path, roles["discovery"].length == 1, "#{label} must include exactly one external discovery record fixture")
+    expect(errors, manifest_path, roles["stdout"].length == 1, "#{label} must include exactly one stdout fixture")
+    expect(errors, manifest_path, roles["stderr"].length == 1, "#{label} must include exactly one stderr fixture")
+    expect(errors, manifest_path, roles["exit_code"].length == 1, "#{label} must include exactly one exit-code fixture")
+    return unless roles["discovery"].length == 1 && roles["stdout"].length == 1 && roles["stderr"].length == 1 && roles["exit_code"].length == 1
+
+    discovery = load_discovery_record_fixture(errors, root, manifest_path, record, roles["discovery"].first, label)
+    validate_discovery_record_binding(errors, root, manifest_path, record, proof, discovery, label) if discovery
+
+    stdout_path = fixture_path_for(root, record["provider"], roles["stdout"].first)
+    stderr_path = fixture_path_for(root, record["provider"], roles["stderr"].first)
+    exit_code_path = fixture_path_for(root, record["provider"], roles["exit_code"].first)
+    return unless safe_fixture_file?(stdout_path) && safe_fixture_file?(stderr_path) && safe_fixture_file?(exit_code_path)
+
+    expect(errors, manifest_path, Digest::SHA256.file(stdout_path).hexdigest == proof["stdout_sha256"], "#{label}.stdout_sha256 must match stdout fixture")
+    expect(errors, manifest_path, Digest::SHA256.file(stderr_path).hexdigest == proof["stderr_sha256"], "#{label}.stderr_sha256 must match stderr fixture")
+    exit_code = parse_exit_code_fixture(errors, manifest_path, exit_code_path, label)
+    expect(errors, manifest_path, exit_code == proof["hook_exit_status"], "#{label}.hook_exit_status must match exit-code fixture") if exit_code
+  end
+
+  def validate_matcher_external_binding(errors, root, manifest_path, record, proof, roles, label)
+    expect(errors, manifest_path, roles["discovery"].length == 1, "#{label} must include exactly one external discovery record fixture")
+    return unless roles["discovery"].length == 1
+
+    discovery = load_discovery_record_fixture(errors, root, manifest_path, record, roles["discovery"].first, label)
+    if discovery
+      expect(errors, manifest_path, discovery["event"] == record["event"], "#{label}.discovery_record event must match fixture record")
+      expect(errors, manifest_path, discovery["payload_sha256"] == proof["payload_sha256"], "#{label}.discovery_record payload_sha256 must match proof")
+      expect(errors, manifest_path, discovery["raw_payload_path"] == proof["raw_payload_path"], "#{label}.discovery_record raw_payload_path must match proof")
+      expect(errors, manifest_path, discovery["provider_detection_decision"] == proof["provider_detection_decision"], "#{label}.discovery_record provider_detection_decision must match proof")
+      validate_payload_hash_has_raw_fixture(errors, root, manifest_path, record["provider"], record["event"], proof["payload_sha256"], label, provider_proof_hash: discovery["provider_proof_hash"])
+    end
+  end
+
+  def validate_event_order_external_binding(errors, root, manifest_path, record, proof, roles, label)
+    expect(errors, manifest_path, !roles["discovery"].empty?, "#{label} must include external discovery record fixtures")
+    return if roles["discovery"].empty?
+
+    discovery_records = roles["discovery"].map do |relative|
+      load_discovery_record_fixture(errors, root, manifest_path, record, relative, label)
+    end.compact
+    observed = Array(proof["observed_order"])
+    observed.each_with_index do |item, index|
+      next unless item.is_a?(Hash)
+
+      matching = discovery_records.any? do |discovery|
+        discovery["event"] == item["event"] &&
+          discovery["payload_sha256"] == item["payload_sha256"] &&
+          discovery["recorded_at"] == item["recorded_at"] &&
+          discovery["provider"] == record["provider"] &&
+          discovery["provider_detection_decision"] == "match"
+      end
+      expect(errors, manifest_path, matching, "#{label}.observed_order[#{index}] must be backed by a matching discovery record fixture")
+      matching_discovery = discovery_records.find do |discovery|
+        discovery["event"] == item["event"] &&
+          discovery["payload_sha256"] == item["payload_sha256"] &&
+          discovery["recorded_at"] == item["recorded_at"]
+      end
+      validate_payload_hash_has_raw_fixture(errors, root, manifest_path, record["provider"], item["event"], item["payload_sha256"], "#{label}.observed_order[#{index}]", provider_proof_hash: matching_discovery && matching_discovery["provider_proof_hash"])
+    end
+  end
+
+  def load_discovery_record_fixture(errors, root, manifest_path, record, relative, label)
+    path = fixture_path_for(root, record["provider"], relative)
+    unless safe_fixture_file?(path)
+      errors << "#{manifest_path}: #{label}.discovery_record must point at an existing non-symlink fixture file"
+      return nil
+    end
+
+    discovery = load_fixture_json(errors, manifest_path, path, "#{label}.discovery_record")
+    return nil unless discovery.is_a?(Hash)
+
+    %w[recorded_at provider event mode provider_detection_decision provider_proof_hash payload_sha256 raw_payload_path].each do |field|
+      errors << "#{manifest_path}: #{label}.discovery_record #{field} must be a string" unless discovery[field].is_a?(String)
+    end
+    errors << "#{manifest_path}: #{label}.discovery_record raw_payload_captured must be boolean" unless [true, false].include?(discovery["raw_payload_captured"])
+    expect_iso8601_proof(errors, discovery["recorded_at"], "#{label}.discovery_record.recorded_at") if discovery["recorded_at"].is_a?(String)
+    errors << "#{manifest_path}: #{label}.discovery_record payload_sha256 must be lowercase SHA-256" unless sha?(discovery["payload_sha256"])
+    errors << "#{manifest_path}: #{label}.discovery_record provider_proof_hash must be lowercase SHA-256" unless sha?(discovery["provider_proof_hash"])
+    errors << "#{manifest_path}: #{label}.discovery_record provider must match fixture record" unless discovery["provider"] == record["provider"]
+    errors << "#{manifest_path}: #{label}.discovery_record mode must be discovery-log-only or enforcing" unless HOOK_MODES.include?(discovery["mode"])
+    errors << "#{manifest_path}: #{label}.discovery_record provider_detection_decision must be match" unless discovery["provider_detection_decision"] == "match"
+    discovery
+  end
+
+  def validate_discovery_record_binding(errors, root, manifest_path, record, proof, discovery, label)
+    expect(errors, manifest_path, discovery["event"] == record["event"], "#{label}.discovery_record event must match fixture record")
+    expect(errors, manifest_path, discovery["payload_sha256"] == proof["payload_sha256"], "#{label}.discovery_record payload_sha256 must match proof")
+    expect(errors, manifest_path, discovery["raw_payload_path"] == proof["raw_payload_path"], "#{label}.discovery_record raw_payload_path must match proof")
+    expect(errors, manifest_path, discovery["raw_payload_captured"] == proof["raw_payload_captured"], "#{label}.discovery_record raw_payload_captured must match proof")
+    expect(errors, manifest_path, discovery["mode"] == proof["hook_mode"], "#{label}.discovery_record mode must match proof")
+    expect(errors, manifest_path, discovery["recorded_at"] == proof["discovery_recorded_at"], "#{label}.discovery_record recorded_at must match proof")
+    expect(errors, manifest_path, discovery["provider_detection_decision"] == proof["provider_detection_decision"], "#{label}.discovery_record provider_detection_decision must match proof")
+    validate_payload_hash_has_raw_fixture(errors, root, manifest_path, record["provider"], record["event"], proof["payload_sha256"], label, provider_proof_hash: discovery["provider_proof_hash"])
+  end
+
+  def validate_payload_hash_has_raw_fixture(errors, root, manifest_path, provider, event, payload_sha256, label, provider_proof_hash: nil)
+    unless sha?(payload_sha256)
+      errors << "#{manifest_path}: #{label}.payload_sha256 must be lowercase SHA-256"
+      return
+    end
+
+    event_component = safe_component(event)
+    raw_dir = Pathname.new(root).join("providers/#{provider}/fixtures/payloads/#{event_component}")
+    raw_match = raw_dir.directory? && raw_dir.children.any? do |path|
+      path.file? && !path.symlink? && path.extname == ".json" && Digest::SHA256.file(path).hexdigest == payload_sha256
+    end
+    expect(errors, manifest_path, raw_match, "#{label}.payload_sha256 must match a checked-in raw payload fixture")
+    provider_proof = provider_proof_for_payload(root, provider, event_component, payload_sha256)
+    expect(errors, manifest_path, !provider_proof.nil?, "#{label}.payload_sha256 must match a checked-in provider proof fixture")
+    if provider_proof && provider_proof_hash
+      expect(errors, manifest_path, provider_proof["provider_proof_hash"] == provider_proof_hash, "#{label}.discovery_record provider_proof_hash must match provider proof fixture")
+    end
+  rescue ArgumentError, SystemCallError => e
+    errors << "#{manifest_path}: #{label}.payload fixture binding failed: #{e.message}"
+  end
+
+  def provider_proof_for_payload(root, provider, event_component, payload_sha256)
+    proof_dir = Pathname.new(root).join("providers/#{provider}/fixtures/provider-proof/#{event_component}")
+    return nil unless proof_dir.directory?
+
+    proof_dir.children.sort.each do |path|
+      next unless path.file? && !path.symlink? && path.basename.to_s.end_with?(".provider-detection.json")
+
+      proof = JSON.parse(path.read, object_class: DuplicateKeyHash)
+      next unless proof.is_a?(Hash)
+      next unless proof["payload_sha256"] == payload_sha256 &&
+                  proof["decision"] == "match" &&
+                  proof["detected_provider"] == provider &&
+                  proof["provider_proof_hash"].is_a?(String) &&
+                  sha?(proof["provider_proof_hash"])
+
+      return proof
+    rescue JSON::ParserError, RuntimeError
+      next
+    end
+    nil
+  end
+
+  def validate_event_order_proof(errors, proof, event)
+    errors << "early_baseline_events_before_tool must be true" unless proof["early_baseline_events_before_tool"] == true
+    order = proof["observed_order"]
+    unless order.is_a?(Array) && !order.empty?
+      errors << "observed_order must be a non-empty array"
+      return
+    end
+
+    timestamps = []
+    seen_events = []
+    order.each_with_index do |item, index|
+      unless item.is_a?(Hash)
+        errors << "observed_order[#{index}] must be an object"
+        next
+      end
+      errors << "observed_order[#{index}] fields must be exact" unless item.keys.sort == EVENT_ORDER_ITEM_FIELDS.sort
+      errors << "observed_order[#{index}].event must be a non-empty string" unless item["event"].is_a?(String) && !item["event"].empty?
+      expect_iso8601_proof(errors, item["recorded_at"], "observed_order[#{index}].recorded_at")
+      errors << "observed_order[#{index}].payload_sha256 must be lowercase SHA-256" unless sha?(item["payload_sha256"])
+      seen_events << item["event"] if item["event"].is_a?(String)
+      begin
+        timestamps << Time.iso8601(item["recorded_at"]) if item["recorded_at"].is_a?(String)
+      rescue ArgumentError
+        # already reported above
+      end
+    end
+    errors << "observed_order must include fixture event" unless seen_events.include?(event)
+    errors << "observed_order must include pre-tool-use after early baseline" unless seen_events.include?("pre-tool-use")
+    if seen_events.include?(event) && seen_events.include?("pre-tool-use")
+      errors << "observed_order must place fixture event before pre-tool-use" unless seen_events.index(event) < seen_events.index("pre-tool-use")
+    end
+    errors << "observed_order timestamps must be nondecreasing" unless timestamps == timestamps.sort
+  end
+
+  def validate_matcher_proof(errors, proof)
+    errors << "matcher must be a non-empty string" unless proof["matcher"].is_a?(String) && !proof["matcher"].empty?
+    errors << "matched_tool_event must be true" unless proof["matched_tool_event"] == true
+    errors << "provider_detection_decision must be match" unless proof["provider_detection_decision"] == "match"
+    errors << "payload_sha256 must be lowercase SHA-256" unless sha?(proof["payload_sha256"])
+    errors << "raw_payload_path must be a string" unless proof["raw_payload_path"].is_a?(String)
+    errors << "preflight_trusted must be true" unless proof["preflight_trusted"] == true
+    errors << "tool_kind must be a known normalized tool kind" unless TOOL_KINDS.include?(proof["tool_kind"])
+  end
+
+  def validate_typed_generic_contract_fixture(errors, root, manifest_path, record, index)
+    label = "records[#{index}].#{record["contract_kind"]}"
+    roles = typed_generic_contract_fixture_roles(record)
+    expect(errors, manifest_path, roles["proof"].length == 1, "#{label} must include exactly one typed JSON proof fixture")
+    expect(errors, manifest_path, roles["other"].empty?, "#{label} must not include extra fixture files")
+    return unless roles["proof"].length == 1 && roles["other"].empty?
+
+    proof_path = fixture_path_for(root, record["provider"], roles["proof"].first)
+    return unless safe_fixture_file?(proof_path)
+
+    proof = load_fixture_json(errors, manifest_path, proof_path, "#{label}.proof")
+    return unless proof.is_a?(Hash)
+
+    proof_errors = validate_typed_contract_proof(
+      proof,
+      provider: record["provider"],
+      event: record["event"],
+      contract_kind: record["contract_kind"],
+      contract_id: record["contract_id"],
+      provider_version: record["provider_version"],
+      provider_build_hash: record["provider_build_hash"]
+    )
+    proof_errors.each { |message| errors << "#{manifest_path}: #{label}.proof #{message}" }
+    case record["contract_kind"]
+    when "command-execution"
+      validate_command_execution_external_binding(errors, root, manifest_path, record, proof, roles, label)
+    when "matcher"
+      validate_matcher_external_binding(errors, root, manifest_path, record, proof, roles, label)
+    when "event-order"
+      validate_event_order_external_binding(errors, root, manifest_path, record, proof, roles, label)
+    end
+    if record["contract_kind"] == "command-execution"
+      expected_hash = typed_contract_proof_hash(record, proof)
+      expect(errors, manifest_path, record["command_execution_contract_hash"] == expected_hash, "#{label}.command_execution_contract_hash must bind typed command proof")
+    end
+  end
+
+  def typed_generic_contract_fixture_roles(record)
+    provider = record["provider"].to_s
+    kind_component = safe_component(record["contract_kind"])
+    event_component = safe_component(record["event"])
+    contract_component = safe_component(record["contract_id"])
+    prefix = "providers/#{provider}/fixtures/#{kind_component}/#{event_component}/"
+    roles = {
+      "proof" => [],
+      "discovery" => [],
+      "stdout" => [],
+      "stderr" => [],
+      "exit_code" => [],
+      "other" => []
+    }
+    Array(record["fixture_file_hashes"]).each do |item|
+      path = item.is_a?(Hash) ? item["path"].to_s : ""
+      if path.start_with?(prefix) && path.end_with?(".discovery-record.json")
+        roles["discovery"] << path
+      elsif path.start_with?(prefix) && path.end_with?(".#{kind_component}.json")
+        roles["proof"] << path
+      elsif path == "#{prefix}#{contract_component}.stdout"
+        roles["stdout"] << path
+      elsif path == "#{prefix}#{contract_component}.stderr"
+        roles["stderr"] << path
+      elsif path == "#{prefix}#{contract_component}.exit-code"
+        roles["exit_code"] << path
+      else
+        roles["other"] << path
+      end
+    end
+    roles
+  rescue ArgumentError
+    {
+      "proof" => [],
+      "discovery" => [],
+      "stdout" => [],
+      "stderr" => [],
+      "exit_code" => [],
+      "other" => Array(record["fixture_file_hashes"]).map { |item| item.is_a?(Hash) ? item["path"].to_s : "" }
+    }
+  end
+
+  def expect_iso8601_proof(errors, value, field)
+    unless value.is_a?(String)
+      errors << "#{field} must be an ISO-8601 timestamp"
+      return
+    end
+    Time.iso8601(value)
+  rescue ArgumentError
+    errors << "#{field} must be an ISO-8601 timestamp"
   end
 
   def decision_output_fixture_roles(record)

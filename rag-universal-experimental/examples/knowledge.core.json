@@ -1,0 +1,94 @@
+{
+  "owner_rules": [
+    {
+      "prefix": "uier/tests/",
+      "owner": "UIer Tests",
+      "scope": "UIer backend/unit/feature tests"
+    },
+    {
+      "prefix": "uier-spa/e2e/",
+      "owner": "UIer E2E",
+      "scope": "browser coverage and end-to-end tests"
+    },
+    {
+      "prefix": "uier-spa/",
+      "owner": "UIer SPA",
+      "scope": "frontend views, stores, components, frontend tests"
+    },
+    {
+      "prefix": "uier/plugins/",
+      "owner": "UIer Plugins",
+      "scope": "UIer plugin backends, widgets, plugin-local schemas"
+    },
+    {
+      "prefix": "uier/app/",
+      "owner": "UIer backend",
+      "scope": "UIer PHP controllers/services"
+    },
+    {
+      "prefix": "uier/public/",
+      "owner": "UIer legacy public assets",
+      "scope": "server-rendered/legacy browser assets"
+    },
+    {
+      "prefix": "uier/routes/",
+      "owner": "UIer router",
+      "scope": "UIer HTTP route ownership"
+    },
+    {
+      "prefix": "app/Domain/ControlPlane/",
+      "owner": "Control Plane",
+      "scope": "node rollout/provision/update orchestration"
+    },
+    {
+      "prefix": "app/Domain/Tenancy/Provisioning/",
+      "owner": "Sandbox Provisioning",
+      "scope": "sandbox provisioning domain services"
+    },
+    {
+      "prefix": "app/Domain/",
+      "owner": "Core Domain",
+      "scope": "Core domain services and repositories"
+    },
+    {
+      "prefix": "app/Http/Controllers/",
+      "owner": "Core HTTP Controllers",
+      "scope": "Core HTTP controller contracts"
+    },
+    {
+      "prefix": "bin/control_plane_",
+      "owner": "Control Plane Dispatcher",
+      "scope": "control-plane job dispatchers and scripts"
+    },
+    {
+      "prefix": "bin/",
+      "owner": "Core CLI/Workers",
+      "scope": "CLI commands, workers, validation scripts"
+    },
+    {
+      "prefix": "bootstrap/",
+      "owner": "Core Bootstrap",
+      "scope": "application bootstrap and shared runtime loading"
+    },
+    {
+      "prefix": "plugins/",
+      "owner": "Plugin Platform",
+      "scope": "plugin manifests, schemas, widgets, no-code targets"
+    },
+    {
+      "prefix": "routes/",
+      "owner": "Core Routes",
+      "scope": "Core route declarations"
+    },
+    {
+      "prefix": "config/",
+      "owner": "Core Config",
+      "scope": "runtime configuration"
+    },
+    {
+      "prefix": "tests/",
+      "owner": "Core Tests",
+      "scope": "PHP tests and contract fixtures"
+    }
+  ]
+}

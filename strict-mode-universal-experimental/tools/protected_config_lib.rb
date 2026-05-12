@@ -16,6 +16,7 @@ module StrictModeProtectedConfig
     stub-allowlist
     filesystem-read-allowlist
     network-allowlist
+    user-prompt-injection
   ].freeze
   SHA256_PATTERN = /\A[a-f0-9]{64}\z/
   BOOL_KEYS = %w[
@@ -74,6 +75,21 @@ module StrictModeProtectedConfig
     records = []
     text = decode_utf8(bytes, errors)
     return result(kind, source, records, errors, config_errors) unless errors.empty?
+
+    if kind == "user-prompt-injection"
+      # Raw-text режим: контент целиком предназначен для инжекта в user prompt
+      # (markdown заголовки `#`, leading whitespace, blank lines — всё легитимно).
+      # Per-line filter из parse_physical_line отрезает `#` и whitespace, что
+      # сломало бы markdown structure. Возвращаем единый record с raw text.
+      total_bytes = bytes.bytesize
+      max_total = line_max_bytes * 256
+      if total_bytes > max_total
+        errors << "user-prompt-injection exceeds #{max_total} bytes (#{total_bytes})"
+        return result(kind, source, records, errors, config_errors)
+      end
+      records << { "directive" => "text", "content" => text } unless text.empty?
+      return result(kind, source, records, errors, config_errors)
+    end
 
     logical_lines(text).each do |line|
       parsed = parse_physical_line(line, kind, line_max_bytes)
@@ -182,6 +198,11 @@ module StrictModeProtectedConfig
       )
     when "network-allowlist"
       parse_network_line(line)
+    when "user-prompt-injection"
+      # user-prompt-injection обрабатывается через raw-text fast-path в parse_bytes
+      # до того как мы дойдём до per-line dispatch, поэтому сюда не должно попадать.
+      # На случай прямого вызова parse_config_line — возвращаем no-op text record.
+      [[{ "directive" => "text", "content" => line }], []]
     else
       [[], ["unknown config kind #{kind}"]]
     end

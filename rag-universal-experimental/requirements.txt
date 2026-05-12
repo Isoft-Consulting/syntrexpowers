@@ -1,0 +1,4 @@
+# v0 has no required third-party dependencies.
+# Future optional backends may add:
+# fastembed>=0.6.0,<1.0.0
+# numpy>=1.24.0,<3.0.0

@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "rag.dep-edge.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source", "target", "kind", "line"],
+  "properties": {
+    "schema_version": { "const": "rag.dep-edge.v1" },
+    "source": { "type": "string" },
+    "target": { "type": "string" },
+    "kind": { "type": "string" },
+    "line": { "type": "integer", "minimum": 1 }
+  }
+}

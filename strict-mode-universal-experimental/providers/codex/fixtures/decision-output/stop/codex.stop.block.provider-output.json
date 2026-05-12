@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "contract_id": "codex.stop.block",
+  "provider": "codex",
+  "event": "stop",
+  "logical_event": "stop",
+  "provider_action": "block",
+  "stdout_mode": "json",
+  "stdout_required_fields": [
+    "decision",
+    "reason"
+  ],
+  "stderr_mode": "empty",
+  "stderr_required_fields": [
+
+  ],
+  "exit_code": 0,
+  "blocks_or_denies": 1,
+  "injects_context": 0,
+  "decision_contract_hash": "cf00bcc81a0005b0e43e40cfed59643ebfbfaa2206fdab3d96973a878bc1882f"
+}

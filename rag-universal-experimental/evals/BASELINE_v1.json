@@ -1,0 +1,155 @@
+{
+  "baseline_version": "1.0",
+  "created_at": "2026-05-10",
+  "description": "RAG quality/latency/token baseline. Must not regress beyond guard thresholds after any change.",
+
+  "corpora": {
+    "frontend": {
+      "cases": 8,
+      "mode": "frontend",
+      "wall_seconds": 51.0,
+      "rag": {
+        "top1": 8, "top3": 8, "top5": 8,
+        "mrr": 1.0,
+        "latency_ms_avg": 3072.0, "latency_ms_p50": 2156.0, "latency_ms_p95": 6840.0,
+        "tokens_avg": 943.6, "tokens_p50": 568.0, "tokens_p95": 1610.0
+      },
+      "baseline": {
+        "top1": 0, "top3": 0, "top5": 0,
+        "mrr": 0.0,
+        "latency_ms_avg": 4656.23, "latency_ms_p95": 5929.08,
+        "tokens_avg": 356331.5
+      },
+      "perf_ms": {
+        "search.freshness":     {"avg_ms": 2502.9, "p95_ms": 10988.2, "count": 8},
+        "search.index":         {"avg_ms": 3205.8, "p95_ms": 5040.8,  "count": 8},
+        "cache.primary":        {"avg_ms": 1786.4, "p95_ms": 2315.4,  "count": 8},
+        "cache.bm25":           {"avg_ms": 686.0,  "p95_ms": 1663.2,  "count": 16},
+        "cache.scoring":        {"avg_ms": 645.3,  "p95_ms": 924.1,   "count": 16},
+        "cache.decompose":      {"avg_ms": 2172.4, "p95_ms": 2662.5,  "count": 4},
+        "cache.fusion":         {"avg_ms": 37.9,   "p95_ms": 61.0,    "count": 8},
+        "cache.candidates":     {"avg_ms": 73.7,   "p95_ms": 120.1,   "count": 16},
+        "cache.query_prep":     {"avg_ms": 0.8,    "p95_ms": 3.2,     "count": 16},
+        "cache.path_lexicon":   {"avg_ms": 0.5,    "p95_ms": 1.5,     "count": 16},
+        "cache.variants":       {"avg_ms": 1.0,    "p95_ms": 1.4,     "count": 8},
+        "search.profile":       {"avg_ms": 1.2,    "p95_ms": 1.5,     "count": 8},
+        "search.read_plan":     {"avg_ms": 1.6,    "p95_ms": 2.2,     "count": 8}
+      }
+    },
+    "backend": {
+      "cases": 10,
+      "mode": "implementation",
+      "wall_seconds": 47.0,
+      "rag": {
+        "top1": 10, "top3": 10, "top5": 10,
+        "mrr": 1.0,
+        "latency_ms_avg": 2245.0, "latency_ms_p50": 1518.0, "latency_ms_p95": 5630.0,
+        "tokens_avg": 1063.1, "tokens_p50": 1017.0, "tokens_p95": 1327.0
+      },
+      "baseline": {
+        "top1": 3, "top3": 3, "top5": 4,
+        "mrr": 0.32,
+        "latency_ms_avg": 4122.67, "latency_ms_p95": 6042.04,
+        "tokens_avg": 224470.3
+      },
+      "perf_ms": {
+        "search.freshness":     {"avg_ms": 1887.2, "p95_ms": 9830.9,  "count": 10},
+        "search.index":         {"avg_ms": 2068.4, "p95_ms": 3651.3,  "count": 10},
+        "cache.primary":        {"avg_ms": 1801.1, "p95_ms": 2652.8,  "count": 10},
+        "cache.bm25":           {"avg_ms": 975.0,  "p95_ms": 1529.0,  "count": 10},
+        "cache.scoring":        {"avg_ms": 737.9,  "p95_ms": 1304.7,  "count": 10},
+        "cache.candidates":     {"avg_ms": 69.9,   "p95_ms": 121.5,   "count": 10},
+        "cache.query_prep":     {"avg_ms": 0.9,    "p95_ms": 1.8,     "count": 10},
+        "cache.path_lexicon":   {"avg_ms": 0.8,    "p95_ms": 1.5,     "count": 10},
+        "search.profile":       {"avg_ms": 1.1,    "p95_ms": 1.6,     "count": 10},
+        "search.read_plan":     {"avg_ms": 1.8,    "p95_ms": 2.9,     "count": 10}
+      }
+    }
+  },
+
+  "manual_queries_pr88": {
+    "description": "6 targeted queries from PR#88 federated architecture review. Covers: error codes, schema changes, operation routing, audit chain.",
+    "total": 6,
+    "summary": {
+      "rag_mrr": 0.9167, "kw_mrr": 0.3333,
+      "rag_top1": 5, "kw_top1": 2,
+      "rag_avg_ms": 8077.5, "kw_avg_ms": 2328.4,
+      "rag_avg_tokens": 994.8, "kw_avg_tokens": 123496.0
+    },
+    "queries": [
+      {
+        "id": "Q1_error_codes",
+        "query_text": "error codes stale_capability_version capability_push_conflict grant_push_conflict catalog_push_conflict cross-cutting error code table Foundation spec federated architecture registry",
+        "expected": ["Docs/specs/2026-05-08-federated-architecture-foundation-spec-v1.md"],
+        "rag_rank": 2, "kw_rank": 1,
+        "rag_top3": ["Docs/specs/2026-05-09-federated-wizard-spa-spec-v1.md", "Docs/specs/2026-05-08-federated-architecture-foundation-spec-v1.md", "Docs/specs/2026-05-08-federated-platform-cross-spec-gap-report-v1.md"],
+        "rag_ms": 9288.0, "rag_tokens": 1129, "kw_tokens": 95380
+      },
+      {
+        "id": "Q2_caller_role",
+        "query_text": "owner_caller_credentials caller_role field missing Foundation caller registry root_central deputy dispatch authorization",
+        "expected": ["OwnerCallerCredentialRepository.php"],
+        "rag_rank": 1, "kw_rank": null,
+        "rag_top3": ["OwnerCallerCredentialRepository.php", "20260508_120000_owner_node_v2_phase1_a_owner_nodes.php", "core.py"],
+        "rag_ms": 8313.8, "rag_tokens": 995, "kw_tokens": 93325
+      },
+      {
+        "id": "Q3_cap_snap",
+        "query_text": "node capability snapshots re-provision versioned snapshot push can_act_as_deputy_control_plane delegated_node_management Foundation spec versioning gap",
+        "expected": ["federated-architecture-foundation-spec-v1.md", "sandbox-provisioning-federated-owner-node-spec-v1.md"],
+        "rag_rank": 1, "kw_rank": 1,
+        "rag_top3": ["Docs/specs/2026-05-08-federated-architecture-foundation-spec-v1.md", "Docs/specs/2026-05-09-federated-platform-7-level-decomposition-v1.md", "Docs/specs/2026-05-08-sandbox-provisioning-federated-owner-node-spec-v1.md"],
+        "rag_ms": 9258.0, "rag_tokens": 915, "kw_tokens": 200751
+      },
+      {
+        "id": "Q4_class_ab",
+        "query_text": "abstract base class OwnerOperationRepository OwnerAuthorityGrant owner_operations class AB operation contracts",
+        "expected": ["OwnerOperationRepository.php"],
+        "rag_rank": 1, "kw_rank": null,
+        "rag_top3": ["OwnerOperationRepository.php", "OwnerAuthorityGrantRepository.php", "knowledge.py"],
+        "rag_ms": 10538.5, "rag_tokens": 790, "kw_tokens": 211197
+      },
+      {
+        "id": "Q5_two_phase",
+        "query_text": "owner_audit_log audit_entry_id two-phase audit write operation correlation owner_operations two_phase commit",
+        "expected": ["OwnerAuditChainRepository.php"],
+        "rag_rank": 1, "kw_rank": null,
+        "rag_top3": ["OwnerAuditChainRepository.php", "OperationId.php", "OwnerOperationRepository.php"],
+        "rag_ms": 8880.2, "rag_tokens": 1189, "kw_tokens": 46121
+      },
+      {
+        "id": "Q6_audit_log",
+        "query_text": "owner audit log chain repository audit_entry_id audit trail entries audit_log migration owner_audit_chain correlation",
+        "expected": ["OwnerAuditChainRepository.php", "20260508_120006_owner_node_v2_phase1_a_audit_log.php"],
+        "rag_rank": 1, "kw_rank": null,
+        "rag_top3": ["OwnerAuditChainRepository.php", "20260508_120006_owner_node_v2_phase1_a_audit_log.php", "AuditLogController.php"],
+        "rag_ms": 12469.0, "rag_tokens": 951, "kw_tokens": 94202
+      }
+    ]
+  },
+
+  "regression_guards": {
+    "description": "Violating any of these is a REGRESSION. Must fix before proceeding.",
+    "corpus_mrr_min": {
+      "frontend": 0.95,
+      "backend": 0.95
+    },
+    "corpus_top1_min": {
+      "frontend": 7,
+      "backend": 9
+    },
+    "manual_queries": {
+      "rag_mrr_min": 0.85,
+      "rag_top1_min": 5,
+      "spec_cross_cutting_resolved": "Q1 rank=2, Q3 rank=1 — RESOLVED (Direction A: preview expansion + spec_cross_cutting scoring fix)"
+    },
+    "token_economy": {
+      "rag_tokens_max_avg": 2500,
+      "savings_vs_keyword_min": "50x"
+    },
+    "latency": {
+      "rag_p95_max_ms": 20000,
+      "wall_seconds_max": 120
+    }
+  }
+}

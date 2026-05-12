@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-05-11T10:18:16Z",
+  "provider": "claude",
+  "event": "user-prompt-submit",
+  "mode": "discovery-log-only",
+  "provider_detection_decision": "match",
+  "provider_proof_hash": "cb68956ae973379187b2993f16386bcc4be3f1f47f802eef7bd33c2f24387a8b",
+  "payload_sha256": "18c971beb162eca54a276a266b37111040e569fceed7d5bfc197bfef637dd3d4",
+  "raw_payload_captured": true,
+  "raw_payload_path": "/Users/andrey/.strict-mode/state/discovery/raw/claude/user-prompt-submit/20260511T101816-29306-739f2f90-18c971beb162.payload"
+}

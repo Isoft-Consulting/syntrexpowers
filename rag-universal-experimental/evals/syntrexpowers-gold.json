@@ -1,0 +1,91 @@
+[
+  {
+    "id": "fdr_readiness",
+    "query": "stop guard fdr challenge provider fixture readiness",
+    "expected_sources": [
+      "strict-mode-universal-experimental/specs/17-implementation-readiness.md",
+      "strict-mode-universal-experimental/README.md",
+      "strict-mode-universal-experimental/specs/08-shared-core/06-fdr-challenge.md"
+    ]
+  },
+  {
+    "id": "provider_neutral_rag",
+    "query": "universal rag mcp claude deepseek codex",
+    "expected_sources": [
+      "rag-universal-experimental/README.md",
+      "rag-universal-experimental/SPEC.md"
+    ]
+  },
+  {
+    "id": "destructive_gate",
+    "query": "destructive gate protected path shell command",
+    "expected_sources": [
+      "strict-mode-universal-experimental/specs/08-shared-core/05-destructive-gate.md",
+      "strict-mode-universal-experimental/tools/destructive_gate_lib.rb",
+      "strict-mode-universal-experimental/tests/test-destructive-gate.rb"
+    ]
+  },
+  {
+    "id": "fixture_contracts",
+    "query": "fixture readiness selected output contract stop continuation",
+    "expected_sources": [
+      "strict-mode-universal-experimental/tools/fixture_readiness_lib.rb",
+      "strict-mode-universal-experimental/tests/test-fixture-readiness.rb",
+      "strict-mode-universal-experimental/specs/17-implementation-readiness.md"
+    ]
+  },
+  {
+    "id": "provider_matrix",
+    "query": "provider feature matrix install enforcing readiness",
+    "expected_sources": [
+      "strict-mode-universal-experimental/matrices/matrix.provider-feature-gate.v1.matrix.json",
+      "strict-mode-universal-experimental/specs/17-implementation-readiness.md",
+      "strict-mode-universal-experimental/README.md"
+    ]
+  },
+  {
+    "id": "normalized_event",
+    "query": "normalize event duplicate key payload permission network",
+    "expected_sources": [
+      "strict-mode-universal-experimental/tools/normalized_event_lib.rb",
+      "strict-mode-universal-experimental/specs/04-normalized-event-contract.md",
+      "strict-mode-universal-experimental/tests/test-normalized-events.rb"
+    ]
+  },
+  {
+    "id": "install_hook_plan",
+    "query": "install hook plan selected output contract permission request",
+    "expected_sources": [
+      "strict-mode-universal-experimental/tools/install_hook_plan_lib.rb",
+      "strict-mode-universal-experimental/tests/test-install-hook-plan.rb",
+      "strict-mode-universal-experimental/specs/10-install-and-uninstall.md"
+    ]
+  },
+  {
+    "id": "protected_baseline",
+    "query": "protected baseline inode drift manifest hash",
+    "expected_sources": [
+      "strict-mode-universal-experimental/tools/protected_baseline_lib.rb",
+      "strict-mode-universal-experimental/tests/test-protected-baseline.rb",
+      "strict-mode-universal-experimental/specs/07-state-layout.md"
+    ]
+  },
+  {
+    "id": "rag_tools",
+    "query": "rag symbol dependency mcp tools search",
+    "expected_sources": [
+      "rag-universal-experimental/README.md",
+      "rag-universal-experimental/SPEC.md",
+      "rag-universal-experimental/rag_universal/mcp_server.py"
+    ]
+  },
+  {
+    "id": "metadata_registry",
+    "query": "schema registry metadata generated validators",
+    "expected_sources": [
+      "strict-mode-universal-experimental/specs/17-implementation-readiness.md",
+      "strict-mode-universal-experimental/tools/metadata_lib.rb",
+      "strict-mode-universal-experimental/tools/validate-metadata.rb"
+    ]
+  }
+]

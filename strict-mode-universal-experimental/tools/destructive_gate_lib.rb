@@ -5,6 +5,8 @@ require "digest"
 require "json"
 require "pathname"
 
+require_relative "stub_detection_lib"
+
 module StrictModeDestructiveGate
   extend self
 
@@ -16,7 +18,7 @@ module StrictModeDestructiveGate
   REDIRECT_OPS = %w[> >> 1> 1>> 2> 2>> &> &>>].freeze
   MAX_SUBSTITUTION_DEPTH = 8
 
-  def classify_tool(tool, cwd:, project_dir:, protected_roots:, protected_inodes: [], destructive_patterns: [], home: Dir.home, install_root: nil)
+  def classify_tool(tool, cwd:, project_dir:, protected_roots:, protected_inodes: [], destructive_patterns: [], stub_allowlist: [], raw_tool_input: nil, home: Dir.home, install_root: nil)
     errors = []
     cwd_path = normalize_identity_path(cwd, "cwd", errors)
     project_path = normalize_identity_path(project_dir, "project_dir", errors)
@@ -27,7 +29,55 @@ module StrictModeDestructiveGate
     return classify_shell(tool, cwd: cwd_path, project_dir: project_path, protected_roots: protected_roots, protected_inodes: protected_inodes, destructive_patterns: destructive_patterns, home: home, install_root: install_root) if kind == "shell"
     return allow("non-write-tool") unless write_like_tool?(tool)
 
-    classify_direct_paths(tool, cwd: cwd_path, protected_roots: protected_roots, protected_inodes: protected_inodes)
+    path_decision = classify_direct_paths(tool, cwd: cwd_path, protected_roots: protected_roots, protected_inodes: protected_inodes)
+    return path_decision unless path_decision.fetch("decision") == "allow"
+
+    classify_stub_content(tool, stub_allowlist: stub_allowlist, raw_tool_input: raw_tool_input)
+  end
+
+  def classify_stub_content(tool, stub_allowlist:, raw_tool_input: nil)
+    return allow("write-targets-disjoint") if stub_allowlist.nil?
+
+    # Normalized event покрывает Write (content) и Edit (new_string). MultiEdit и
+    # apply_patch уплощены в одно top-level поле, поэтому per-edit/per-patch-block
+    # контент достаётся из сырого tool_input. Объединяем оба источника в единый
+    # список таргетов, дедуплицируем по file_path+content sha (на случай если
+    # normalizer и raw extractor дали одно и то же).
+    normalized_targets = StrictModeStubDetection.extract_scannable_targets(tool)
+    raw_targets = raw_tool_input.is_a?(Hash) ? StrictModeStubDetection.extract_raw_targets(tool, raw_tool_input) : []
+    targets = dedupe_targets(normalized_targets + raw_targets)
+    return allow("write-targets-disjoint") if targets.empty?
+
+    allowlist = StrictModeStubDetection.parse_allowlist_records(stub_allowlist)
+    targets.each do |target|
+      findings = StrictModeStubDetection.scan(
+        content: target.fetch("content"),
+        file_path: target.fetch("file_path"),
+        allowlist: allowlist
+      )
+      next if findings.empty?
+
+      first = findings.first
+      summary = "stub detected: #{first.fetch("label")} at #{first.fetch("file_path")}:#{first.fetch("line_number")} (sha256=#{first.fetch("line_sha256")[0, 12]})"
+      return block("stub-detected", summary)
+    end
+
+    allow("write-targets-disjoint")
+  end
+
+  def dedupe_targets(targets)
+    seen = {}
+    targets.each do |target|
+      next unless target.is_a?(Hash)
+
+      file_path = target.fetch("file_path", "").to_s
+      content = target.fetch("content", "").to_s
+      next if file_path.empty? || content.empty?
+
+      key = [file_path, Digest::SHA256.hexdigest(content)]
+      seen[key] ||= target
+    end
+    seen.values
   end
 
   def classify_shell(tool, cwd:, project_dir:, protected_roots:, protected_inodes:, destructive_patterns:, home:, install_root:, substitution_depth: 0)
@@ -97,9 +147,17 @@ module StrictModeDestructiveGate
     kind = tool.fetch("kind", "unknown").to_s
     write_intent = tool.fetch("write_intent", "unknown").to_s
     return true if WRITE_TOOL_KINDS.include?(kind)
-    return true if PATH_BEARING_KINDS.include?(kind) && write_intent != "read"
+    return false unless PATH_BEARING_KINDS.include?(kind) && write_intent != "read"
 
-    false
+    # "other"/"unknown" tools only count as write-like когда они реально экспонируют
+    # путь к файлу. Орchestration-tools (Task*, ScheduleWakeup, Skill, ToolSearch и
+    # любой другой не-write tool без file_paths) не должны fail-close'иться на
+    # "protected-target-unknown" просто потому что мы не знаем их name. Если же
+    # неизвестный tool раскрывает file_path/file_paths — он проверяется по
+    # protected-paths как раньше, и невыразимый target всё равно блокируется.
+    tool_paths = Array(tool["file_paths"]).map(&:to_s).reject(&:empty?)
+    tool_paths << tool["file_path"].to_s if tool["file_path"].is_a?(String) && !tool["file_path"].empty?
+    !tool_paths.empty?
   end
 
   def shell_tokens(command)
@@ -166,10 +224,24 @@ module StrictModeDestructiveGate
     { "words" => words.reject { |word| REDIRECT_OPS.include?(word) }, "ops" => ops, "redirect_targets" => redirect_targets, "items" => items, "error" => nil }
   end
 
+  # Порядок важен: длинные операторы должны проверяться раньше коротких,
+  # иначе `find` сматчит короткий префикс и tokenizer сломается.
+  # FD-duplication формы (`2>&1`, `1>&2`, `2>&-`, `1>&-`) — единый оператор,
+  # не redirect-with-target: они НЕ входят в REDIRECT_OPS и не выставляют
+  # pending_redirect, потому что назначение указано inline в самом операторе.
+  SHELL_OPERATORS = %w[
+    2>&- 1>&- 2>&1 2>&2 1>&1 1>&2
+    &>> >> 2>> 1>>
+    && ||
+    &> 2> 1>
+    << > <
+    | & ;
+  ].freeze
+
   def shell_operator_at(command, index)
     return nil unless command[index]
 
-    %w[&>> >> 2>> 1>> && || &> 2> 1> << > < | & ;].find { |op| command[index, op.length] == op }
+    SHELL_OPERATORS.find { |op| command[index, op.length] == op }
   end
 
   def flush_word(words, token)
@@ -408,7 +480,7 @@ module StrictModeDestructiveGate
     return block("trusted-import-invalid", "source path must be an existing regular file") unless source_path.file? && !source_path.symlink?
     return block("trusted-import-invalid", "source path matches protected dev+inode") if protected_inode_path?(source_path, protected_inodes)
 
-    allow("trusted-fdr-import", "trusted_import_source" => source)
+    block("trusted-import-unavailable", "strict-fdr import requires the artifact importer before provider shell execution can create trusted state")
   end
 
   def runtime_executable_execution(tokens, protected_roots, cwd)

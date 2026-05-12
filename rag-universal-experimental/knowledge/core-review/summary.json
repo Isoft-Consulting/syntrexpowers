@@ -1,0 +1,26 @@
+{
+  "artifacts": [
+    "lessons.jsonl",
+    "patterns.json",
+    "owner-map.json",
+    "patterns.md",
+    "failure-taxonomy.md",
+    "owner-map.md",
+    "query-templates.md"
+  ],
+  "cases": 1405,
+  "cases_path": "evals/core-leonextra-path-gold.json",
+  "cases_sha256": "d034443ecb118b78b6e0610d80c8cbeb0f7ff3f3b4254b268116525efc0cdf55",
+  "category_rules": 13,
+  "generated_at": 1778225488.3996117,
+  "generator_version": "rag.knowledge-generator.v1",
+  "lessons": 1405,
+  "out_dir": "knowledge/core-review",
+  "owner_rules": 42,
+  "owners": 21,
+  "patterns": 14,
+  "project": "core",
+  "rules_path": "examples/knowledge.core.json",
+  "rules_sha256": "7fa268772a92f27e4041b9baba5bad824f8f1685e8fe5ac2b494972079aa57fd",
+  "schema_version": "rag.knowledge-summary.v1"
+}

@@ -17,9 +17,53 @@ module StrictModeFixtureReadiness
     stop
   ].freeze
   REQUIRED_BLOCKING_EVENTS = %w[pre-tool-use stop].freeze
-  OPTIONAL_BLOCKING_EVENTS = %w[permission-request].freeze
+  PROVIDER_OPTIONAL_BLOCKING_EVENTS = {
+    "claude" => %w[subagent-stop permission-request].freeze,
+    "codex" => %w[permission-request].freeze
+  }.freeze
+  OPTIONAL_BLOCKING_EVENTS = PROVIDER_OPTIONAL_BLOCKING_EVENTS.values.flatten.uniq.freeze
   BLOCKING_EVENTS = (REQUIRED_BLOCKING_EVENTS + OPTIONAL_BLOCKING_EVENTS).freeze
   EARLY_BASELINE_EVENTS = %w[session-start user-prompt-submit].freeze
+
+  def optional_blocking_events_for(provider)
+    PROVIDER_OPTIONAL_BLOCKING_EVENTS.fetch(provider, [])
+  end
+  REPORT_SCHEMA_VERSION = 1
+
+  def parse_provider_version_assignment(value)
+    provider, version = value.to_s.split("=", 2)
+    raise ArgumentError, "--provider-version must be PROVIDER=VERSION" if provider.nil? || provider.empty? || version.nil? || version.empty?
+
+    [provider, version]
+  end
+
+  def parse_provider_build_hash_assignment(value)
+    provider, build_hash = value.to_s.split("=", 2)
+    if provider.nil? || provider.empty? || build_hash.nil? || build_hash.empty?
+      raise ArgumentError, "--provider-build-hash must be PROVIDER=SHA256"
+    end
+    raise ArgumentError, "--provider-build-hash must be lowercase SHA-256" unless build_hash.match?(StrictModeFixtures::SHA256_PATTERN)
+
+    [provider, build_hash]
+  end
+
+  def validate_provider_versions!(provider_versions, providers)
+    unknown_version_providers = provider_versions.keys - providers
+    unless unknown_version_providers.empty?
+      raise ArgumentError, "--provider-version includes provider outside --provider selection: #{unknown_version_providers.join(", ")}"
+    end
+
+    provider_versions
+  end
+
+  def validate_provider_build_hashes!(provider_build_hashes, providers)
+    unknown_build_hash_providers = provider_build_hashes.keys - providers
+    unless unknown_build_hash_providers.empty?
+      raise ArgumentError, "--provider-build-hash includes provider outside --provider selection: #{unknown_build_hash_providers.join(", ")}"
+    end
+
+    provider_build_hashes
+  end
 
   def fixture_manifest_records(root, providers)
     root = Pathname.new(root)
@@ -47,13 +91,15 @@ module StrictModeFixtureReadiness
     end
   end
 
-  def selected_output_contracts(root, providers, provider_versions = {})
+  def selected_output_contracts(root, providers, provider_versions = {}, provider_build_hashes = {})
     root = Pathname.new(root)
     records_by_provider = load_manifest_records(root, providers)
     providers.flat_map do |provider|
       installed_version = provider_versions.fetch(provider, "unknown")
-      enforceable = records_by_provider.fetch(provider, []).select { |record| enforceable_record?(record, installed_version) }
-      selected_events = REQUIRED_BLOCKING_EVENTS + OPTIONAL_BLOCKING_EVENTS.select { |event| optional_blocking_ready?(enforceable, event) }
+      installed_build_hash = provider_build_hashes.fetch(provider, "")
+      provider_records = records_by_provider.fetch(provider, [])
+      enforceable = provider_records.select { |record| enforceable_record?(record, installed_version, installed_build_hash, provider_records) }
+      selected_events = REQUIRED_BLOCKING_EVENTS + optional_blocking_events_for(provider).select { |event| optional_blocking_ready?(enforceable, event) }
       selected_events.map do |event|
         selected_blocking_decision_output(root, enforceable, provider, event)
       end.compact
@@ -73,7 +119,7 @@ module StrictModeFixtureReadiness
     end
   end
 
-  def enforcing_errors(root, providers, provider_versions = {})
+  def enforcing_errors(root, providers, provider_versions = {}, provider_build_hashes = {})
     root = Pathname.new(root)
     records_by_provider = {}
     errors = []
@@ -93,7 +139,8 @@ module StrictModeFixtureReadiness
     providers.each do |provider|
       records = records_by_provider.fetch(provider, [])
       installed_version = provider_versions.fetch(provider, "unknown")
-      enforceable = records.select { |record| enforceable_record?(record, installed_version) }
+      installed_build_hash = provider_build_hashes.fetch(provider, "")
+      enforceable = records.select { |record| enforceable_record?(record, installed_version, installed_build_hash, records) }
       EARLY_BASELINE_EVENTS.any? { |event| record_exists?(enforceable, event, "event-order") } ||
         errors << "missing #{provider} event-order fixture for early baseline before tool execution"
       GENERATED_HOOK_EVENTS.each do |event|
@@ -106,13 +153,161 @@ module StrictModeFixtureReadiness
         errors << "missing #{provider} pre-tool-use matcher fixture"
       REQUIRED_BLOCKING_EVENTS.each do |event|
         selected_blocking_decision_output(root, enforceable, provider, event) ||
-          errors << "missing #{provider} #{event} decision-output fixture with block/deny provider output"
+          errors << missing_decision_output_message(provider, event)
       end
     end
     errors
   end
 
-  def enforceable_record?(record, installed_version)
+  def enforcing_report(root, providers, provider_versions = {}, provider_build_hashes = {})
+    root = Pathname.new(root)
+    provider_reports = providers.map do |provider|
+      provider_report(root, provider, provider_versions.fetch(provider, "unknown"), provider_build_hashes.fetch(provider, ""))
+    end
+    errors = provider_reports.flat_map { |report| report.fetch("errors") }
+    {
+      "schema_version" => REPORT_SCHEMA_VERSION,
+      "report_kind" => "enforcing-readiness",
+      "ready" => errors.empty?,
+      "providers" => provider_reports,
+      "errors" => errors
+    }
+  end
+
+  def provider_report(root, provider, installed_version, installed_build_hash = "")
+    manifest_errors = StrictModeFixtures.validate_provider_manifest(root, provider)
+    unless manifest_errors.empty?
+      errors = manifest_errors.map { |message| "fixture manifest invalid for #{provider}: #{message}" }
+      return {
+        "provider" => provider,
+        "installed_version" => installed_version,
+        "installed_build_hash" => installed_build_hash,
+        "manifest_valid" => false,
+        "manifest_errors" => manifest_errors,
+        "enforceable_record_count" => 0,
+        "required_checks" => [],
+        "optional_checks" => [],
+        "selected_output_contracts" => [],
+        "ready" => false,
+        "errors" => errors
+      }
+    end
+
+    records = StrictModeFixtures.load_json(StrictModeFixtures.manifest_path(root, provider)).fetch("records")
+    enforceable = records.select { |record| enforceable_record?(record, installed_version, installed_build_hash, records) }
+    required_checks = required_checks_for(root, provider, enforceable)
+    optional_checks = optional_checks_for(root, provider, enforceable)
+    errors = required_checks.reject { |check| check.fetch("ready") }.map { |check| check.fetch("message") }
+    selected = selected_output_contracts(root, [provider], { provider => installed_version }, provider => installed_build_hash)
+    {
+      "provider" => provider,
+      "installed_version" => installed_version,
+      "installed_build_hash" => installed_build_hash,
+      "manifest_valid" => true,
+      "manifest_errors" => [],
+      "enforceable_record_count" => enforceable.length,
+      "required_checks" => required_checks,
+      "optional_checks" => optional_checks,
+      "selected_output_contracts" => selected,
+      "ready" => errors.empty?,
+      "errors" => errors
+    }
+  end
+
+  def required_checks_for(root, provider, enforceable)
+    checks = []
+    early_records = matching_records(enforceable, EARLY_BASELINE_EVENTS, "event-order")
+    checks << readiness_check(
+      provider: provider,
+      event: "early-baseline",
+      accepted_events: EARLY_BASELINE_EVENTS,
+      contract_kind: "event-order",
+      records: early_records,
+      message: "missing #{provider} event-order fixture for early baseline before tool execution"
+    )
+    GENERATED_HOOK_EVENTS.each do |event|
+      checks << readiness_check(
+        provider: provider,
+        event: event,
+        contract_kind: "payload-schema",
+        records: matching_records(enforceable, [event], "payload-schema"),
+        message: "missing #{provider} #{event} payload-schema fixture"
+      )
+      checks << readiness_check(
+        provider: provider,
+        event: event,
+        contract_kind: "command-execution",
+        records: matching_records(enforceable, [event], "command-execution"),
+        message: "missing #{provider} #{event} command-execution fixture"
+      )
+    end
+    checks << readiness_check(
+      provider: provider,
+      event: "pre-tool-use",
+      contract_kind: "matcher",
+      records: matching_records(enforceable, ["pre-tool-use"], "matcher"),
+      message: "missing #{provider} pre-tool-use matcher fixture"
+    )
+    REQUIRED_BLOCKING_EVENTS.each do |event|
+      selected = selected_blocking_decision_output(root, enforceable, provider, event)
+      checks << readiness_check(
+        provider: provider,
+        event: event,
+        contract_kind: "decision-output",
+        records: selected ? [selected] : [],
+        message: missing_decision_output_message(provider, event)
+      )
+    end
+    checks
+  end
+
+  def optional_checks_for(root, provider, enforceable)
+    optional_blocking_events_for(provider).flat_map do |event|
+      selected = selected_blocking_decision_output(root, enforceable, provider, event)
+      [
+        readiness_check(
+          provider: provider,
+          event: event,
+          contract_kind: "payload-schema",
+          records: matching_records(enforceable, [event], "payload-schema"),
+          required: false
+        ),
+        readiness_check(
+          provider: provider,
+          event: event,
+          contract_kind: "command-execution",
+          records: matching_records(enforceable, [event], "command-execution"),
+          required: false
+        ),
+        readiness_check(
+          provider: provider,
+          event: event,
+          contract_kind: "decision-output",
+          records: selected ? [selected] : [],
+          required: false
+        )
+      ]
+    end
+  end
+
+  def matching_records(records, events, contract_kind)
+    records.select { |record| events.include?(record["event"]) && record["contract_kind"] == contract_kind }
+  end
+
+  def readiness_check(provider:, event:, contract_kind:, records:, message: "", required: true, accepted_events: [event])
+    {
+      "provider" => provider,
+      "event" => event,
+      "accepted_events" => accepted_events,
+      "contract_kind" => contract_kind,
+      "required" => required,
+      "ready" => !records.empty?,
+      "contract_ids" => records.map { |record| record.fetch("contract_id") }.sort,
+      "message" => records.empty? ? message : ""
+    }
+  end
+
+  def enforceable_record?(record, installed_version, installed_build_hash = "", manifest_records = [record])
     return false unless record.is_a?(Hash) && record["provider_version"].is_a?(String)
 
     mode = record.dig("compatibility_range", "mode")
@@ -120,12 +315,61 @@ module StrictModeFixtureReadiness
     when "unknown-only"
       installed_version == "unknown" && record["provider_version"] == "unknown"
     when "exact"
-      installed_version != "unknown" && record["provider_version"] == installed_version
+      installed_version != "unknown" &&
+        record["provider_version"] == installed_version &&
+        build_hash_compatible?(record, installed_build_hash, fallback_to_record: true)
     when "range"
-      false
+      range_compatible?(record, installed_version, installed_build_hash, manifest_records)
     else
       false
     end
+  end
+
+  def range_compatible?(record, installed_version, installed_build_hash, manifest_records)
+    compatibility = record.fetch("compatibility_range", {})
+    comparator_id = compatibility.fetch("version_comparator", "")
+    return false if installed_version == "unknown" || comparator_id.empty?
+    return false unless semver_like?(installed_version) &&
+                        semver_like?(compatibility["min_version"]) &&
+                        semver_like?(compatibility["max_version"])
+    return false unless version_compare(compatibility.fetch("min_version"), installed_version) <= 0 &&
+                        version_compare(installed_version, compatibility.fetch("max_version")) <= 0
+
+    comparator = Array(manifest_records).find do |candidate|
+      candidate.is_a?(Hash) &&
+        candidate["provider"] == record["provider"] &&
+        candidate["contract_id"] == comparator_id &&
+        candidate["contract_kind"] == "version-comparator"
+    end
+    return false unless comparator
+
+    build_hash_compatible?(record, installed_build_hash, fallback_to_record: false)
+  end
+
+  def semver_like?(value)
+    value.is_a?(String) && value.match?(/\A\d+(?:\.\d+){1,3}\z/)
+  end
+
+  def version_compare(left, right)
+    left_parts = left.split(".").map(&:to_i)
+    right_parts = right.split(".").map(&:to_i)
+    width = [left_parts.length, right_parts.length].max
+    left_parts += [0] * (width - left_parts.length)
+    right_parts += [0] * (width - right_parts.length)
+    left_parts <=> right_parts
+  end
+
+  def build_hash_compatible?(record, installed_build_hash, fallback_to_record:)
+    allowed_hashes = record.dig("compatibility_range", "provider_build_hashes")
+    allowed_hashes = [] unless allowed_hashes.is_a?(Array)
+    if fallback_to_record && allowed_hashes.empty? && record["provider_build_hash"].is_a?(String) && !record["provider_build_hash"].empty?
+      allowed_hashes = [record["provider_build_hash"]]
+    end
+    return true if allowed_hashes.empty?
+
+    installed_build_hash.is_a?(String) &&
+      installed_build_hash.match?(StrictModeFixtures::SHA256_PATTERN) &&
+      allowed_hashes.include?(installed_build_hash)
   end
 
   def record_exists?(records, event, contract_kind)
@@ -149,13 +393,25 @@ module StrictModeFixtureReadiness
         next unless metadata["provider"] == provider &&
                     metadata["event"] == event &&
                     metadata["logical_event"] == event &&
-                    %w[block deny].include?(metadata["provider_action"]) &&
+                    provider_actions_for(event).include?(metadata["provider_action"]) &&
                     metadata["blocks_or_denies"] == 1 &&
                     StrictModeDecisionContract.validate_provider_output(metadata).empty?
 
         selected << selected_output_contract_record(record, metadata, manifest.fetch("manifest_hash"))
       end
     candidates.sort_by { |record| [record.fetch("provider_action") == "block" ? 0 : 1, record.fetch("contract_id")] }.first
+  end
+
+  def provider_actions_for(event)
+    %w[stop subagent-stop].include?(event) ? %w[block] : %w[block deny]
+  end
+
+  def missing_decision_output_message(provider, event)
+    if %w[stop subagent-stop].include?(event)
+      "missing #{provider} #{event} decision-output fixture with block/continuation provider output"
+    else
+      "missing #{provider} #{event} decision-output fixture with block/deny provider output"
+    end
   end
 
   def decision_output_metadata(root, record)

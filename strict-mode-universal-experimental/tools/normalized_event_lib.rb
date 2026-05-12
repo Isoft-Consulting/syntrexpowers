@@ -550,11 +550,24 @@ module StrictModeNormalized
 
   def provider_indicators(payload)
     indicators = []
-    indicators << "claude.session_id" if payload.key?("session_id")
-    indicators << "claude.transcript_path" if payload.key?("transcript_path")
-    indicators << "claude.hook_event_name" if payload.key?("hook_event_name")
+    indicators << "shared.session_id" if payload.key?("session_id")
+    transcript_path = first_string(payload, "transcript_path", "transcriptPath")
+    if provider_path?(transcript_path, ".claude")
+      indicators << "claude.transcript_path"
+    elsif provider_path?(transcript_path, ".codex")
+      indicators << "codex.transcript_path"
+    elsif payload.key?("transcript_path")
+      indicators << "shared.transcript_path"
+    end
+    indicators << "shared.hook_event_name" if payload.key?("hook_event_name")
     indicators << "codex.thread_id" if payload.key?("thread_id") || payload.key?("conversation_id")
     indicators.uniq.sort
+  end
+
+  def provider_path?(path, directory)
+    return false unless path.is_a?(String)
+
+    path.tr("\\", "/").include?("/#{directory}/")
   end
 
   def first_hash(hash, *keys)
@@ -604,7 +617,8 @@ module StrictModeNormalized
     raise "#{label} must be an absolute path" unless Pathname.new(value).absolute?
     raise "#{label} must not contain NUL or newline" if value.match?(/[\0\n\r]/)
 
-    Pathname.new(value).cleanpath.to_s
+    path = Pathname.new(value)
+    path.exist? ? path.realpath.to_s : path.cleanpath.to_s
   end
 
   def path_inside?(path, parent)

@@ -1,0 +1,6 @@
+Semver-compatible provider fixture range for Codex CLI hook surface.
+
+Comparator contract: dotted numeric provider versions compare segment-by-segment
+with missing segments treated as zero. A fixture record is enforceable in range
+mode only when the installed version is within the inclusive min/max bounds and
+the manifest contains this version-comparator proof record.

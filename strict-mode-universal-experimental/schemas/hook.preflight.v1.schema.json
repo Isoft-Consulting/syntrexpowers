@@ -108,7 +108,6 @@
       "shell-read-only-or-unmatched",
       "non-write-tool",
       "write-targets-disjoint",
-      "trusted-fdr-import",
       "invalid-identity",
       "shell-command-missing",
       "shell-parse-error",
@@ -117,7 +116,9 @@
       "protected-root",
       "unknown-write-target",
       "protected-target-unknown",
-      "trusted-import-invalid"
+      "trusted-import-invalid",
+      "trusted-import-unavailable",
+      "stub-detected"
     ],
     "tool_kind": [
       "shell",
@@ -269,5 +270,5 @@
   "fixture_requirements": [
     "preflight record parser, hash binder, and attempt/trust/decision coupling validator"
   ],
-  "profile_hash": "42c149d33c24c9a96db3c860cdde4ec48dece66025d2636498f6a61408437716"
+  "profile_hash": "a4d0e69555b678dabc48073157a7bbd72a975f17cbb5a596ee33a8a63588e184"
 }
