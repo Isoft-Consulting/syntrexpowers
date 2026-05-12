@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
   "provider": "claude",
-  "logical_event": "pre-tool-use",
-  "raw_event": "PreToolUse",
-  "session_id": "c23308e5-f909-4b33-965e-ed7b5ca2cc94",
+  "logical_event": "user-prompt-submit",
+  "raw_event": "UserPromptSubmit",
+  "session_id": "43a1ba8d-2133-4c13-a4de-ddc45e0f5287",
   "parent_session_id": "",
   "turn_id": "",
-  "cwd": "/Users/andrey",
-  "project_dir": "/Users/andrey",
-  "transcript_path": "/Users/andrey/.claude/projects/-Users-andrey/c23308e5-f909-4b33-965e-ed7b5ca2cc94.jsonl",
+  "cwd": "/Users/andrey/syntrexpowers",
+  "project_dir": "/Users/andrey/syntrexpowers",
+  "transcript_path": "/Users/andrey/.claude/projects/-Users-andrey-syntrexpowers/43a1ba8d-2133-4c13-a4de-ddc45e0f5287.jsonl",
   "turn": {
     "assistant_text": "",
     "assistant_text_bytes": 0,
@@ -17,10 +17,10 @@
     "has_fdr_context": false
   },
   "tool": {
-    "name": "Bash",
-    "kind": "shell",
-    "write_intent": "unknown",
-    "command": "ls /tmp",
+    "name": "",
+    "kind": "unknown",
+    "write_intent": "none",
+    "command": "",
     "file_path": "",
     "file_paths": [
 
@@ -60,14 +60,14 @@
     "can_approve": "unknown"
   },
   "prompt": {
-    "text": ""
+    "text": "Use the shell tool to run exactly: printf claude-hook-smoke-english. Then answer exactly: done"
   },
   "assistant": {
     "last_message": ""
   },
   "raw": {
-    "payload_sha256": "b9ffc081d04e540b8a7dd3f6469cfb1e960e6e210b5850626bce2b17adf916f1",
-    "event_name": "PreToolUse",
+    "payload_sha256": "5c983784e83193f03a985216d201fa147bab1c4de78beacb9ef7f88e83855f48",
+    "event_name": "UserPromptSubmit",
     "logical_event_mismatch": false,
     "provider_indicators": [
       "claude.transcript_path",

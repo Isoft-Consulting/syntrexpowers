@@ -13,15 +13,15 @@
       "contract_kind": "command-execution",
       "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "de9322fe5acfbe7d151264f5cdb783306496936ec5a1d3f2446be6ab451547de",
+      "command_execution_contract_hash": "83858d85bab8e606af878fc614aadc7cdf284530f3751c1652cfb39b5948c505",
       "fixture_file_hashes": [
         {
           "path": "providers/claude/fixtures/command-execution/post-tool-use/claude.post-tool-use.command.command-execution.json",
-          "content_sha256": "f2d7623ab713aceade4ceb14b8ee44bf23c3431c7fe4404cbc28c4bab8df22f1"
+          "content_sha256": "d5e8474de7440318a42d832f89bdef74adf951657adecc2d57c51fe6ee43cfae"
         },
         {
           "path": "providers/claude/fixtures/command-execution/post-tool-use/claude.post-tool-use.command.discovery-record.json",
-          "content_sha256": "fe5f688a555643bd69546bc0feaa77f27f223916f3e4e8e761706110233806ee"
+          "content_sha256": "0467c7437eeaf4bcb217f77008d313872875fa6e5566374d78a97c098084c3b8"
         },
         {
           "path": "providers/claude/fixtures/command-execution/post-tool-use/claude.post-tool-use.command.exit-code",
@@ -36,7 +36,7 @@
           "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       ],
-      "captured_at": "2026-05-11T10:18:00Z",
+      "captured_at": "2026-05-12T11:31:55Z",
       "compatibility_range": {
         "mode": "unknown-only",
         "min_version": "unknown",
@@ -46,35 +46,35 @@
 
         ]
       },
-      "fixture_record_hash": "e187c43f476a68c3092f9d5f3f7d142c033509c2286d12e44e31cd273ff93e9d"
+      "fixture_record_hash": "78ce1fb5816a62d1fb3dd22a1c460d517e07ba911eb8eeedac6ccdc59edb1e88"
     },
     {
       "schema_version": 1,
-      "contract_id": "claude.post-tool-use.payload.5cba97aff6c2",
+      "contract_id": "claude.post-tool-use.payload.85cfd27f89e8",
       "provider": "claude",
       "provider_version": "unknown",
       "provider_build_hash": "",
       "platform": "universal.arm64e-darwin24",
       "event": "post-tool-use",
       "contract_kind": "payload-schema",
-      "payload_schema_hash": "27f94361dccc715805ea86f611617243609dbeb84d4680a9f3d8b42ca84c08cd",
+      "payload_schema_hash": "7317ae7be47c814898cd774c205c427e2962a9000ad7fdd43fed5d0beb24984f",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "fixture_file_hashes": [
         {
-          "path": "providers/claude/fixtures/normalized/post-tool-use/5cba97aff6c2c784.event.normalized.json",
-          "content_sha256": "f4d5083bda9d479ef7e61b86e355205ecc5fdb7ffdcae6f06ad2198d6fdd6ddc"
+          "path": "providers/claude/fixtures/normalized/post-tool-use/85cfd27f89e8a8b6.event.normalized.json",
+          "content_sha256": "ee14ebd22835530dcc0a5905bc11f5c8dc26bf56cf251e115c52befb0d300406"
         },
         {
-          "path": "providers/claude/fixtures/payloads/post-tool-use/5cba97aff6c2c784.json",
-          "content_sha256": "5cba97aff6c2c784629cdc2692b6cad17c635e67c42660e2c0c65b601a71364b"
+          "path": "providers/claude/fixtures/payloads/post-tool-use/85cfd27f89e8a8b6.json",
+          "content_sha256": "85cfd27f89e8a8b60b504304238623328bf28b581cfdea6cb4970d86ddc1d620"
         },
         {
-          "path": "providers/claude/fixtures/provider-proof/post-tool-use/5cba97aff6c2c784.provider-detection.json",
-          "content_sha256": "748f2673987e2b3c69d6c44f96917cbf81be5624feaa5d48092f41c5af708582"
+          "path": "providers/claude/fixtures/provider-proof/post-tool-use/85cfd27f89e8a8b6.provider-detection.json",
+          "content_sha256": "238f98090faabe0a003d565f6dd662aff0e967ac13990db3a269b33bf55fc6b1"
         }
       ],
-      "captured_at": "2026-05-11T10:18:00Z",
+      "captured_at": "2026-05-12T11:31:55Z",
       "compatibility_range": {
         "mode": "unknown-only",
         "min_version": "unknown",
@@ -84,121 +84,7 @@
 
         ]
       },
-      "fixture_record_hash": "c7e69ba1f9354b367adaf0a9610ac1a04e49298c651b1eac39b903f25bb96acc"
-    },
-    {
-      "schema_version": 1,
-      "contract_id": "claude.post-tool-use.payload.7c6c0409bb6c",
-      "provider": "claude",
-      "provider_version": "unknown",
-      "provider_build_hash": "",
-      "platform": "universal.arm64e-darwin24",
-      "event": "post-tool-use",
-      "contract_kind": "payload-schema",
-      "payload_schema_hash": "0f2737cb8a07910da2d7589125fb4e2ceff2ecd900e90da2a09b051218da54f2",
-      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "fixture_file_hashes": [
-        {
-          "path": "providers/claude/fixtures/normalized/post-tool-use/7c6c0409bb6c5397.event.normalized.json",
-          "content_sha256": "d3d15d24b1eb2b1fa18a8af22b30620c7f821fa1dcd6c6da38e79f760de27316"
-        },
-        {
-          "path": "providers/claude/fixtures/payloads/post-tool-use/7c6c0409bb6c5397.json",
-          "content_sha256": "7c6c0409bb6c5397fb9e67c13ad4c48c672b56a3b0f4dada5f0f46e35b954d83"
-        },
-        {
-          "path": "providers/claude/fixtures/provider-proof/post-tool-use/7c6c0409bb6c5397.provider-detection.json",
-          "content_sha256": "592a7dd44921d624fb2198c764f880ef295c54a1f63115d798f2d03defb42b56"
-        }
-      ],
-      "captured_at": "2026-05-11T10:18:00Z",
-      "compatibility_range": {
-        "mode": "unknown-only",
-        "min_version": "unknown",
-        "max_version": "unknown",
-        "version_comparator": "",
-        "provider_build_hashes": [
-
-        ]
-      },
-      "fixture_record_hash": "0dcc8293b4515791a2bbc1bbec906c1649c26807d61aae4395c6d8f55772ed3c"
-    },
-    {
-      "schema_version": 1,
-      "contract_id": "claude.post-tool-use.payload.7dbf313384ed",
-      "provider": "claude",
-      "provider_version": "unknown",
-      "provider_build_hash": "",
-      "platform": "universal.arm64e-darwin24",
-      "event": "post-tool-use",
-      "contract_kind": "payload-schema",
-      "payload_schema_hash": "b318fcea8a471918adc2d1561601cc18184b5c2dfd7c4593e18e1e6f8b258f6b",
-      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "fixture_file_hashes": [
-        {
-          "path": "providers/claude/fixtures/normalized/post-tool-use/7dbf313384edc957.event.normalized.json",
-          "content_sha256": "23c600b5fec489ec2453da9d2b41121a1987d6a6dc42e0a0a5f2f2e33cb82f3d"
-        },
-        {
-          "path": "providers/claude/fixtures/payloads/post-tool-use/7dbf313384edc957.json",
-          "content_sha256": "7dbf313384edc957744e6bac997eb336d10ddb00156ad60426c9371d99620ee0"
-        },
-        {
-          "path": "providers/claude/fixtures/provider-proof/post-tool-use/7dbf313384edc957.provider-detection.json",
-          "content_sha256": "dfac9793391ca189984397338d48d48b2d91b0d374e61e20deb5a61489e62ee9"
-        }
-      ],
-      "captured_at": "2026-05-11T10:18:00Z",
-      "compatibility_range": {
-        "mode": "unknown-only",
-        "min_version": "unknown",
-        "max_version": "unknown",
-        "version_comparator": "",
-        "provider_build_hashes": [
-
-        ]
-      },
-      "fixture_record_hash": "7bd11b44db9171989338e890f36e80b67a508c907c144d78c6953b7e2b0d3c35"
-    },
-    {
-      "schema_version": 1,
-      "contract_id": "claude.post-tool-use.payload.8237486332b3",
-      "provider": "claude",
-      "provider_version": "unknown",
-      "provider_build_hash": "",
-      "platform": "universal.arm64e-darwin24",
-      "event": "post-tool-use",
-      "contract_kind": "payload-schema",
-      "payload_schema_hash": "903df89d1df73cd49bedb46d7bdd892be6c3ba37e05d959e89b4aa3cab333878",
-      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "fixture_file_hashes": [
-        {
-          "path": "providers/claude/fixtures/normalized/post-tool-use/8237486332b3acab.event.normalized.json",
-          "content_sha256": "1613fbf89322cc8363b422cfa4daa4e98b228fd243b391aba66810cd01f117e6"
-        },
-        {
-          "path": "providers/claude/fixtures/payloads/post-tool-use/8237486332b3acab.json",
-          "content_sha256": "8237486332b3acabd161fbc9a1e7502cee202f01aae6cd52a0a26a5e9748624a"
-        },
-        {
-          "path": "providers/claude/fixtures/provider-proof/post-tool-use/8237486332b3acab.provider-detection.json",
-          "content_sha256": "aa029c226bb71e59914cd872594b5e40e64bccede17def6b0b83317837f1c852"
-        }
-      ],
-      "captured_at": "2026-05-11T10:18:00Z",
-      "compatibility_range": {
-        "mode": "unknown-only",
-        "min_version": "unknown",
-        "max_version": "unknown",
-        "version_comparator": "",
-        "provider_build_hashes": [
-
-        ]
-      },
-      "fixture_record_hash": "b53f288e08f70038a2da7825927aa87f78b7bf54990b7b1d7abbfc5c1895f403"
+      "fixture_record_hash": "8193a5ae3d1eff9c45102a7a6dbe551219f6cb2a948ac4ffe9c5a4dba3653a46"
     },
     {
       "schema_version": 1,
@@ -253,15 +139,15 @@
       "contract_kind": "command-execution",
       "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "87765b559bccc48feb735a11de54f0d1200eba52e859fb12195fec5ccf459206",
+      "command_execution_contract_hash": "294cfc904cd1069cb2d3bc8a6a741cc0d3b312a54f0599838a5b628e0586aee2",
       "fixture_file_hashes": [
         {
           "path": "providers/claude/fixtures/command-execution/pre-tool-use/claude.pre-tool-use.command.command-execution.json",
-          "content_sha256": "757c439e0e5193e074d8e43fd5dfeb87f17446efb69beec5888d1f2dea8ce852"
+          "content_sha256": "8b7b9a2a3e0e9ff449ce0c85165164e22f384f51795b2b9a26c7dce5e9496c36"
         },
         {
           "path": "providers/claude/fixtures/command-execution/pre-tool-use/claude.pre-tool-use.command.discovery-record.json",
-          "content_sha256": "37e4a5ad85700df7a5ff212ded25e2b79e07dd95b11d38915eedbf365814efa2"
+          "content_sha256": "797340de61811f5579802680d462801fbc4e065e84b58969a95749aecfec133f"
         },
         {
           "path": "providers/claude/fixtures/command-execution/pre-tool-use/claude.pre-tool-use.command.exit-code",
@@ -276,7 +162,7 @@
           "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       ],
-      "captured_at": "2026-05-11T10:18:00Z",
+      "captured_at": "2026-05-12T11:31:55Z",
       "compatibility_range": {
         "mode": "unknown-only",
         "min_version": "unknown",
@@ -286,7 +172,7 @@
 
         ]
       },
-      "fixture_record_hash": "7b0300a7ae6f910c32ead956948b820570cb00e2eb4cce8a40eb8e1b6e4204bc"
+      "fixture_record_hash": "4a37472d0d3c31aee3f113e2edbf4f971093ea73c24fa6641241e1717e5345c7"
     },
     {
       "schema_version": 1,
@@ -303,14 +189,14 @@
       "fixture_file_hashes": [
         {
           "path": "providers/claude/fixtures/matcher/pre-tool-use/claude.pre-tool-use.matcher.discovery-record.json",
-          "content_sha256": "37e4a5ad85700df7a5ff212ded25e2b79e07dd95b11d38915eedbf365814efa2"
+          "content_sha256": "797340de61811f5579802680d462801fbc4e065e84b58969a95749aecfec133f"
         },
         {
           "path": "providers/claude/fixtures/matcher/pre-tool-use/claude.pre-tool-use.matcher.matcher.json",
-          "content_sha256": "ed43eac0b411aeffacc4809987e54355bc45111135efa0849719640c3577574a"
+          "content_sha256": "8cf230fad1ac4c5978b9db947dc99526ea33d3f2fcd9d5f0cd832f19b80f0a06"
         }
       ],
-      "captured_at": "2026-05-11T10:18:00Z",
+      "captured_at": "2026-05-12T11:31:55Z",
       "compatibility_range": {
         "mode": "unknown-only",
         "min_version": "unknown",
@@ -320,35 +206,35 @@
 
         ]
       },
-      "fixture_record_hash": "4f8a7a26bb2c4a158d89df9aeb4996ab28b2a0582f90756737b0d6d8721d91db"
+      "fixture_record_hash": "dc31e3d8a1820452630f7b39172b8183ff8e02997438f5dedc83524db4c7f567"
     },
     {
       "schema_version": 1,
-      "contract_id": "claude.pre-tool-use.payload.725a1b917d10",
+      "contract_id": "claude.pre-tool-use.payload.bc840041534e",
       "provider": "claude",
       "provider_version": "unknown",
       "provider_build_hash": "",
       "platform": "universal.arm64e-darwin24",
       "event": "pre-tool-use",
       "contract_kind": "payload-schema",
-      "payload_schema_hash": "8e71313ad99cd39e22fae371c10fc4e5cc3ac9b69c5448afd2d0df780db367fe",
+      "payload_schema_hash": "4c5cacd332c365494c9847b2d86328e2000e4c084fdd2bd19bdbce0bfc12484b",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "fixture_file_hashes": [
         {
-          "path": "providers/claude/fixtures/normalized/pre-tool-use/725a1b917d104ee2.event.normalized.json",
-          "content_sha256": "08a0620a2a6cb977ba446d24c6b86125a09da48bc1143f80dda5cbf95b20a692"
+          "path": "providers/claude/fixtures/normalized/pre-tool-use/bc840041534ec45e.event.normalized.json",
+          "content_sha256": "0f493f4cbd68769dd257325cac12bf83d725cee1c77914df9186159ace5f1deb"
         },
         {
-          "path": "providers/claude/fixtures/payloads/pre-tool-use/725a1b917d104ee2.json",
-          "content_sha256": "725a1b917d104ee29d3658dea9daa0005dc6c2970a2cbc5590f168d40ce306b9"
+          "path": "providers/claude/fixtures/payloads/pre-tool-use/bc840041534ec45e.json",
+          "content_sha256": "bc840041534ec45ec514cbc6d2476bc1a58990c4b27554a0f6eb4a9dedfa8804"
         },
         {
-          "path": "providers/claude/fixtures/provider-proof/pre-tool-use/725a1b917d104ee2.provider-detection.json",
-          "content_sha256": "92714bde96d743b245fbcb596e3287f20e8194e93411dc328e60c85827c3d973"
+          "path": "providers/claude/fixtures/provider-proof/pre-tool-use/bc840041534ec45e.provider-detection.json",
+          "content_sha256": "2972bb2c965a2cb224cfa521055411b5369d1fb3abf12398f4e40de231b7ca46"
         }
       ],
-      "captured_at": "2026-05-11T10:18:00Z",
+      "captured_at": "2026-05-12T11:31:55Z",
       "compatibility_range": {
         "mode": "unknown-only",
         "min_version": "unknown",
@@ -358,121 +244,7 @@
 
         ]
       },
-      "fixture_record_hash": "361053b602097c9d6d63367bb863da4bd3c26d1abf74d6c8700293897b156281"
-    },
-    {
-      "schema_version": 1,
-      "contract_id": "claude.pre-tool-use.payload.b462298c83ab",
-      "provider": "claude",
-      "provider_version": "unknown",
-      "provider_build_hash": "",
-      "platform": "universal.arm64e-darwin24",
-      "event": "pre-tool-use",
-      "contract_kind": "payload-schema",
-      "payload_schema_hash": "132bafa75dede37cd7c8a3a26ba3211a044b392d99d2685ef9093d9cf125422e",
-      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "fixture_file_hashes": [
-        {
-          "path": "providers/claude/fixtures/normalized/pre-tool-use/b462298c83ab33cb.event.normalized.json",
-          "content_sha256": "f33ca7e8095d67aa4259a7ee8707696c0c3e0ae62cf2145fa0e020d5fad3e8f1"
-        },
-        {
-          "path": "providers/claude/fixtures/payloads/pre-tool-use/b462298c83ab33cb.json",
-          "content_sha256": "b462298c83ab33cb72158dcefa8df6d9612ee00c826f4a37138689857b31a0fc"
-        },
-        {
-          "path": "providers/claude/fixtures/provider-proof/pre-tool-use/b462298c83ab33cb.provider-detection.json",
-          "content_sha256": "6221bce4c56453cb1511704cd13281e5f34746cefe70f7aed63e51c266424e78"
-        }
-      ],
-      "captured_at": "2026-05-11T10:18:00Z",
-      "compatibility_range": {
-        "mode": "unknown-only",
-        "min_version": "unknown",
-        "max_version": "unknown",
-        "version_comparator": "",
-        "provider_build_hashes": [
-
-        ]
-      },
-      "fixture_record_hash": "7ee936a419c5eb2827f40a6fc65dbc7e81be43dea20967304908df205b253d5d"
-    },
-    {
-      "schema_version": 1,
-      "contract_id": "claude.pre-tool-use.payload.b9ffc081d04e",
-      "provider": "claude",
-      "provider_version": "unknown",
-      "provider_build_hash": "",
-      "platform": "universal.arm64e-darwin24",
-      "event": "pre-tool-use",
-      "contract_kind": "payload-schema",
-      "payload_schema_hash": "0c1e1336a758568021ecda6724e6c5527113b7b6345b5a9812d45de48f55fe4d",
-      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "fixture_file_hashes": [
-        {
-          "path": "providers/claude/fixtures/normalized/pre-tool-use/b9ffc081d04e540b.event.normalized.json",
-          "content_sha256": "9fb822f67d7a576214b5445a41dff762f211f8ca0c060e2886edf0b0a31c597f"
-        },
-        {
-          "path": "providers/claude/fixtures/payloads/pre-tool-use/b9ffc081d04e540b.json",
-          "content_sha256": "b9ffc081d04e540b8a7dd3f6469cfb1e960e6e210b5850626bce2b17adf916f1"
-        },
-        {
-          "path": "providers/claude/fixtures/provider-proof/pre-tool-use/b9ffc081d04e540b.provider-detection.json",
-          "content_sha256": "177776a058b7158fddbedd0977f607c1914411d78f692346080fe6f18ad1a948"
-        }
-      ],
-      "captured_at": "2026-05-11T10:18:00Z",
-      "compatibility_range": {
-        "mode": "unknown-only",
-        "min_version": "unknown",
-        "max_version": "unknown",
-        "version_comparator": "",
-        "provider_build_hashes": [
-
-        ]
-      },
-      "fixture_record_hash": "d367b3a96879f62d42fe958328ebc32cdbb8e4839ad3ee12846ce9c76f9a9c5f"
-    },
-    {
-      "schema_version": 1,
-      "contract_id": "claude.pre-tool-use.payload.bd94c314f7e9",
-      "provider": "claude",
-      "provider_version": "unknown",
-      "provider_build_hash": "",
-      "platform": "universal.arm64e-darwin24",
-      "event": "pre-tool-use",
-      "contract_kind": "payload-schema",
-      "payload_schema_hash": "430274b7596d8ab57f4ebfa6eff7b167507da583fddaf03dbcce2fa78758bea1",
-      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "fixture_file_hashes": [
-        {
-          "path": "providers/claude/fixtures/normalized/pre-tool-use/bd94c314f7e91f3d.event.normalized.json",
-          "content_sha256": "359729772a7d12a14207b8ca792231310ffdb82800dd6c29d02b1e8e09c82ad7"
-        },
-        {
-          "path": "providers/claude/fixtures/payloads/pre-tool-use/bd94c314f7e91f3d.json",
-          "content_sha256": "bd94c314f7e91f3d822d22c4216668246691846e56db738b547057160828e2e9"
-        },
-        {
-          "path": "providers/claude/fixtures/provider-proof/pre-tool-use/bd94c314f7e91f3d.provider-detection.json",
-          "content_sha256": "25e8c3b5ff9ee85c06bb1e884725017aea168d9edb66031985565c40b0110597"
-        }
-      ],
-      "captured_at": "2026-05-11T10:18:00Z",
-      "compatibility_range": {
-        "mode": "unknown-only",
-        "min_version": "unknown",
-        "max_version": "unknown",
-        "version_comparator": "",
-        "provider_build_hashes": [
-
-        ]
-      },
-      "fixture_record_hash": "9862920bb908f8e3e17e85491cbd32bf25e6a8c4c22dc4085e699fe3e4142009"
+      "fixture_record_hash": "0034f8b3c249ab609039c89751a22241765d7e4a6848e585f0b781cff634efff"
     },
     {
       "schema_version": 1,
@@ -485,15 +257,15 @@
       "contract_kind": "command-execution",
       "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "6a479e51d88421798ef596286e8115b667dd4b20e54ad56fc9e43a3d38ff965b",
+      "command_execution_contract_hash": "9d377b1cd18bd0743e99806f4c6eb05295d02fde7634e758d98ac2ecde1e8db6",
       "fixture_file_hashes": [
         {
           "path": "providers/claude/fixtures/command-execution/session-start/claude.session-start.command.command-execution.json",
-          "content_sha256": "eb7572ee47b1805be4482fb1d97007ed56991898022dc748bd02651ecf0b0337"
+          "content_sha256": "4b6f0847afea92683c1adde8be4b2e3f7b9941f9f59dcd1c4ecd8458ee605033"
         },
         {
           "path": "providers/claude/fixtures/command-execution/session-start/claude.session-start.command.discovery-record.json",
-          "content_sha256": "ed70578dfc81eefde0a49733db63c1f5f159e83692159326363f13f43a2be391"
+          "content_sha256": "5094f5d901d001c08ee233f61f3ac6fcb26a4cad6111137227cf66698eef71e2"
         },
         {
           "path": "providers/claude/fixtures/command-execution/session-start/claude.session-start.command.exit-code",
@@ -508,7 +280,7 @@
           "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       ],
-      "captured_at": "2026-05-11T10:18:00Z",
+      "captured_at": "2026-05-12T11:31:51Z",
       "compatibility_range": {
         "mode": "unknown-only",
         "min_version": "unknown",
@@ -518,7 +290,7 @@
 
         ]
       },
-      "fixture_record_hash": "c0b97d1f557e4c2ca71f6a216c55838023e68016020be3d6afc03a3333cf89dd"
+      "fixture_record_hash": "f42b121b4c6f102809f3515efc7c4b4ccd0a5dbdb8ca37a588aa7500643366af"
     },
     {
       "schema_version": 1,
@@ -535,22 +307,22 @@
       "fixture_file_hashes": [
         {
           "path": "providers/claude/fixtures/event-order/session-start/claude.session-start.order.1-session-start.discovery-record.json",
-          "content_sha256": "ed70578dfc81eefde0a49733db63c1f5f159e83692159326363f13f43a2be391"
+          "content_sha256": "5094f5d901d001c08ee233f61f3ac6fcb26a4cad6111137227cf66698eef71e2"
         },
         {
           "path": "providers/claude/fixtures/event-order/session-start/claude.session-start.order.2-user-prompt-submit.discovery-record.json",
-          "content_sha256": "caaf8de783827c94c5f852185d2c1f805e52eda0796f91f0f6b90463e92b724d"
+          "content_sha256": "2f75cdd04e0f225fe715751aa44ce5442ea38ab2ee0d3491ee8a215b478c4228"
         },
         {
           "path": "providers/claude/fixtures/event-order/session-start/claude.session-start.order.3-pre-tool-use.discovery-record.json",
-          "content_sha256": "37e4a5ad85700df7a5ff212ded25e2b79e07dd95b11d38915eedbf365814efa2"
+          "content_sha256": "797340de61811f5579802680d462801fbc4e065e84b58969a95749aecfec133f"
         },
         {
           "path": "providers/claude/fixtures/event-order/session-start/claude.session-start.order.event-order.json",
-          "content_sha256": "d18d94296217d8fa55cbb900398fc12a33d4ddca327fd12b1a8bfc72c163eb62"
+          "content_sha256": "81f7ce6fc9ac7bdc59e82b8ef3d739d344f1e98e0380c41c4b27104efa74f6a5"
         }
       ],
-      "captured_at": "2026-05-11T10:18:00Z",
+      "captured_at": "2026-05-12T11:31:51Z",
       "compatibility_range": {
         "mode": "unknown-only",
         "min_version": "unknown",
@@ -560,35 +332,35 @@
 
         ]
       },
-      "fixture_record_hash": "c0f4d768997b4f9b84259b41ca6081b17ce1eb097b5313571fdd2c299093a96a"
+      "fixture_record_hash": "a48b7f8bdccc1459f1845f678e10bfc6a541bee14de35321f5940f184474240f"
     },
     {
       "schema_version": 1,
-      "contract_id": "claude.session-start.payload.fd80453998bf",
+      "contract_id": "claude.session-start.payload.36b5f5fc1881",
       "provider": "claude",
       "provider_version": "unknown",
       "provider_build_hash": "",
       "platform": "universal.arm64e-darwin24",
       "event": "session-start",
       "contract_kind": "payload-schema",
-      "payload_schema_hash": "7fb6bd25b86b7ed5345907283c6909992dba7dd6a877aa680aec2801f49ffe04",
+      "payload_schema_hash": "13ded805207996756ea4cf363e44fba173b79c5a1da1510095e350881f71f6ed",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "fixture_file_hashes": [
         {
-          "path": "providers/claude/fixtures/normalized/session-start/fd80453998bfb031.event.normalized.json",
-          "content_sha256": "895e4cdcbb638c4df60b06094d4b0b3eecf2a30165a6541db394dcc3538458a6"
+          "path": "providers/claude/fixtures/normalized/session-start/36b5f5fc18811eb9.event.normalized.json",
+          "content_sha256": "b9db4dd6a35a73895dc77b7bdbca728c6a1e7f3138a2af847c659e467b807c07"
         },
         {
-          "path": "providers/claude/fixtures/payloads/session-start/fd80453998bfb031.json",
-          "content_sha256": "fd80453998bfb0312c3614e8976784f5c670edc936813eab62909f04c2728a21"
+          "path": "providers/claude/fixtures/payloads/session-start/36b5f5fc18811eb9.json",
+          "content_sha256": "36b5f5fc18811eb950af94d5b7cb674a6188e0921c39c1855039b184ad7b378f"
         },
         {
-          "path": "providers/claude/fixtures/provider-proof/session-start/fd80453998bfb031.provider-detection.json",
-          "content_sha256": "ca0af4f97724c2705a73e06465225dcd431c5952c05cd7a9ee52979b648313b0"
+          "path": "providers/claude/fixtures/provider-proof/session-start/36b5f5fc18811eb9.provider-detection.json",
+          "content_sha256": "2f4be51a20c8a47afef71597eff93cf538ed153d47050dd48c57dd72933d1f0a"
         }
       ],
-      "captured_at": "2026-05-11T10:18:00Z",
+      "captured_at": "2026-05-12T11:31:51Z",
       "compatibility_range": {
         "mode": "unknown-only",
         "min_version": "unknown",
@@ -598,7 +370,7 @@
 
         ]
       },
-      "fixture_record_hash": "e12e694d923fa837de4b1195de8de504ab37185e80827c480bb205090e5e47b1"
+      "fixture_record_hash": "1dc504be8f3ce6d95323ab06750b4ca1b33a7fab0bebeea2374bc011cdcc22f4"
     },
     {
       "schema_version": 1,
@@ -653,15 +425,15 @@
       "contract_kind": "command-execution",
       "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "b3025e4ebe7b721df991719c2a22d4d2d94205a9001560c86ece2318a4917dde",
+      "command_execution_contract_hash": "4343c48448fe24382837e5f86defd378fc007496a98f386bbe4903e3a39b6575",
       "fixture_file_hashes": [
         {
           "path": "providers/claude/fixtures/command-execution/stop/claude.stop.command.command-execution.json",
-          "content_sha256": "c521b975d3fee3b9fea26b04cea069ba3f0ed739a952ba53eadca2e9ad45dc79"
+          "content_sha256": "e056ef1e0da5d4665f9ee93ceee2cf1d389440c343578d42f77979805e662a66"
         },
         {
           "path": "providers/claude/fixtures/command-execution/stop/claude.stop.command.discovery-record.json",
-          "content_sha256": "591ff5d89eb44ffa08c83cf89329fa2f9eb9701ec57d8a48ef90f41c02910ca6"
+          "content_sha256": "72864c9633265f078be45d687bce8011839253104dd0a7a0d84314e754ce9d0e"
         },
         {
           "path": "providers/claude/fixtures/command-execution/stop/claude.stop.command.exit-code",
@@ -676,7 +448,7 @@
           "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       ],
-      "captured_at": "2026-05-11T10:18:00Z",
+      "captured_at": "2026-05-12T11:31:57Z",
       "compatibility_range": {
         "mode": "unknown-only",
         "min_version": "unknown",
@@ -686,35 +458,35 @@
 
         ]
       },
-      "fixture_record_hash": "b9e3e6f59fd19c6ed35f777fa19469d886185e8bc9d8966f6ef8870d9b54fba3"
+      "fixture_record_hash": "4f3ee78ba46be345a7ff7a4dce52bdfa1254d2041f7acd68e3ca32f7b1c47d1d"
     },
     {
       "schema_version": 1,
-      "contract_id": "claude.stop.payload.19063fbe1d8c",
+      "contract_id": "claude.stop.payload.03445379ba48",
       "provider": "claude",
       "provider_version": "unknown",
       "provider_build_hash": "",
       "platform": "universal.arm64e-darwin24",
       "event": "stop",
       "contract_kind": "payload-schema",
-      "payload_schema_hash": "6ca96e59348d42beeec23d5a13b4a43f195bf93009347ee7b376cafadedf26ad",
+      "payload_schema_hash": "5f2154ba9d65100eb2059d39c0e3e1d1dfbf3d205fa3520644210e8945a1f20e",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "fixture_file_hashes": [
         {
-          "path": "providers/claude/fixtures/normalized/stop/19063fbe1d8c693d.event.normalized.json",
-          "content_sha256": "b7c8631b1b38bf287d932e65bcca25be189e7c188d99715a4ca4b6d306489045"
+          "path": "providers/claude/fixtures/normalized/stop/03445379ba484bfd.event.normalized.json",
+          "content_sha256": "e90f2599a9d13947627e41f77f270ebdc530cb33299ce13e6fc310b1b54db3a0"
         },
         {
-          "path": "providers/claude/fixtures/payloads/stop/19063fbe1d8c693d.json",
-          "content_sha256": "19063fbe1d8c693d261a3e9e9f496c9e0758361a78e012ad314a416b2edb56d7"
+          "path": "providers/claude/fixtures/payloads/stop/03445379ba484bfd.json",
+          "content_sha256": "03445379ba484bfd17b1ab3fe7d1f5a82aa81e465dd01f7dccd6346025557514"
         },
         {
-          "path": "providers/claude/fixtures/provider-proof/stop/19063fbe1d8c693d.provider-detection.json",
-          "content_sha256": "9d9690b766aa553c5e21f9a8da6507476924e67e52d386890edb4f26bb890750"
+          "path": "providers/claude/fixtures/provider-proof/stop/03445379ba484bfd.provider-detection.json",
+          "content_sha256": "16bcea7e343b914c1fc30a04791671f79f016d0b73ba52864eecbe1b16931be2"
         }
       ],
-      "captured_at": "2026-05-11T10:18:00Z",
+      "captured_at": "2026-05-12T11:31:57Z",
       "compatibility_range": {
         "mode": "unknown-only",
         "min_version": "unknown",
@@ -724,159 +496,7 @@
 
         ]
       },
-      "fixture_record_hash": "4160551c36c78d88ce6bdb9352cd1f8402ab3e2ae8445de0875deefcbe1af79f"
-    },
-    {
-      "schema_version": 1,
-      "contract_id": "claude.stop.payload.573bba921955",
-      "provider": "claude",
-      "provider_version": "unknown",
-      "provider_build_hash": "",
-      "platform": "universal.arm64e-darwin24",
-      "event": "stop",
-      "contract_kind": "payload-schema",
-      "payload_schema_hash": "86f64b40e141b1e7a43e228829bd4d6b6061be017e7bfe3fdfebae485fc11bcb",
-      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "fixture_file_hashes": [
-        {
-          "path": "providers/claude/fixtures/normalized/stop/573bba92195505f6.event.normalized.json",
-          "content_sha256": "3be4dc1c654685435c301a9c4a56c56a6d9e10b4379dcd55d382b486cdb20fbf"
-        },
-        {
-          "path": "providers/claude/fixtures/payloads/stop/573bba92195505f6.json",
-          "content_sha256": "573bba92195505f6aa2d6c2047150a248af431c1cd05d881a14785bf335560d3"
-        },
-        {
-          "path": "providers/claude/fixtures/provider-proof/stop/573bba92195505f6.provider-detection.json",
-          "content_sha256": "4f2eb0dd5e897fe78faa5f5d399adb03ec81ec821e5bef1d5c6cb8e8550e2988"
-        }
-      ],
-      "captured_at": "2026-05-11T10:18:00Z",
-      "compatibility_range": {
-        "mode": "unknown-only",
-        "min_version": "unknown",
-        "max_version": "unknown",
-        "version_comparator": "",
-        "provider_build_hashes": [
-
-        ]
-      },
-      "fixture_record_hash": "8ccb7b4f6b61085c28399d8336a5afd53bd6f825442fab4f69314d5ceb7ec9a5"
-    },
-    {
-      "schema_version": 1,
-      "contract_id": "claude.stop.payload.9cb752141d1c",
-      "provider": "claude",
-      "provider_version": "unknown",
-      "provider_build_hash": "",
-      "platform": "universal.arm64e-darwin24",
-      "event": "stop",
-      "contract_kind": "payload-schema",
-      "payload_schema_hash": "11d22a91ffc76c27545a0c254bb1322c0b9f81a534c6006729e78c687e2f9711",
-      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "fixture_file_hashes": [
-        {
-          "path": "providers/claude/fixtures/normalized/stop/9cb752141d1c6008.event.normalized.json",
-          "content_sha256": "d4e3f57af30f27c35f9ca719c99ad4d7a817e58abc8d690c5c04b0b29134d9ad"
-        },
-        {
-          "path": "providers/claude/fixtures/payloads/stop/9cb752141d1c6008.json",
-          "content_sha256": "9cb752141d1c600815d40f62144bcd562c4186384533ae2febf8c985e44b98d5"
-        },
-        {
-          "path": "providers/claude/fixtures/provider-proof/stop/9cb752141d1c6008.provider-detection.json",
-          "content_sha256": "6aaddeeeda69657a61bf807ff8e3b3954e282f7d81a81bef8f9516b722632e65"
-        }
-      ],
-      "captured_at": "2026-05-11T10:18:00Z",
-      "compatibility_range": {
-        "mode": "unknown-only",
-        "min_version": "unknown",
-        "max_version": "unknown",
-        "version_comparator": "",
-        "provider_build_hashes": [
-
-        ]
-      },
-      "fixture_record_hash": "9284528dbe5d594b9e2726053a6dcd762a4cad3500bc4011dfed7d832e39fb32"
-    },
-    {
-      "schema_version": 1,
-      "contract_id": "claude.stop.payload.9cff02ab475f",
-      "provider": "claude",
-      "provider_version": "unknown",
-      "provider_build_hash": "",
-      "platform": "universal.arm64e-darwin24",
-      "event": "stop",
-      "contract_kind": "payload-schema",
-      "payload_schema_hash": "12af93d8fc44ed046e18a77e98f56924284979bc0e3e53592756ea5bbecf3412",
-      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "fixture_file_hashes": [
-        {
-          "path": "providers/claude/fixtures/normalized/stop/9cff02ab475f8af5.event.normalized.json",
-          "content_sha256": "032282be352d57a4c812dc73d021c304db059c9cc16a05052fb92993a9d52b0a"
-        },
-        {
-          "path": "providers/claude/fixtures/payloads/stop/9cff02ab475f8af5.json",
-          "content_sha256": "9cff02ab475f8af5edf6bd98f4e4e53432921b8b844c116ead380b61de653173"
-        },
-        {
-          "path": "providers/claude/fixtures/provider-proof/stop/9cff02ab475f8af5.provider-detection.json",
-          "content_sha256": "50094ae7fa06e9a65535677123ee2d6b4a944efec366893935a9bafdb45e0084"
-        }
-      ],
-      "captured_at": "2026-05-11T10:18:00Z",
-      "compatibility_range": {
-        "mode": "unknown-only",
-        "min_version": "unknown",
-        "max_version": "unknown",
-        "version_comparator": "",
-        "provider_build_hashes": [
-
-        ]
-      },
-      "fixture_record_hash": "b4ed1e4fe1f1adc102a095cb0b372c189c1eadffea8cad456550c680f8dbc051"
-    },
-    {
-      "schema_version": 1,
-      "contract_id": "claude.stop.payload.e0cc78e98c69",
-      "provider": "claude",
-      "provider_version": "unknown",
-      "provider_build_hash": "",
-      "platform": "universal.arm64e-darwin24",
-      "event": "stop",
-      "contract_kind": "payload-schema",
-      "payload_schema_hash": "b477994583992e52da80248628c5d690d9e7e68fb8f6e44ddf5eedb36374ffdf",
-      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "fixture_file_hashes": [
-        {
-          "path": "providers/claude/fixtures/normalized/stop/e0cc78e98c69a447.event.normalized.json",
-          "content_sha256": "2f001f0f144031f0938619cc0adfd2123de10332808669d97d82f4f7e9de4185"
-        },
-        {
-          "path": "providers/claude/fixtures/payloads/stop/e0cc78e98c69a447.json",
-          "content_sha256": "e0cc78e98c69a447697a2063da19481e04a724992df623e14c85565e66abc91d"
-        },
-        {
-          "path": "providers/claude/fixtures/provider-proof/stop/e0cc78e98c69a447.provider-detection.json",
-          "content_sha256": "6616eca15029cbd4c24ea52c2529f453e41a825310beca6a716d8cd9c370fe7d"
-        }
-      ],
-      "captured_at": "2026-05-11T10:18:00Z",
-      "compatibility_range": {
-        "mode": "unknown-only",
-        "min_version": "unknown",
-        "max_version": "unknown",
-        "version_comparator": "",
-        "provider_build_hashes": [
-
-        ]
-      },
-      "fixture_record_hash": "23f292a66710a8417cabfab808ad29489cbd914f83460639fffc990d6230812b"
+      "fixture_record_hash": "90a55340a583065a62fd95962a4267c4ebdf9edefabc53a766f9ab7136e898b1"
     },
     {
       "schema_version": 1,
@@ -889,15 +509,15 @@
       "contract_kind": "command-execution",
       "payload_schema_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "28f6274324d3843e9f2764fc6b9c1671e3821db967ffbdd37eea6aafdaf5ddb9",
+      "command_execution_contract_hash": "c649d496a67d859ec307f6862f39e22982e89b64a1202f3ff6336b6eac86287a",
       "fixture_file_hashes": [
         {
           "path": "providers/claude/fixtures/command-execution/user-prompt-submit/claude.user-prompt-submit.command.command-execution.json",
-          "content_sha256": "67539bce20726f638629ee6e3a033a5ccc9ba2df862447e28b5fcc557f479e5d"
+          "content_sha256": "4e25474910184270d6574a9ce8b8061b23b1042a0c1e485d2fc97207a4136a01"
         },
         {
           "path": "providers/claude/fixtures/command-execution/user-prompt-submit/claude.user-prompt-submit.command.discovery-record.json",
-          "content_sha256": "caaf8de783827c94c5f852185d2c1f805e52eda0796f91f0f6b90463e92b724d"
+          "content_sha256": "2f75cdd04e0f225fe715751aa44ce5442ea38ab2ee0d3491ee8a215b478c4228"
         },
         {
           "path": "providers/claude/fixtures/command-execution/user-prompt-submit/claude.user-prompt-submit.command.exit-code",
@@ -912,7 +532,7 @@
           "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       ],
-      "captured_at": "2026-05-11T10:18:00Z",
+      "captured_at": "2026-05-12T11:31:52Z",
       "compatibility_range": {
         "mode": "unknown-only",
         "min_version": "unknown",
@@ -922,35 +542,35 @@
 
         ]
       },
-      "fixture_record_hash": "d4131b8678496723fe0ba7b128dda1d67bffb28f8f5b28999bb04cc49cb39a64"
+      "fixture_record_hash": "c15f79e1454977eb6490d6007893d5390d4a5716b12b1d104a82b8d828343524"
     },
     {
       "schema_version": 1,
-      "contract_id": "claude.user-prompt-submit.payload.09b2674cc311",
+      "contract_id": "claude.user-prompt-submit.payload.5c983784e831",
       "provider": "claude",
       "provider_version": "unknown",
       "provider_build_hash": "",
       "platform": "universal.arm64e-darwin24",
       "event": "user-prompt-submit",
       "contract_kind": "payload-schema",
-      "payload_schema_hash": "2805e530f7b5402875d0f724996ad58405076b5f0ac7c717f7b1e054055d8668",
+      "payload_schema_hash": "778ec78f7badb68a57f0ade96f0108283b6912ddcab7fc08db1bc85e6e23cde4",
       "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
       "fixture_file_hashes": [
         {
-          "path": "providers/claude/fixtures/normalized/user-prompt-submit/09b2674cc31133bf.event.normalized.json",
-          "content_sha256": "30e110f9e5b6ad1078d4035e220c2dee10a5bf978822f3ba473c31b35a633c8d"
+          "path": "providers/claude/fixtures/normalized/user-prompt-submit/5c983784e83193f0.event.normalized.json",
+          "content_sha256": "f1b95009085abe237e56452f488bd1684498be62dfa7e18a591ca15e8d99eb11"
         },
         {
-          "path": "providers/claude/fixtures/payloads/user-prompt-submit/09b2674cc31133bf.json",
-          "content_sha256": "09b2674cc31133bf14ecf92da3ade5eadf39960e35b46a07fcf5ad5a05991168"
+          "path": "providers/claude/fixtures/payloads/user-prompt-submit/5c983784e83193f0.json",
+          "content_sha256": "5c983784e83193f03a985216d201fa147bab1c4de78beacb9ef7f88e83855f48"
         },
         {
-          "path": "providers/claude/fixtures/provider-proof/user-prompt-submit/09b2674cc31133bf.provider-detection.json",
-          "content_sha256": "b6958852b8c3d9c5c6a825e4d9a7ce6069ff8b341673ad171508c22313872cad"
+          "path": "providers/claude/fixtures/provider-proof/user-prompt-submit/5c983784e83193f0.provider-detection.json",
+          "content_sha256": "702264bb286bbed8e5a9876b4faac389976e9e50eb4dbafc711950c1eee2c689"
         }
       ],
-      "captured_at": "2026-05-11T10:18:00Z",
+      "captured_at": "2026-05-12T11:31:52Z",
       "compatibility_range": {
         "mode": "unknown-only",
         "min_version": "unknown",
@@ -960,160 +580,8 @@
 
         ]
       },
-      "fixture_record_hash": "c77fe47e6ac4879f41e247634c6f780b808bd00c6e2acc90370d74211322f664"
-    },
-    {
-      "schema_version": 1,
-      "contract_id": "claude.user-prompt-submit.payload.18c971beb162",
-      "provider": "claude",
-      "provider_version": "unknown",
-      "provider_build_hash": "",
-      "platform": "universal.arm64e-darwin24",
-      "event": "user-prompt-submit",
-      "contract_kind": "payload-schema",
-      "payload_schema_hash": "06dab80f6864835dd7b4acd5b80eeeee9ad17a9c5ef425af486e2c8894ccb78f",
-      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "fixture_file_hashes": [
-        {
-          "path": "providers/claude/fixtures/normalized/user-prompt-submit/18c971beb162eca5.event.normalized.json",
-          "content_sha256": "44915dc9cf1c66f07c163f96d9bf4a0db7530f4a791f52b3f5c2f5f3bec95dc2"
-        },
-        {
-          "path": "providers/claude/fixtures/payloads/user-prompt-submit/18c971beb162eca5.json",
-          "content_sha256": "18c971beb162eca54a276a266b37111040e569fceed7d5bfc197bfef637dd3d4"
-        },
-        {
-          "path": "providers/claude/fixtures/provider-proof/user-prompt-submit/18c971beb162eca5.provider-detection.json",
-          "content_sha256": "1a0fef755a97ad637a35a9c4a44077189a89ec105a62c3f7c8d3bc2b00554707"
-        }
-      ],
-      "captured_at": "2026-05-11T10:18:00Z",
-      "compatibility_range": {
-        "mode": "unknown-only",
-        "min_version": "unknown",
-        "max_version": "unknown",
-        "version_comparator": "",
-        "provider_build_hashes": [
-
-        ]
-      },
-      "fixture_record_hash": "49cb5050c81dd8e6eade623f97fa580c4e8aa4bda7391ee6fa4a8056ac47ced9"
-    },
-    {
-      "schema_version": 1,
-      "contract_id": "claude.user-prompt-submit.payload.2444875a11a2",
-      "provider": "claude",
-      "provider_version": "unknown",
-      "provider_build_hash": "",
-      "platform": "universal.arm64e-darwin24",
-      "event": "user-prompt-submit",
-      "contract_kind": "payload-schema",
-      "payload_schema_hash": "d38fd1865dcffff8f815424acd6935e0d6175596258284e3bfac1eb806203fef",
-      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "fixture_file_hashes": [
-        {
-          "path": "providers/claude/fixtures/normalized/user-prompt-submit/2444875a11a293dc.event.normalized.json",
-          "content_sha256": "149f65666bfe0e54a4b3783b06f12aad0474a7da7f7ef50479b9a0e30d1a6227"
-        },
-        {
-          "path": "providers/claude/fixtures/payloads/user-prompt-submit/2444875a11a293dc.json",
-          "content_sha256": "2444875a11a293dc9eef63da229d96c510a6bc5ebbc519aa847c1b56a75b2890"
-        },
-        {
-          "path": "providers/claude/fixtures/provider-proof/user-prompt-submit/2444875a11a293dc.provider-detection.json",
-          "content_sha256": "87225b6bd1eeae61f3997a1358d88a85e2f69c08be71adedf3e09359701264f5"
-        }
-      ],
-      "captured_at": "2026-05-11T10:18:00Z",
-      "compatibility_range": {
-        "mode": "unknown-only",
-        "min_version": "unknown",
-        "max_version": "unknown",
-        "version_comparator": "",
-        "provider_build_hashes": [
-
-        ]
-      },
-      "fixture_record_hash": "8297c6aa27a74923d98593cdae51aedc0030ac9c47fda5e3a25ccf3edc1a9cda"
-    },
-    {
-      "schema_version": 1,
-      "contract_id": "claude.user-prompt-submit.payload.43b4e3278f65",
-      "provider": "claude",
-      "provider_version": "unknown",
-      "provider_build_hash": "",
-      "platform": "universal.arm64e-darwin24",
-      "event": "user-prompt-submit",
-      "contract_kind": "payload-schema",
-      "payload_schema_hash": "433aab8224100e9667e5bafdcb1ca3b825556cbebfdf8916e5e3b393c0c36610",
-      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "fixture_file_hashes": [
-        {
-          "path": "providers/claude/fixtures/normalized/user-prompt-submit/43b4e3278f65064c.event.normalized.json",
-          "content_sha256": "26acae486ae7fbcc5364cab75c72c118a636dd62868092d2755cd15aa5b5d7a2"
-        },
-        {
-          "path": "providers/claude/fixtures/payloads/user-prompt-submit/43b4e3278f65064c.json",
-          "content_sha256": "43b4e3278f65064cfd31b1e3a4b1372581693aff1f143b5b76528bc375dc2af6"
-        },
-        {
-          "path": "providers/claude/fixtures/provider-proof/user-prompt-submit/43b4e3278f65064c.provider-detection.json",
-          "content_sha256": "7ea7129e5128543ac358a5e0daad23f76c6171f9928e320cc7a33b76305127c7"
-        }
-      ],
-      "captured_at": "2026-05-11T10:18:00Z",
-      "compatibility_range": {
-        "mode": "unknown-only",
-        "min_version": "unknown",
-        "max_version": "unknown",
-        "version_comparator": "",
-        "provider_build_hashes": [
-
-        ]
-      },
-      "fixture_record_hash": "ba3de79184db83c2e9138d36bea7354dbca241e76aab3ab4f30b9499cbe68801"
-    },
-    {
-      "schema_version": 1,
-      "contract_id": "claude.user-prompt-submit.payload.8bcd5ab4d3e2",
-      "provider": "claude",
-      "provider_version": "unknown",
-      "provider_build_hash": "",
-      "platform": "universal.arm64e-darwin24",
-      "event": "user-prompt-submit",
-      "contract_kind": "payload-schema",
-      "payload_schema_hash": "05baf1290a760f6e853622f353b90844d07b6ebe097e6fde311b042cc0747f6d",
-      "decision_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "command_execution_contract_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "fixture_file_hashes": [
-        {
-          "path": "providers/claude/fixtures/normalized/user-prompt-submit/8bcd5ab4d3e2dc95.event.normalized.json",
-          "content_sha256": "ebd98a9bc4d5ec620731fc9596a8534908b649f4690683eec656e38ccc87ef55"
-        },
-        {
-          "path": "providers/claude/fixtures/payloads/user-prompt-submit/8bcd5ab4d3e2dc95.json",
-          "content_sha256": "8bcd5ab4d3e2dc951028662b4eaebf6872f869d91aa2cd422105513eaf71f164"
-        },
-        {
-          "path": "providers/claude/fixtures/provider-proof/user-prompt-submit/8bcd5ab4d3e2dc95.provider-detection.json",
-          "content_sha256": "d2a200d5225470abdbefeaa931615bbaf3ab66de00bbfa8abf6f346cc3c5b36c"
-        }
-      ],
-      "captured_at": "2026-05-11T10:18:00Z",
-      "compatibility_range": {
-        "mode": "unknown-only",
-        "min_version": "unknown",
-        "max_version": "unknown",
-        "version_comparator": "",
-        "provider_build_hashes": [
-
-        ]
-      },
-      "fixture_record_hash": "6f7110cf1a555c5a632b418ba111869d3db792c08dc0f9603285715b10dd12f9"
+      "fixture_record_hash": "f14cb734da38681af2eb22eab2cd95d3767a4d3b53e2f51bd791d844aa000ff6"
     }
   ],
-  "manifest_hash": "754a629d5d25f978cbce5fdff1844664d3bb3103fb85141f7168986da9856b4b"
+  "manifest_hash": "1281d906212228f4b7b7e988a8f517afefa8d954a580c84a898f549a64b91811"
 }

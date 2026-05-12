@@ -16,10 +16,10 @@
   "hook_exit_status": 0,
   "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "discovery_recorded_at": "2026-05-11T10:18:16Z",
+  "discovery_recorded_at": "2026-05-12T11:31:52Z",
   "provider_detection_decision": "match",
-  "payload_sha256": "18c971beb162eca54a276a266b37111040e569fceed7d5bfc197bfef637dd3d4",
+  "payload_sha256": "5c983784e83193f03a985216d201fa147bab1c4de78beacb9ef7f88e83855f48",
   "raw_payload_captured": true,
-  "raw_payload_path": "/Users/andrey/.strict-mode/state/discovery/raw/claude/user-prompt-submit/20260511T101816-29306-739f2f90-18c971beb162.payload",
+  "raw_payload_path": "/Users/andrey/.strict-mode/state/discovery/raw/claude/user-prompt-submit/20260512T113152-20296-a10869c6-5c983784e831.payload",
   "hook_mode": "discovery-log-only"
 }

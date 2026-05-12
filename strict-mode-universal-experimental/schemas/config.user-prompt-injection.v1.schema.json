@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "schema_id": "config.user-prompt-injection.v1",
+  "owner": "[Hook Event Matrix](03-hook-event-matrix.md)",
+  "input_family": "protected `user-prompt-injection.md` raw text config",
+  "hash_fields": [
+
+  ],
+  "required_fields": [
+
+  ],
+  "referenced_terms": [
+
+  ],
+  "referenced_details": {
+  },
+  "field_profiles": [
+
+  ],
+  "field_details": {
+  },
+  "enum_families": [
+
+  ],
+  "enum_values": {
+  },
+  "variant_requirements": [
+
+  ],
+  "variant_rules": {
+  },
+  "variants": [
+    "UTF-8 raw text grammar",
+    "whole-file byte cap",
+    "markdown preservation",
+    "protected-baseline loading only",
+    "no executable semantics",
+    "UserPromptSubmit-only provider stdout emission."
+  ],
+  "variant_details": {
+    "UTF-8 raw text grammar": {
+      "index": 1,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "UTF-8 raw text grammar"
+      ]
+    },
+    "whole-file byte cap": {
+      "index": 2,
+      "kind": "grammar",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "whole-file byte cap"
+      ]
+    },
+    "markdown preservation": {
+      "index": 3,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "markdown preservation"
+      ]
+    },
+    "protected-baseline loading only": {
+      "index": 4,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "protected-baseline loading only"
+      ]
+    },
+    "no executable semantics": {
+      "index": 5,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "no executable semantics"
+      ]
+    },
+    "UserPromptSubmit-only provider stdout emission.": {
+      "index": 6,
+      "kind": "behavior",
+      "source": "17.2 Schema Implementation Profiles",
+      "rules": [
+        "UserPromptSubmit-only provider stdout emission."
+      ]
+    }
+  },
+  "nested_profiles": [
+
+  ],
+  "fixture_requirements": [
+    "protected raw text parser plus prompt-injection emission validator"
+  ],
+  "profile_hash": "ffd31a668959aa83f8fd0d2c0e7ef4cf1cbd8de1ba84a9b441a8ea8c4b182632"
+}

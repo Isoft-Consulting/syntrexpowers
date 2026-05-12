@@ -12,6 +12,7 @@
     "config.protected-paths.v1",
     "config.runtime-env.v1",
     "config.stub-allowlist.v1",
+    "config.user-prompt-injection.v1",
     "decision.internal.v1",
     "decision.provider-output.v1",
     "event.normalized.v1",
@@ -46,6 +47,6 @@
     "worker.invocation.v1",
     "worker.result.v1"
   ],
-  "generated_from_spec_hash": "530852322cb53d5fb0489a7323389ac87c0f70fdb6e285040fbc40768a8613ab",
-  "registry_hash": "ec08968118817156d7e9afb2530c140124f66d309ece3c785d95cb6e6a2cbcd5"
+  "generated_from_spec_hash": "5b3b98d71d5d0e1a526e275bbb1f7841510faa537de316283dd0d75c16e7e860",
+  "registry_hash": "1ac05bedc700774aad706c02f477e4ef9ecc586df7e4b220d7e5ec2ae1c2a18b"
 }

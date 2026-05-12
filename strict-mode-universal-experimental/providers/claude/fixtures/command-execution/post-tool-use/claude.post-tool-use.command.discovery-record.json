@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "recorded_at": "2026-05-11T10:18:20Z",
+  "recorded_at": "2026-05-12T11:31:55Z",
   "provider": "claude",
   "event": "post-tool-use",
   "mode": "discovery-log-only",
   "provider_detection_decision": "match",
-  "provider_proof_hash": "d5a2442ed183953f9ba1bdffe2827d4b109776c77d5adf23faa73bd09ab4a39a",
-  "payload_sha256": "7dbf313384edc957744e6bac997eb336d10ddb00156ad60426c9371d99620ee0",
+  "payload_sha256": "85cfd27f89e8a8b60b504304238623328bf28b581cfdea6cb4970d86ddc1d620",
   "raw_payload_captured": true,
-  "raw_payload_path": "/Users/andrey/.strict-mode/state/discovery/raw/claude/post-tool-use/20260511T101820-29368-2313665b-7dbf313384ed.payload"
+  "raw_payload_path": "/Users/andrey/.strict-mode/state/discovery/raw/claude/post-tool-use/20260512T113155-20349-dffe088a-85cfd27f89e8.payload",
+  "provider_proof_hash": "3a2879f4b6696fc3830fd9d3e23e743e1c13b95ac316211399cf51fa26b5cd9c"
 }

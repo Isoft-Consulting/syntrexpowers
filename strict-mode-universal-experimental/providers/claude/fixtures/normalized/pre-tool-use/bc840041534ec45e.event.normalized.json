@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
   "provider": "claude",
-  "logical_event": "user-prompt-submit",
-  "raw_event": "UserPromptSubmit",
-  "session_id": "c23308e5-f909-4b33-965e-ed7b5ca2cc94",
+  "logical_event": "pre-tool-use",
+  "raw_event": "PreToolUse",
+  "session_id": "43a1ba8d-2133-4c13-a4de-ddc45e0f5287",
   "parent_session_id": "",
   "turn_id": "",
-  "cwd": "/Users/andrey",
-  "project_dir": "/Users/andrey",
-  "transcript_path": "/Users/andrey/.claude/projects/-Users-andrey/c23308e5-f909-4b33-965e-ed7b5ca2cc94.jsonl",
+  "cwd": "/Users/andrey/syntrexpowers",
+  "project_dir": "/Users/andrey/syntrexpowers",
+  "transcript_path": "/Users/andrey/.claude/projects/-Users-andrey-syntrexpowers/43a1ba8d-2133-4c13-a4de-ddc45e0f5287.jsonl",
   "turn": {
     "assistant_text": "",
     "assistant_text_bytes": 0,
@@ -17,10 +17,10 @@
     "has_fdr_context": false
   },
   "tool": {
-    "name": "",
-    "kind": "unknown",
-    "write_intent": "none",
-    "command": "",
+    "name": "Bash",
+    "kind": "shell",
+    "write_intent": "unknown",
+    "command": "printf claude-hook-smoke-english",
     "file_path": "",
     "file_paths": [
 
@@ -60,14 +60,14 @@
     "can_approve": "unknown"
   },
   "prompt": {
-    "text": "echo CLAUDE_SMOKE_SENTINEL_002"
+    "text": ""
   },
   "assistant": {
     "last_message": ""
   },
   "raw": {
-    "payload_sha256": "09b2674cc31133bf14ecf92da3ade5eadf39960e35b46a07fcf5ad5a05991168",
-    "event_name": "UserPromptSubmit",
+    "payload_sha256": "bc840041534ec45ec514cbc6d2476bc1a58990c4b27554a0f6eb4a9dedfa8804",
+    "event_name": "PreToolUse",
     "logical_event_mismatch": false,
     "provider_indicators": [
       "claude.transcript_path",
