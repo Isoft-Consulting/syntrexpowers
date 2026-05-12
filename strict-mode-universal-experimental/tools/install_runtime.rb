@@ -751,6 +751,7 @@ options = {
   install_root: ENV["STRICT_INSTALL_ROOT"],
   state_root: ENV["STRICT_STATE_ROOT"],
   enforce: false,
+  allow_blocking_enforce: false,
   plan_only: false,
   provider_versions: {},
   provider_build_hashes: {}
@@ -762,6 +763,7 @@ begin
     opts.on("--install-root PATH") { |value| options[:install_root] = value }
     opts.on("--state-root PATH") { |value| options[:state_root] = value }
     opts.on("--enforce") { options[:enforce] = true }
+    opts.on("--allow-blocking-enforce") { options[:allow_blocking_enforce] = true }
     opts.on("--plan-only") { options[:plan_only] = true }
     opts.on("--dry-run") { options[:plan_only] = true }
     opts.on("--provider-version PROVIDER=VERSION") do |value|
@@ -800,6 +802,9 @@ if options[:enforce]
   if options[:plan_only]
     puts JSON.pretty_generate(build_install_plan(home, install_root, state_root, providers, enforce: true, provider_versions: options[:provider_versions], provider_build_hashes: options[:provider_build_hashes]))
     exit 0
+  end
+  unless options[:allow_blocking_enforce]
+    fail_install("--enforce real activation installs blocking PreToolUse/Stop hooks; rerun with --allow-blocking-enforce after reviewing --enforce --plan-only output")
   end
 end
 if options[:plan_only]

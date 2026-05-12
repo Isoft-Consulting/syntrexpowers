@@ -11,7 +11,7 @@ Use temporary `HOME`:
 - install Codex config
 - Codex install refuses enforcing activation and does not write trusted `~/.codex/hooks.json` when fixture discovery does not prove the installed hook feature flag, hook config path, event names, matcher syntax, command execution, payload, and event-specific decision-output contracts for blocking events
 - discovery `--dry-run` emits a non-enforcing hook plan and performs no provider config or install-root mutation
-- enforcing plan-only is fixture-gated, writes nothing on readiness failure, and on fixture-proven temporary providers emits selected-output-bound JSON hook plans without provider config or install-root mutation
+- enforcing plan-only is fixture-gated, writes nothing on readiness failure, and on fixture-proven temporary providers emits selected-output-bound JSON hook plans without provider config or install-root mutation; real enforcing activation refuses to mutate provider configs until the caller passes the explicit blocking-mode acknowledgement flag
 - enforcing Codex PermissionRequest hook config is written only when fixture discovery proves the event name, command execution, payload schema, and selected block/deny output contract
 - base Codex hook config excludes `PermissionRequest` before fixture proof; conditional snippet merge is tested separately
 - malformed selected-output contract records cannot enable conditional hook insertion in discovery mode

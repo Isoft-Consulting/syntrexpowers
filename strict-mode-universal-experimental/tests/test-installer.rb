@@ -1749,9 +1749,21 @@ with_fixture do |root, home, install_root|
 end
 
 with_fixture do |root, home, install_root|
+  name = "enforcing install requires explicit blocking acknowledgement"
+  project_root = copied_project_with_codex_enforcing_fixtures(root)
+  before_hooks = home.join(".codex/hooks.json").read
+  exitstatus, output = run_cmd({ "HOME" => home.to_s }, project_root.join("install.sh"), "--provider", "codex", "--install-root", install_root, "--enforce")
+  assert_no_stacktrace(name, output)
+  assert(name, exitstatus == 1, "expected blocking acknowledgement failure, got #{exitstatus}", output)
+  assert(name, output.include?("--allow-blocking-enforce"), "missing blocking acknowledgement diagnostic", output)
+  assert(name, home.join(".codex/hooks.json").read == before_hooks, "blocking acknowledgement failure mutated Codex hooks")
+  assert(name, !install_root.exist?, "blocking acknowledgement failure created install root")
+end
+
+with_fixture do |root, home, install_root|
   name = "enforcing install writes enforcing baseline and runtime blocks"
   project_root = copied_project_with_codex_enforcing_fixtures(root)
-  exitstatus, output = run_cmd({ "HOME" => home.to_s }, project_root.join("install.sh"), "--provider", "codex", "--install-root", install_root, "--enforce")
+  exitstatus, output = run_cmd({ "HOME" => home.to_s }, project_root.join("install.sh"), "--provider", "codex", "--install-root", install_root, "--enforce", "--allow-blocking-enforce")
   assert_no_stacktrace(name, output)
   assert(name, exitstatus.zero?, "expected enforcing install success, got #{exitstatus}", output)
 
