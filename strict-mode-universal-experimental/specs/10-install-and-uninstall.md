@@ -117,10 +117,10 @@ When fixture-proven, it merges `~/.codex/hooks.json`:
       {"hooks": [{"type": "command", "command": "STRICT_HOOK_TIMEOUT_MS=3000 STRICT_STATE_ROOT=\"/ABS/HOME/.strict-mode/state\" \"/ABS/HOME/.strict-mode/active/bin/strict-hook\" --provider codex user-prompt-submit"}]}
     ],
     "PreToolUse": [
-      {"matcher": ".*", "hooks": [{"type": "command", "command": "STRICT_HOOK_TIMEOUT_MS=5000 STRICT_STATE_ROOT=\"/ABS/HOME/.strict-mode/state\" \"/ABS/HOME/.strict-mode/active/bin/strict-hook\" --provider codex pre-tool-use"}]}
+      {"matcher": "^(Bash|Shell|shell|Write|Edit|MultiEdit|NotebookWrite|NotebookEdit|NotebookMultiEdit|ApplyPatch|apply_patch)$", "hooks": [{"type": "command", "command": "STRICT_HOOK_TIMEOUT_MS=5000 STRICT_STATE_ROOT=\"/ABS/HOME/.strict-mode/state\" \"/ABS/HOME/.strict-mode/active/bin/strict-hook\" --provider codex pre-tool-use"}]}
     ],
     "PostToolUse": [
-      {"matcher": ".*", "hooks": [{"type": "command", "command": "STRICT_HOOK_TIMEOUT_MS=3000 STRICT_STATE_ROOT=\"/ABS/HOME/.strict-mode/state\" \"/ABS/HOME/.strict-mode/active/bin/strict-hook\" --provider codex post-tool-use"}]}
+      {"matcher": "^(Bash|Shell|shell|Write|Edit|MultiEdit|NotebookWrite|NotebookEdit|NotebookMultiEdit|ApplyPatch|apply_patch)$", "hooks": [{"type": "command", "command": "STRICT_HOOK_TIMEOUT_MS=3000 STRICT_STATE_ROOT=\"/ABS/HOME/.strict-mode/state\" \"/ABS/HOME/.strict-mode/active/bin/strict-hook\" --provider codex post-tool-use"}]}
     ],
     "Stop": [
       {"hooks": [{"type": "command", "command": "STRICT_HOOK_TIMEOUT_MS=60000 STRICT_STATE_ROOT=\"/ABS/HOME/.strict-mode/state\" \"/ABS/HOME/.strict-mode/active/bin/strict-hook\" --provider codex stop"}]}
@@ -129,7 +129,7 @@ When fixture-proven, it merges `~/.codex/hooks.json`:
 }
 ```
 
-Codex matcher syntax must be fixture-tested. If `.*` is not accepted, installer must use the broadest accepted matcher or omit matcher where the event permits. Enforcing Codex activation fails when fixture-proven shell, write, edit, patch, path-bearing `other`, unknown write-like tools, or approval-capable `PermissionRequest` events cannot be covered by generated hooks.
+Codex matcher syntax must be fixture-tested. Codex `PreToolUse`/`PostToolUse` defaults should target shell + write/edit tool families to avoid high-volume read-only hook noise while still covering enforcement-critical tool calls. If that matcher is not accepted for an installed build, installer must use the broadest accepted matcher that still covers fixture-proven shell/write/edit/patch behavior, or omit matcher where the event permits. Enforcing Codex activation fails when fixture-proven shell, write, edit, patch, path-bearing `other`, unknown write-like tools, or approval-capable `PermissionRequest` events cannot be covered by generated hooks.
 
 The base Codex hook config must not include `PermissionRequest`. An enforcing `PermissionRequest` hook entry is installed only after fixtures prove Codex accepts that event name, executes the command, provides a validated payload schema, and has a selected block/deny output contract. If installed, it is merged as a conditional additional event:
 

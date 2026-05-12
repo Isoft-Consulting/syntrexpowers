@@ -43,8 +43,12 @@ end
 run_case do
   name = "discovery Codex hook plan excludes PermissionRequest without selected output proof"
   entries = StrictModeInstallHookPlan.managed_entries("codex", Pathname.new("/tmp/codex-hooks.json"), Pathname.new("/tmp/strict root"))
+  pre = entries.find { |entry| entry.fetch("logical_event") == "pre-tool-use" }
+  post = entries.find { |entry| entry.fetch("logical_event") == "post-tool-use" }
   assert(name, entries.size == 5, "unexpected discovery hook count", entries.inspect)
   assert(name, entries.none? { |entry| entry.fetch("hook_event") == "PermissionRequest" }, "PermissionRequest installed without proof", entries.inspect)
+  assert(name, pre && pre.fetch("matcher") == StrictModeInstallHookPlan::CODEX_WRITE_AND_SHELL_MATCHER, "unexpected PreToolUse matcher", pre.inspect)
+  assert(name, post && post.fetch("matcher") == StrictModeInstallHookPlan::CODEX_WRITE_AND_SHELL_MATCHER, "unexpected PostToolUse matcher", post.inspect)
   assert(name, entries.all? { |entry| entry.fetch("enforcing") == false && entry.fetch("output_contract_id") == "" }, "discovery entries claimed enforcement", entries.inspect)
   assert(name, entries.all? { |entry| entry.fetch("command").include?("STRICT_STATE_ROOT=\"/tmp/strict root/state\"") }, "commands do not bind default state root", entries.inspect)
 end

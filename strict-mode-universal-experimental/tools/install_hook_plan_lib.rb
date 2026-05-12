@@ -6,6 +6,8 @@ require_relative "hook_entry_plan_lib"
 module StrictModeInstallHookPlan
   extend self
 
+  CODEX_WRITE_AND_SHELL_MATCHER = "^(Bash|Shell|shell|Write|Edit|MultiEdit|NotebookWrite|NotebookEdit|NotebookMultiEdit|ApplyPatch|apply_patch)$".freeze
+
   def double_quote_shell(path)
     %("#{path.to_s.gsub(/["\\$`]/) { |char| "\\#{char}" }}")
   end
@@ -29,17 +31,24 @@ module StrictModeInstallHookPlan
     specs = [
       ["SessionStart", "session-start", "", 5_000, provider == "claude" ? 6_000 : 0, timeout_field],
       ["UserPromptSubmit", "user-prompt-submit", "", 3_000, provider == "claude" ? 4_000 : 0, timeout_field],
-      ["PreToolUse", "pre-tool-use", ".*", 5_000, provider == "claude" ? 6_000 : 0, timeout_field],
-      ["PostToolUse", "post-tool-use", ".*", 3_000, provider == "claude" ? 4_000 : 0, timeout_field],
+      ["PreToolUse", "pre-tool-use", matcher_for(provider, "pre-tool-use"), 5_000, provider == "claude" ? 6_000 : 0, timeout_field],
+      ["PostToolUse", "post-tool-use", matcher_for(provider, "post-tool-use"), 3_000, provider == "claude" ? 4_000 : 0, timeout_field],
       ["Stop", "stop", "", 60_000, provider == "claude" ? 61_000 : 0, timeout_field]
     ]
     if provider == "claude" && include_subagent_stop
       specs << ["SubagentStop", "subagent-stop", "", 30_000, provider == "claude" ? 31_000 : 0, timeout_field]
     end
     if include_permission_request
-      specs << ["PermissionRequest", "permission-request", ".*", 5_000, provider == "claude" ? 6_000 : 0, timeout_field]
+      specs << ["PermissionRequest", "permission-request", matcher_for(provider, "permission-request"), 5_000, provider == "claude" ? 6_000 : 0, timeout_field]
     end
     specs
+  end
+
+  def matcher_for(provider, logical_event)
+    return ".*" if provider == "claude"
+    return CODEX_WRITE_AND_SHELL_MATCHER if %w[pre-tool-use post-tool-use].include?(logical_event)
+
+    ".*"
   end
 
   def normalize_selected_output_contracts(records)
