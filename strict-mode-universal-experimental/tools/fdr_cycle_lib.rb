@@ -187,11 +187,12 @@ class StrictModeFdrCycle
     ).merge(artifact)
   end
 
-  def self.reusable_result(state_root, context)
+  def self.reusable_result(state_root, context, prompt_template_hash: PROMPT_TEMPLATE_HASH)
     records = load_cycle_records(cycle_path(state_root, context.fetch("provider"), context.fetch("session_key")))
     matching = records.select do |record|
       record.fetch("scope_digest") == context.fetch("scope_digest") &&
-        record.fetch("artifact_hash") == context.fetch("artifact_hash")
+        record.fetch("artifact_hash") == context.fetch("artifact_hash") &&
+        prompt_hash_matches?(record, context, prompt_template_hash)
     end
     clean = matching.reverse.find { |record| record.fetch("decision") == "judge-clean" }
     return { "decision" => "judge-clean", "record" => clean } if clean
@@ -201,7 +202,8 @@ class StrictModeFdrCycle
 
     scope_challenges = records.select do |record|
       record.fetch("decision") == "judge-challenge" &&
-        record.fetch("scope_digest") == context.fetch("scope_digest")
+        record.fetch("scope_digest") == context.fetch("scope_digest") &&
+        prompt_hash_matches?(record, context, prompt_template_hash)
     end
     distinct_artifacts = scope_challenges.map { |record| record.fetch("artifact_hash") }.uniq
     return { "decision" => "judge-challenge", "record" => scope_challenges.last } if distinct_artifacts.length >= MAX_CYCLES
@@ -209,6 +211,24 @@ class StrictModeFdrCycle
     nil
   rescue JSON::ParserError, RuntimeError
     nil
+  end
+
+  def self.prompt_hash_matches?(record, context, prompt_template_hash)
+    return true unless %w[judge-clean judge-challenge].include?(record.fetch("decision"))
+
+    record_context = context.merge(
+      "artifact_state" => record.fetch("artifact_state"),
+      "artifact_hash" => record.fetch("artifact_hash"),
+      "artifact_verdict" => record.fetch("artifact_verdict"),
+      "finding_count" => record.fetch("finding_count")
+    )
+    expected = prompt_hash(
+      record_context,
+      judge_backend: record.fetch("judge_backend"),
+      judge_model: record.fetch("judge_model"),
+      prompt_template_hash: prompt_template_hash
+    )
+    record.fetch("prompt_hash") == expected
   end
 
   def self.append_cycle!(state_root, context, decision:, challenge_reason:, judge_backend: "", judge_model: "", prompt_hash: ZERO_HASH, response_hash: ZERO_HASH, original_challenge_record_hash: ZERO_HASH)
@@ -282,8 +302,9 @@ class StrictModeFdrCycle
     end
   end
 
-  def self.prompt_hash(context, judge_backend:, judge_model:)
+  def self.prompt_hash(context, judge_backend:, judge_model:, prompt_template_hash: PROMPT_TEMPLATE_HASH)
     return ZERO_HASH if context.fetch("assistant_text_sha256") == ZERO_HASH
+    raise ArgumentError, "prompt_template_hash must be lowercase SHA-256" unless sha256?(prompt_template_hash)
 
     Digest::SHA256.hexdigest(StrictModeMetadata.canonical_json({
       "provider" => context.fetch("provider"),
@@ -298,7 +319,7 @@ class StrictModeFdrCycle
       "finding_count" => context.fetch("finding_count"),
       "judge_backend" => judge_backend,
       "judge_model" => judge_model,
-      "prompt_template_hash" => PROMPT_TEMPLATE_HASH,
+      "prompt_template_hash" => prompt_template_hash,
       "assistant_text_sha256" => context.fetch("assistant_text_sha256"),
       "assistant_text_bytes" => context.fetch("assistant_text_bytes"),
       "assistant_text_truncated" => context.fetch("assistant_text_truncated")

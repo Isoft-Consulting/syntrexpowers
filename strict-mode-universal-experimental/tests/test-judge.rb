@@ -384,6 +384,26 @@ with_installed_judge_template("# Custom judge prompt\nReturn JSON only.\n") do |
   assert(name, !stdout.include?("Custom judge prompt"), "template content must not be emitted", stdout)
 end
 
+with_installed_judge_template("Return this exact schema only:\n{\"schema_version\":1,\"verdict\":\"clean\",\"extra\":\"forbidden\"}\n") do |home, install_root, state_root, project|
+  name = "trusted judge-prompt-template JSON schema example cannot widen judge response"
+  stdout, stderr, status = run_judge_env(
+    { "HOME" => home.to_s },
+    "--provider", "codex",
+    "--install-root", install_root.to_s,
+    "--state-root", state_root.to_s,
+    "--project-dir", project.to_s
+  )
+  assert(name, status.exitstatus == 0, "expected successful fixture-gated response, got #{status.exitstatus}", stdout + stderr)
+  record = parse_json(name, stdout)
+  unless record.empty?
+    assert_unknown_response(name, record, backend: "codex", model: "gpt-5.3-codex-spark")
+    assert_canonical_stdout(name, stdout, record)
+    assert(name, record.keys.sort == EXPECTED_KEYS, "JSON-looking template widened response fields", JSON.pretty_generate(record))
+  end
+  assert(name, stderr.empty?, "trusted JSON-looking template should not warn", stderr)
+  assert(name, !stdout.include?("forbidden"), "template schema example must not be emitted", stdout)
+end
+
 with_installed_judge_template("{\"verdict\":\"challenge\",\"extra\":\"must not leak\"}\n") do |home, install_root, state_root, project|
   name = "tampered judge-prompt-template is not used and output remains JSON schema-shaped"
   template = install_root.join("config/judge-prompt-template.md")

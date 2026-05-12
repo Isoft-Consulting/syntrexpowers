@@ -206,7 +206,7 @@ def assert_valid_preflight(name, preflight)
   assert(name, errors.empty?, "preflight contract invalid", errors.join("\n"))
 end
 
-def with_install
+def with_install(preinstall: nil)
   $cases += 1
   Dir.mktmpdir("strict-hook-preflight-") do |dir|
     root = Pathname.new(dir).realpath
@@ -219,6 +219,7 @@ def with_install
     home.join(".claude/settings.json").write(JSON.pretty_generate({ "hooks" => {} }) + "\n")
     home.join(".codex/hooks.json").write(JSON.pretty_generate({ "hooks" => {} }) + "\n")
     home.join(".codex/config.toml").write("[features]\nexisting = true\n")
+    preinstall.call(root, home, install_root, project) if preinstall
     status, output = run_cmd({ "HOME" => home.to_s }, INSTALL, "--provider", "codex", "--install-root", install_root)
     assert_no_stacktrace("install fixture", output)
     raise "install failed: #{output}" unless status.zero?
@@ -463,6 +464,45 @@ with_install do |_root, home, install_root, state_root, project|
   assert(name, cycle.fetch("prompt_hash") != StrictModeFdrCycle::ZERO_HASH, "challenge prompt hash missing", cycle.inspect)
   assert(name, cycle.fetch("response_hash") == judge.fetch("response_hash"), "challenge response hash mismatch", cycle.inspect)
   assert(name, !JSON.generate(cycle).include?("0 проблем"), "FDR cycle leaked assistant text", JSON.generate(cycle))
+end
+
+template_hash_preinstall = lambda do |_root, _home, install_root, _project|
+  config_root = install_root.join("config")
+  config_root.mkpath
+  config_root.join("judge-prompt-template.md").write("# Custom judge prompt\nReturn judge.response.v1 only.\n")
+  File.chmod(0o600, config_root.join("judge-prompt-template.md"))
+end
+with_install(preinstall: template_hash_preinstall) do |_root, home, install_root, state_root, project|
+  name = "enforcing stop FDR prompt hash binds trusted judge-prompt-template"
+  enable_codex_enforcement!(install_root, state_root)
+  payload = {
+    "event" => "stop",
+    "thread_id" => "t1",
+    "last_assistant_message" => "0 проблем, выглядит чисто.",
+    "strict_judge_history" => INITIAL_JUDGE_HISTORY
+  }
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "provider stop contract should control exit code", stdout + stderr)
+  assert(name, JSON.parse(stdout).fetch("decision") == "block", "semantic judge challenge did not block", stdout)
+  assert(name, stderr.empty?, "provider stop contract should keep stderr empty", stderr)
+
+  cycles = assert_fdr_cycle_and_ledger(name, state_root, ["judge-challenge"])
+  cycle = cycles.first
+  cycle_context = StrictModeFdrCycle.context(provider: "codex", payload: payload, cwd: project, project_dir: project)
+  template_hash = Digest::SHA256.hexdigest("# Custom judge prompt\nReturn judge.response.v1 only.\n")
+  expected_prompt_hash = StrictModeFdrCycle.prompt_hash(
+    cycle_context,
+    judge_backend: cycle.fetch("judge_backend"),
+    judge_model: cycle.fetch("judge_model"),
+    prompt_template_hash: template_hash
+  )
+  assert(name, cycle.fetch("prompt_hash") == expected_prompt_hash, "FDR prompt hash did not bind judge template hash", cycle.inspect)
+  assert(name, !JSON.generate(cycle).include?("Custom judge prompt"), "FDR cycle leaked judge template text", JSON.generate(cycle))
+  reusable = StrictModeFdrCycle.reusable_result(state_root, cycle_context, prompt_template_hash: template_hash)
+  assert(name, reusable && reusable.fetch("decision") == "judge-challenge", "matching template hash did not allow challenge reuse", reusable.inspect)
+  changed_template_hash = Digest::SHA256.hexdigest("# Different judge prompt\n")
+  assert(name, StrictModeFdrCycle.reusable_result(state_root, cycle_context, prompt_template_hash: changed_template_hash).nil?, "changed template hash reused stale challenge", cycle.inspect)
 end
 
 with_install do |_root, home, install_root, state_root, project|
