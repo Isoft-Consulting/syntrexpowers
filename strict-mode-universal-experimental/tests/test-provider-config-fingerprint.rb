@@ -59,7 +59,7 @@ with_tmp do |dir|
   codex_dir = dir.join(".codex")
   codex_dir.mkpath
   config = codex_dir.join("config.toml")
-  stable = "[features]\ncodex_hooks = true\n"
+  stable = "[features]\nhooks = true\n"
   full = stable + "\n[hooks.state]\n\n[hooks.state.\"key\"]\ntrusted_hash = \"sha256:#{"a" * 64}\"\n"
   config.write(full)
   computed = StrictModeProviderConfigFingerprint.content_sha256(config, "provider-config", "codex")
@@ -73,7 +73,7 @@ with_tmp do |dir|
   codex_dir = dir.join(".codex")
   codex_dir.mkpath
   config = codex_dir.join("config.toml")
-  content = "[features]\ncodex_hooks = true\n"
+  content = "[features]\nhooks = true\n"
   config.write(content)
   computed = StrictModeProviderConfigFingerprint.content_sha256(config, "provider-config", "codex")
   expected = Digest::SHA256.hexdigest(content)
@@ -118,15 +118,15 @@ with_tmp do |dir|
   codex_dir = dir.join(".codex")
   codex_dir.mkpath
   config = codex_dir.join("config.toml")
-  full = "[features]\ncodex_hooks = true\n\n[hooks.state.\"a\"]\ntrusted_hash = \"sha256:#{"a" * 64}\"\n\n[projects.\"/var/www\"]\ntrust_level = \"trusted\"\n\n[hooks.state.\"b\"]\ntrusted_hash = \"sha256:#{"b" * 64}\"\n"
+  full = "[features]\nhooks = true\n\n[hooks.state.\"a\"]\ntrusted_hash = \"sha256:#{"a" * 64}\"\n\n[projects.\"/var/www\"]\ntrust_level = \"trusted\"\n\n[hooks.state.\"b\"]\ntrusted_hash = \"sha256:#{"b" * 64}\"\n"
   config.write(full)
   computed = StrictModeProviderConfigFingerprint.content_sha256(config, "provider-config", "codex")
   # Blank line right before [hooks.state.*] is popped from output (see
   # `output.pop while skip && output.last&.strip == ""` in
   # provider_config_fingerprint_lib.rb). So expected stable text has the
-  # `[projects.*]` block sitting directly after `codex_hooks = true` with
+  # `[projects.*]` block sitting directly after `hooks = true` with
   # no separating blank line.
-  expected_stable = "[features]\ncodex_hooks = true\n[projects.\"/var/www\"]\ntrust_level = \"trusted\"\n"
+  expected_stable = "[features]\nhooks = true\n[projects.\"/var/www\"]\ntrust_level = \"trusted\"\n"
   expected = Digest::SHA256.hexdigest(expected_stable)
   assert(name, computed == expected, "interleaved hooks.state blocks must all be stripped while keeping intervening stable tables intact", "computed=#{computed} expected=#{expected}")
 end
@@ -151,10 +151,10 @@ with_tmp do |dir|
   codex_dir = dir.join(".codex")
   codex_dir.mkpath
   config = codex_dir.join("config.toml")
-  full = "[features]\ncodex_hooks = true\n# stable comment above mutable trust state\n[hooks.state]\nkey = \"value\"\n"
+  full = "[features]\nhooks = true\n# stable comment above mutable trust state\n[hooks.state]\nkey = \"value\"\n"
   config.write(full)
   computed = StrictModeProviderConfigFingerprint.content_sha256(config, "provider-config", "codex")
-  expected_stable = "[features]\ncodex_hooks = true\n# stable comment above mutable trust state\n"
+  expected_stable = "[features]\nhooks = true\n# stable comment above mutable trust state\n"
   expected = Digest::SHA256.hexdigest(expected_stable)
   assert(name, computed == expected, "comments before hooks.state must remain in hash", "computed=#{computed} expected=#{expected}")
 end
@@ -170,10 +170,10 @@ with_tmp do |dir|
   codex_dir = dir.join(".codex")
   codex_dir.mkpath
   config = codex_dir.join("config.toml")
-  full = "[features]\ncodex_hooks = true\n[[hooks.state]]\nfoo = 1\n"
+  full = "[features]\nhooks = true\n[[hooks.state]]\nfoo = 1\n"
   config.write(full)
   computed = StrictModeProviderConfigFingerprint.content_sha256(config, "provider-config", "codex")
-  expected = Digest::SHA256.hexdigest("[features]\ncodex_hooks = true\n")
+  expected = Digest::SHA256.hexdigest("[features]\nhooks = true\n")
   assert(name, computed == expected, "array-of-tables [[hooks.state]] must also be stripped", "computed=#{computed} expected=#{expected}")
 end
 
@@ -203,7 +203,7 @@ with_tmp do |dir|
   codex_dir = dir.join(".codex")
   codex_dir.mkpath
   config = codex_dir.join("config.toml")
-  full = "[features]\ncodex_hooks = true\n[hooks.state.\"key]inner\"]\ntrusted = \"sha256:#{"c" * 64}\"\n"
+  full = "[features]\nhooks = true\n[hooks.state.\"key]inner\"]\ntrusted = \"sha256:#{"c" * 64}\"\n"
   config.write(full)
   computed = StrictModeProviderConfigFingerprint.content_sha256(config, "provider-config", "codex")
   # Current behaviour: NOT stripped (limitation), entire file remains in hash.

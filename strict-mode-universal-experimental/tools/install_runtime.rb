@@ -551,13 +551,14 @@ end
 
 def parse_codex_hooks_feature_config(path)
   raise "#{path}: Codex config must not be a symlink" if path.symlink?
-  return { "lines" => [], "features_seen" => false, "codex_line" => nil, "insert_at" => 0 } unless path.exist?
+  return { "lines" => [], "features_seen" => false, "hooks_line" => nil, "deprecated_codex_lines" => [], "insert_at" => 0 } unless path.exist?
   raise "#{path}: Codex config must be a file" unless path.file?
 
   lines = path.read.lines
   section = nil
   features_seen = false
-  codex_line = nil
+  hooks_line = nil
+  deprecated_codex_lines = []
   insert_at = nil
   lines.each_with_index do |line, index|
     if (match = line.match(/\A\s*\[([A-Za-z0-9_.-]+)\]\s*(?:#.*)?\z/))
@@ -577,16 +578,19 @@ def parse_codex_hooks_feature_config(path)
     next if line.strip.empty? || line.lstrip.start_with?("#")
 
     key = line.split("=", 2).first&.strip
-    if key == "codex_hooks"
-      raise "#{path}: duplicate codex_hooks key" if codex_line
+    if key == "hooks"
+      raise "#{path}: duplicate hooks key" unless hooks_line.nil?
 
-      codex_line = index
+      hooks_line = index
+    elsif key == "codex_hooks"
+      deprecated_codex_lines << index
     end
   end
   {
     "lines" => lines,
     "features_seen" => features_seen,
-    "codex_line" => codex_line,
+    "hooks_line" => hooks_line,
+    "deprecated_codex_lines" => deprecated_codex_lines,
     "insert_at" => insert_at || lines.length
   }
 end
@@ -608,7 +612,7 @@ def ensure_codex_hooks_feature(path)
   raise "#{path}: Codex config must not be a symlink" if path.symlink?
 
   unless path.exist?
-    path.write("[features]\ncodex_hooks = true\n")
+    path.write("[features]\nhooks = true\n")
     File.chmod(0o600, path)
     return
   end
@@ -616,17 +620,28 @@ def ensure_codex_hooks_feature(path)
   parsed = parse_codex_hooks_feature_config(path)
   lines = parsed.fetch("lines")
   features_seen = parsed.fetch("features_seen")
-  codex_line = parsed.fetch("codex_line")
+  hooks_line = parsed.fetch("hooks_line")
+  deprecated_codex_lines = parsed.fetch("deprecated_codex_lines")
   insert_at = parsed.fetch("insert_at")
 
-  if codex_line
-    lines[codex_line] = "codex_hooks = true\n"
-  elsif features_seen
-    lines.insert(insert_at, "codex_hooks = true\n")
-  else
-    lines << "\n" unless lines.empty? || lines.last.end_with?("\n\n")
-    lines << "[features]\n"
-    lines << "codex_hooks = true\n"
+  rebuilt_lines = []
+  lines.each_with_index do |line, index|
+    next if deprecated_codex_lines.include?(index)
+
+    rebuilt_lines << (index == hooks_line ? "hooks = true\n" : line)
+  end
+  lines = rebuilt_lines
+
+  if hooks_line.nil?
+    if features_seen
+      target_insert_at = deprecated_codex_lines.empty? ? insert_at : deprecated_codex_lines.first
+      deleted_before_insert = deprecated_codex_lines.count { |index| index < target_insert_at }
+      lines.insert(target_insert_at - deleted_before_insert, "hooks = true\n")
+    else
+      lines << "\n" unless lines.empty? || lines.last.end_with?("\n\n")
+      lines << "[features]\n"
+      lines << "hooks = true\n"
+    end
   end
 
   tmp = path.dirname.join(".#{path.basename}.tmp-#{$$}-#{SecureRandom.hex(4)}")

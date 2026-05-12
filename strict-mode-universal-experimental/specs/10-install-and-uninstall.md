@@ -102,7 +102,7 @@ When fixture-proven, it ensures `~/.codex/config.toml` contains:
 
 ```toml
 [features]
-codex_hooks = true
+hooks = true
 ```
 
 When fixture-proven, it merges `~/.codex/hooks.json`:

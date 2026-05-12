@@ -142,7 +142,7 @@ with_install(provider: "codex") do |_root, home, install_root, _state_root, proj
   name = "codex non-state config drift remains protected"
   config = home.join(".codex/config.toml")
   hook_state = "\n[hooks.state]\n\n[hooks.state.\"#{home}/.codex/hooks.json:pre_tool_use:0:0\"]\ntrusted_hash = \"sha256:#{"b" * 64}\"\n"
-  atomic_rewrite(config, config.read.sub("codex_hooks = true", "codex_hooks = false") + hook_state)
+  atomic_rewrite(config, config.read.sub("hooks = true", "hooks = false") + hook_state)
 
   loaded = StrictModeProtectedBaseline.load(install_root: install_root, project_dir: project, home: home)
   assert(name, !loaded.fetch("trusted"), "Codex feature flag drift loaded as trusted")

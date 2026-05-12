@@ -8,7 +8,7 @@ Part of [Strict Mode Universal Experimental - Specification v0](../SPEC.md).
 The system runs inside local coding-agent hook runtimes:
 
 - Claude Code hooks via `~/.claude/settings.json`
-- Codex CLI hooks via `~/.codex/hooks.json` and `codex_hooks`
+- Codex CLI hooks via `~/.codex/hooks.json` and `[features].hooks`
 - Local shell, git worktrees, project `AGENTS.md`, user home state
 - Optional nested headless judge invocations through Claude or Codex
 - Optional nested bounded worker invocations through fixture-proven cheap provider models
@@ -141,7 +141,7 @@ install.sh
   -> runs a recoverable activation commit for <install-root>/active and provider configs after staged self-check
   -> writes install manifest and protected install baseline for the active runtime
   -> preserves existing user hooks
-  -> enables codex_hooks feature when writing Codex config
+  -> enables hooks feature when writing Codex config
 ```
 
 ### Level 1 — Environment

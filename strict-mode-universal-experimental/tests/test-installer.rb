@@ -744,7 +744,21 @@ with_fixture do |_root, home, install_root|
   assert(name, !claude.fetch("hooks").key?("SubagentStop"), "Claude SubagentStop installed without fixture proof")
   assert(name, !codex.fetch("hooks").key?("PermissionRequest"), "Codex PermissionRequest installed without fixture proof")
   assert(name, home.join(".codex/config.toml").read.include?("existing = true"), "Codex TOML merge lost existing feature")
-  assert(name, home.join(".codex/config.toml").read.include?("codex_hooks = true"), "Codex hooks feature not enabled")
+  assert(name, home.join(".codex/config.toml").read.include?("hooks = true"), "Codex hooks feature not enabled")
+  assert(name, !home.join(".codex/config.toml").read.include?("codex_hooks"), "Codex deprecated feature flag remained enabled")
+end
+
+with_fixture do |_root, home, install_root|
+  name = "install migrates deprecated Codex hooks feature flag"
+  home.join(".codex/config.toml").write("[features]\nexisting = true\ncodex_hooks = true\n")
+  exitstatus, output = run_cmd({ "HOME" => home.to_s }, INSTALL, "--provider", "codex", "--install-root", install_root)
+  assert_no_stacktrace(name, output)
+  assert(name, exitstatus.zero?, "expected install success, got #{exitstatus}", output)
+  config = home.join(".codex/config.toml").read
+  assert(name, config.include?("[features]"), "Codex features table missing", config)
+  assert(name, config.include?("existing = true"), "Codex TOML merge lost existing feature", config)
+  assert(name, config.include?("hooks = true"), "Codex hooks feature not enabled", config)
+  assert(name, !config.include?("codex_hooks"), "deprecated Codex hooks feature flag was not removed", config)
 end
 
 with_fixture do |root, home, install_root|

@@ -21,7 +21,7 @@ Acceptance:
 
 - re-running installer is idempotent
 - existing non-strict hooks remain
-- Codex `codex_hooks` enabled without removing existing `[features]`
+- Codex `[features].hooks` enabled without removing existing `[features]`
 - generated hook commands use the shell-quoted absolute lexical `<install-root>/active/bin/strict-hook` path, not `$HOME`, `~`, aliases, or provider environment expansion
 - generated hook commands point at `<install-root>/active/bin/strict-hook`, not a realpath-resolved transaction release target
 - generated hooks include protected `strict-hook` self-timeout values for every event, and provider-native outer timeout fields when supported with a fixture-proven guard gap beyond the self-timeout
