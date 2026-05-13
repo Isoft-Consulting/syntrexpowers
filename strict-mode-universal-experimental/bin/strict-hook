@@ -518,6 +518,12 @@ def attach_judge_summary(record, judge)
   record.merge("judge" => judge.reject { |key, _| key == "decision" })
 end
 
+def attach_record_edit_summary(record, record_edit)
+  return record unless record_edit
+
+  record.merge("record_edit" => record_edit.reject { |key, _| key == "message" })
+end
+
 def attach_fdr_cycle_summary(summary, cycle_record)
   return summary unless cycle_record
 
@@ -700,7 +706,7 @@ rescue RuntimeError, SystemCallError, ArgumentError => e
   judge_summary(attempted: true, reason: e.message)
 end
 
-def enforcement_result(context, provider, logical_event, preflight, stop_hook_active: false, parsed_payload: nil, state_root: nil, payload_hash: nil, approval_notice: nil, override_decision: nil)
+def enforcement_result(context, provider, logical_event, preflight, stop_hook_active: false, parsed_payload: nil, state_root: nil, payload_hash: nil, approval_notice: nil, override_decision: nil, provider_detection_decision: "unknown")
   entry = enforcing_hook_entry(context, provider, logical_event)
   if stop_hook_active && stop_continuation_logical_event?(logical_event) && enforcing_hook_invocation?
     contract_id = entry ? entry.fetch("output_contract_id") : ENV["STRICT_OUTPUT_CONTRACT_ID"].to_s
@@ -770,13 +776,47 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
   contract = selected_output_contract(context, entry)
   raise "selected output contract missing for #{provider} #{logical_event} #{entry.fetch("output_contract_id")}" unless contract
 
+  record_edit = if stop_continuation_logical_event?(logical_event) && provider_detection_decision == "match"
+                  StrictModeRecordEdit.stop_policy_from_payload(
+                    state_root: state_root || inferred_install_root.join("state"),
+                    provider: provider,
+                    logical_event: logical_event,
+                    payload: parsed_payload,
+                    payload_hash: payload_hash,
+                    cwd: hook_cwd,
+                    project_dir: hook_project_dir(hook_cwd)
+                  )
+                end
+  if record_edit && record_edit.fetch("decision") == "block"
+    metadata = provider_output_metadata(contract)
+    decision = fail_closed_decision(
+      logical_event,
+      record_edit.fetch("reason_code"),
+      "strict-mode record edit blocked Stop: #{record_edit.fetch("message")}"
+    )
+    decision["metadata"]["record_edit_reason_code"] = record_edit.fetch("reason_code")
+    decision["metadata"]["tool_intent_count"] = record_edit.fetch("tool_intent_count")
+    decision["metadata"]["tool_count"] = record_edit.fetch("tool_count")
+    decision["metadata"]["edit_count"] = record_edit.fetch("edit_count")
+    emission = StrictModeDecisionContract.emit_provider_output(metadata, decision)
+    return attach_record_edit_summary({
+      "active" => true,
+      "emitted" => true,
+      "failed_closed" => true,
+      "output_contract_id" => contract.fetch("contract_id"),
+      "stop_hook_active" => stop_hook_active,
+      "emission" => emission,
+      "error" => record_edit.fetch("message")
+    }, record_edit)
+  end
+
   judge = stop_continuation_logical_event?(logical_event) ? semantic_judge_result(provider, logical_event, parsed_payload, state_root || inferred_install_root.join("state"), prompt_template_hash: judge_prompt_template_hash(context), payload_hash: payload_hash) : nil
   if judge && judge.fetch("verdict") == "clean"
-    return attach_judge_summary({ "active" => true, "emitted" => false, "failed_closed" => false, "output_contract_id" => contract.fetch("contract_id"), "stop_hook_active" => stop_hook_active, "emission" => nil, "error" => "" }, judge)
+    return attach_record_edit_summary(attach_judge_summary({ "active" => true, "emitted" => false, "failed_closed" => false, "output_contract_id" => contract.fetch("contract_id"), "stop_hook_active" => stop_hook_active, "emission" => nil, "error" => "" }, judge), record_edit)
   elsif judge && judge.fetch("verdict") == "challenge"
     metadata = provider_output_metadata(contract)
     emission = StrictModeDecisionContract.emit_provider_output(metadata, judge.fetch("decision"))
-    return attach_judge_summary({
+    return attach_record_edit_summary(attach_judge_summary({
       "active" => true,
       "emitted" => true,
       "failed_closed" => false,
@@ -784,7 +824,7 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
       "stop_hook_active" => stop_hook_active,
       "emission" => emission,
       "error" => ""
-    }, judge)
+    }, judge), record_edit)
   end
 
   decision = override_decision || StrictModeInternalDecision.from_preflight(preflight, stop_hook_active: stop_hook_active)
@@ -796,11 +836,11 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
     decision["metadata"]["pending_record_hash"] = approval_notice.fetch("pending_record_hash")
     decision["metadata"]["next_marker"] = approval_notice.fetch("next_user_prompt_marker")
   end
-  return attach_judge_summary({ "active" => true, "emitted" => false, "failed_closed" => false, "output_contract_id" => contract.fetch("contract_id"), "stop_hook_active" => stop_hook_active, "emission" => nil, "error" => "" }, judge) unless decision.fetch("action") == "block"
+  return attach_record_edit_summary(attach_judge_summary({ "active" => true, "emitted" => false, "failed_closed" => false, "output_contract_id" => contract.fetch("contract_id"), "stop_hook_active" => stop_hook_active, "emission" => nil, "error" => "" }, judge), record_edit) unless decision.fetch("action") == "block"
 
   metadata = provider_output_metadata(contract)
   emission = StrictModeDecisionContract.emit_provider_output(metadata, decision)
-  attach_judge_summary({
+  attach_record_edit_summary(attach_judge_summary({
     "active" => true,
     "emitted" => true,
     "failed_closed" => false,
@@ -808,7 +848,7 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
     "stop_hook_active" => stop_hook_active,
     "emission" => emission,
     "error" => ""
-  }, judge)
+  }, judge), record_edit)
 rescue RuntimeError, ArgumentError, KeyError => e
   {
     "active" => !!entry,
@@ -897,6 +937,7 @@ permission_summary = nil
 permission_override_decision = nil
 tool_intent_summary = nil
 post_tool_summary = nil
+turn_baseline_summary = nil
 if logical_event == "pre-tool-use" &&
    preflight.fetch("attempted") &&
    preflight.fetch("trusted") &&
@@ -1018,6 +1059,37 @@ if logical_event == "user-prompt-submit" &&
     approval_summary = { "error" => e.message }
   end
 end
+if logical_event == "user-prompt-submit" &&
+   provider_detection_decision == "match" &&
+   !payload_truncated &&
+   parsed_payload.is_a?(Hash) &&
+   context.fetch("trusted", false)
+  begin
+    cwd = hook_cwd
+    baseline = StrictModeRecordEdit.write_turn_baseline_from_payload!(
+      state_root: state_root,
+      provider: provider,
+      payload: parsed_payload,
+      payload_hash: payload_hash,
+      cwd: cwd,
+      project_dir: hook_project_dir(cwd),
+      prompt_seq: approval_summary.is_a?(Hash) ? approval_summary.fetch("prompt_seq", 0) : 0
+    )
+    if baseline
+      trusted_state_written = true
+      turn_baseline_summary = {
+        "recorded" => true,
+        "baseline_hash" => baseline.fetch("baseline_hash"),
+        "prompt_seq" => baseline.fetch("prompt_seq"),
+        "last_sequences" => baseline.fetch("last_sequences"),
+        "last_safe_stop_sequences" => baseline.fetch("last_safe_stop_sequences")
+      }
+    end
+  rescue RuntimeError, SystemCallError, ArgumentError, KeyError => e
+    warn "strict-hook turn baseline handling failed: #{e.message}"
+    turn_baseline_summary = { "recorded" => false, "error" => e.message }
+  end
+end
 approval_notice = nil
 if preflight.fetch("attempted") &&
    preflight.fetch("trusted") &&
@@ -1133,7 +1205,8 @@ enforcement = enforcement_result(
   state_root: state_root,
   payload_hash: payload_hash,
   approval_notice: approval_notice,
-  override_decision: permission_override_decision
+  override_decision: permission_override_decision,
+  provider_detection_decision: provider_detection_decision
 )
 if preflight.fetch("would_block") && !enforcement.fetch("active")
   warn "strict-hook preflight would block in enforcement: #{preflight.fetch("reason_code")} (discovery log-only)"
@@ -1181,6 +1254,7 @@ record["approval"] = approval_summary if approval_summary
 record["permission_decision"] = permission_summary if permission_summary
 record["tool_intent"] = tool_intent_summary if tool_intent_summary
 record["post_tool_record"] = post_tool_summary if post_tool_summary
+record["turn_baseline"] = turn_baseline_summary if turn_baseline_summary
 
 begin
   FileUtils.mkdir_p(log_dir, mode: 0o700)

@@ -363,6 +363,12 @@ def edit_records(state_root, thread_id = "t1")
   StrictModeRecordEdit.load_jsonl(StrictModeRecordEdit.edit_log_path(state_root, "codex", identity.fetch("session_key")))
 end
 
+def turn_baseline_record(state_root, thread_id = "t1")
+  identity = fdr_session_identity(thread_id)
+  path = StrictModeRecordEdit.turn_baseline_path(state_root, "codex", identity.fetch("session_key"))
+  JSON.parse(path.read)
+end
+
 def assert_fdr_cycle_and_ledger(name, state_root, expected_decisions)
   cycles = fdr_cycle_records(state_root)
   ledgers = fdr_ledger_records(state_root)
@@ -613,6 +619,238 @@ with_install do |_root, home, install_root, state_root, project|
   assert(name, discovery.fetch("preflight").fetch("reason_code") == "preflight-error", "record failure did not fail closed", discovery.inspect)
   assert(name, discovery.fetch("tool_intent").fetch("recorded") == false, "record failure reported successful intent", discovery.inspect)
   assert(name, discovery.fetch("tool_intent").fetch("reason") == "record-failure", "wrong intent failure reason", discovery.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "user prompt records turn baseline for record edit scope"
+  enable_codex_enforcement!(install_root, state_root)
+  payload = {
+    "event" => "user-prompt-submit",
+    "thread_id" => "t-baseline",
+    "prompt" => "please edit src/new.js"
+  }
+
+  status, stdout, stderr = run_hook_event_capture(home, install_root, state_root, project, "user-prompt-submit", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "user prompt hook failed", stdout + stderr)
+  baseline = turn_baseline_record(state_root, "t-baseline")
+  assert(name, StrictModeRecordEdit.validate_turn_baseline(baseline).empty?, "turn baseline invalid", baseline.inspect)
+  assert(name, baseline.fetch("kind") == "turn-baseline", "wrong baseline kind", baseline.inspect)
+  assert(name, baseline.fetch("last_sequences") == { "tool_intent" => 0, "permission_decision" => 0, "tool" => 0, "edit" => 0 }, "wrong initial baseline sequences", baseline.inspect)
+  ledgers = fdr_ledger_records(state_root, "t-baseline")
+  assert(name, ledgers.any? { |ledger| ledger.fetch("target_class") == "baseline" && ledger.fetch("operation") == "create" }, "missing baseline ledger", ledgers.inspect)
+  discovery = last_discovery_record(state_root, "user-prompt-submit")
+  assert(name, discovery.fetch("turn_baseline").fetch("recorded") == true, "discovery missing turn baseline summary", discovery.inspect)
+end
+
+with_install do |_root, _home, _install_root, state_root, project|
+  name = "turn baseline modify rolls back when ledger append fails"
+  first_payload = {
+    "event" => "user-prompt-submit",
+    "thread_id" => "t-baseline-rollback",
+    "prompt" => "first prompt"
+  }
+  first = StrictModeRecordEdit.write_turn_baseline_from_payload!(
+    state_root: state_root,
+    provider: "codex",
+    payload: first_payload,
+    payload_hash: Digest::SHA256.hexdigest(JSON.generate(first_payload)),
+    cwd: project,
+    project_dir: project,
+    prompt_seq: 1
+  )
+  path = StrictModeRecordEdit.turn_baseline_path(state_root, "codex", fdr_session_identity("t-baseline-rollback").fetch("session_key"))
+  original_bytes = path.binread
+
+  class << StrictModeFdrCycle
+    alias __record_edit_baseline_original_append_session_ledger! append_session_ledger!
+
+    def append_session_ledger!(*args, **kwargs)
+      raise "forced baseline ledger failure" if kwargs[:target_class] == "baseline"
+
+      __record_edit_baseline_original_append_session_ledger!(*args, **kwargs)
+    end
+  end
+  begin
+    second_payload = first_payload.merge("prompt" => "second prompt")
+    StrictModeRecordEdit.write_turn_baseline_from_payload!(
+      state_root: state_root,
+      provider: "codex",
+      payload: second_payload,
+      payload_hash: Digest::SHA256.hexdigest(JSON.generate(second_payload)),
+      cwd: project,
+      project_dir: project,
+      prompt_seq: 2
+    )
+    assert(name, false, "baseline write unexpectedly succeeded without ledger")
+  rescue RuntimeError => e
+    assert(name, e.message.include?("forced baseline ledger failure"), "wrong ledger failure", e.message)
+  ensure
+    class << StrictModeFdrCycle
+      alias append_session_ledger! __record_edit_baseline_original_append_session_ledger!
+      remove_method :__record_edit_baseline_original_append_session_ledger!
+    end
+  end
+  assert(name, path.binread == original_bytes, "baseline bytes were not restored after ledger failure", path.read)
+  assert(name, turn_baseline_record(state_root, "t-baseline-rollback").fetch("baseline_hash") == first.fetch("baseline_hash"), "restored baseline hash mismatch", path.read)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing stop blocks record edit log without ledger coverage"
+  enable_codex_enforcement!(install_root, state_root)
+  prompt_payload = {
+    "event" => "user-prompt-submit",
+    "thread_id" => "t-ledgerless-intent",
+    "prompt" => "write src/new.js"
+  }
+  prompt_status, prompt_stdout, prompt_stderr = run_hook_event_capture(home, install_root, state_root, project, "user-prompt-submit", prompt_payload)
+  assert_no_stacktrace(name, prompt_stdout + prompt_stderr)
+  assert(name, prompt_status.zero?, "user prompt hook failed", prompt_stdout + prompt_stderr)
+  identity = fdr_session_identity("t-ledgerless-intent")
+  intent_path = StrictModeRecordEdit.tool_intent_log_path(state_root, "codex", identity.fetch("session_key"))
+  intent_path.write(JSON.generate({ "seq" => 1 }) + "\n")
+  stop_payload = {
+    "event" => "stop",
+    "thread_id" => "t-ledgerless-intent",
+    "last_assistant_message" => "Схалтурил: intent log был без ledger.",
+    "strict_judge_history" => POST_FIRST_JUDGE_HISTORY
+  }
+
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", stop_payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "provider stop contract should control ledgerless block", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "block", "ledgerless intent log did not block", stdout)
+  record_edit = last_discovery_record(state_root, "stop").fetch("enforcement").fetch("record_edit")
+  assert(name, record_edit.fetch("reason_code") == "record-edit-log-untrusted", "wrong ledgerless stop reason", record_edit.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing stop blocks allowed write without post-tool record"
+  enable_codex_enforcement!(install_root, state_root)
+  prompt_payload = {
+    "event" => "user-prompt-submit",
+    "thread_id" => "t-missing-post",
+    "prompt" => "write src/new.js"
+  }
+  prompt_status, prompt_stdout, prompt_stderr = run_hook_event_capture(home, install_root, state_root, project, "user-prompt-submit", prompt_payload)
+  assert_no_stacktrace(name, prompt_stdout + prompt_stderr)
+  assert(name, prompt_status.zero?, "user prompt hook failed", prompt_stdout + prompt_stderr)
+  pre_payload = {
+    "event" => "pre-tool-use",
+    "thread_id" => "t-missing-post",
+    "tool_name" => "write",
+    "tool_input" => {
+      "file_path" => "src/new.js",
+      "content" => "console.log('ok');\n"
+    }
+  }
+  pre_status, pre_stdout, pre_stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", pre_payload)
+  assert_no_stacktrace(name, pre_stdout + pre_stderr)
+  assert(name, pre_status.zero?, "pre-tool write should allow", pre_stdout + pre_stderr)
+  stop_payload = {
+    "event" => "stop",
+    "thread_id" => "t-missing-post",
+    "last_assistant_message" => "Схалтурил: нет post-tool evidence для записи.",
+    "strict_judge_history" => POST_FIRST_JUDGE_HISTORY
+  }
+
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", stop_payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "provider stop contract should control record-edit block", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "block", "missing post-tool did not block", stdout)
+  assert(name, emitted.fetch("reason").include?("post-tool record"), "block reason missing post-tool diagnostic", stdout)
+  record = last_discovery_record(state_root, "stop")
+  record_edit = record.fetch("enforcement").fetch("record_edit")
+  assert(name, record_edit.fetch("decision") == "block", "record edit block not recorded", record.inspect)
+  assert(name, record_edit.fetch("reason_code") == "post-tool-record-missing", "wrong record edit reason", record_edit.inspect)
+  assert(name, !record.fetch("enforcement").key?("judge"), "record edit block should happen before semantic judge", record.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing stop allows covered direct write before semantic judge clean"
+  enable_codex_enforcement!(install_root, state_root)
+  prompt_payload = {
+    "event" => "user-prompt-submit",
+    "thread_id" => "t-covered-write",
+    "prompt" => "write src/new.js"
+  }
+  prompt_status, prompt_stdout, prompt_stderr = run_hook_event_capture(home, install_root, state_root, project, "user-prompt-submit", prompt_payload)
+  assert_no_stacktrace(name, prompt_stdout + prompt_stderr)
+  assert(name, prompt_status.zero?, "user prompt hook failed", prompt_stdout + prompt_stderr)
+  pre_payload = {
+    "event" => "pre-tool-use",
+    "thread_id" => "t-covered-write",
+    "tool_name" => "write",
+    "tool_input" => {
+      "file_path" => "src/new.js",
+      "content" => "console.log('ok');\n"
+    }
+  }
+  post_payload = pre_payload.merge("event" => "post-tool-use")
+  pre_status, pre_stdout, pre_stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", pre_payload)
+  assert_no_stacktrace(name, pre_stdout + pre_stderr)
+  assert(name, pre_status.zero?, "pre-tool write should allow", pre_stdout + pre_stderr)
+  post_status, post_stdout, post_stderr = run_hook_event_capture(home, install_root, state_root, project, "post-tool-use", post_payload)
+  assert_no_stacktrace(name, post_stdout + post_stderr)
+  assert(name, post_status.zero?, "post-tool record failed", post_stdout + post_stderr)
+  stop_payload = {
+    "event" => "stop",
+    "thread_id" => "t-covered-write",
+    "last_assistant_message" => "Схалтурил: не переписал старый README. Это вне текущего scope и будет follow-up PR.",
+    "strict_judge_history" => POST_FIRST_JUDGE_HISTORY
+  }
+
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", stop_payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "covered write stop should exit cleanly", stdout + stderr)
+  assert(name, stdout.empty?, "covered write stop emitted block", stdout)
+  record = last_discovery_record(state_root, "stop")
+  enforcement = record.fetch("enforcement")
+  assert(name, enforcement.fetch("record_edit").fetch("decision") == "allow", "record edit did not allow covered write", enforcement.inspect)
+  assert(name, enforcement.fetch("record_edit").fetch("reason_code") == "record-edit-covered", "wrong record edit allow reason", enforcement.inspect)
+  assert(name, enforcement.fetch("judge").fetch("verdict") == "clean", "semantic judge clean did not run after record edit allow", enforcement.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "enforcing stop blocks post-tool zero-link without pre-tool intent"
+  enable_codex_enforcement!(install_root, state_root)
+  prompt_payload = {
+    "event" => "user-prompt-submit",
+    "thread_id" => "t-zero-link",
+    "prompt" => "edit src/existing.js"
+  }
+  prompt_status, prompt_stdout, prompt_stderr = run_hook_event_capture(home, install_root, state_root, project, "user-prompt-submit", prompt_payload)
+  assert_no_stacktrace(name, prompt_stdout + prompt_stderr)
+  assert(name, prompt_status.zero?, "user prompt hook failed", prompt_stdout + prompt_stderr)
+  post_payload = {
+    "event" => "post-tool-use",
+    "thread_id" => "t-zero-link",
+    "tool_name" => "edit",
+    "tool_input" => {
+      "file_path" => "src/existing.js",
+      "old_string" => "old",
+      "new_string" => "new"
+    }
+  }
+  post_status, post_stdout, post_stderr = run_hook_event_capture(home, install_root, state_root, project, "post-tool-use", post_payload)
+  assert_no_stacktrace(name, post_stdout + post_stderr)
+  assert(name, post_status.zero?, "zero-link post-tool record failed", post_stdout + post_stderr)
+  stop_payload = {
+    "event" => "stop",
+    "thread_id" => "t-zero-link",
+    "last_assistant_message" => "Схалтурил: post-tool запись была без pre-tool intent.",
+    "strict_judge_history" => POST_FIRST_JUDGE_HISTORY
+  }
+
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "stop", stop_payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "provider stop contract should control zero-link block", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "block", "zero-link post-tool did not block", stdout)
+  record_edit = last_discovery_record(state_root, "stop").fetch("enforcement").fetch("record_edit")
+  assert(name, record_edit.fetch("reason_code") == "pre-tool-intent-missing", "wrong zero-link stop reason", record_edit.inspect)
 end
 
 with_install do |_root, home, install_root, state_root, project|
