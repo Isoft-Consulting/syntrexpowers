@@ -438,6 +438,7 @@ class StrictModeFdrCycle
                           when "strict-hook"
                             (record.fetch("target_class") == "fdr-cycle-log" && record.fetch("operation") == "append") ||
                               (record.fetch("target_class") == "tool-intent-log" && record.fetch("operation") == "append") ||
+                              (record.fetch("target_class") == "permission-decision-log" && record.fetch("operation") == "append") ||
                               (record.fetch("target_class") == "prompt-event-log" && record.fetch("operation") == "append") ||
                               (record.fetch("target_class") == "prompt-sequence" && %w[create modify].include?(record.fetch("operation"))) ||
                               (record.fetch("target_class") == "pending-approval" && %w[create modify delete].include?(record.fetch("operation"))) ||

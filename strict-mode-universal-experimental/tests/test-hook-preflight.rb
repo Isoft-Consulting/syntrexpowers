@@ -11,7 +11,9 @@ require_relative "../tools/fdr_cycle_lib"
 require_relative "../tools/fdr_import_lib"
 require_relative "../tools/fixture_readiness_lib"
 require_relative "../tools/hook_entry_plan_lib"
+require_relative "../tools/install_hook_plan_lib"
 require_relative "../tools/metadata_lib"
+require_relative "../tools/permission_decision_lib"
 require_relative "../tools/preflight_record_lib"
 require_relative "../tools/protected_baseline_lib"
 
@@ -107,16 +109,16 @@ def fixture_hash_entry(root, path)
   }
 end
 
-def decision_output_fixture_record(root, event)
+def decision_output_fixture_record(root, event, provider_action: "block")
   provider = "codex"
-  contract_id = "codex.#{event}.block"
+  contract_id = "codex.#{event}.#{provider_action}"
   metadata = {
     "schema_version" => 1,
     "contract_id" => contract_id,
     "provider" => provider,
     "event" => event,
     "logical_event" => event,
-    "provider_action" => "block",
+    "provider_action" => provider_action,
     "stdout_mode" => "json",
     "stdout_required_fields" => %w[decision reason],
     "stderr_mode" => "empty",
@@ -128,7 +130,7 @@ def decision_output_fixture_record(root, event)
   }
   metadata["decision_contract_hash"] = StrictModeDecisionContract.provider_output_hash(metadata)
   metadata_path = fixture_file(root, provider, "decision-output/#{event}/#{contract_id}.provider-output.json", JSON.pretty_generate(metadata) + "\n")
-  stdout_path = fixture_file(root, provider, "decision-output/#{event}/#{contract_id}.stdout", "{\"decision\":\"block\",\"reason\":\"blocked\"}\n")
+  stdout_path = fixture_file(root, provider, "decision-output/#{event}/#{contract_id}.stdout", JSON.generate({ "decision" => provider_action, "reason" => "blocked" }) + "\n")
   stderr_path = fixture_file(root, provider, "decision-output/#{event}/#{contract_id}.stderr", "")
   exit_code_path = fixture_file(root, provider, "decision-output/#{event}/#{contract_id}.exit-code", "0\n")
   record = {
@@ -167,21 +169,33 @@ def write_fixture_manifest(root, provider, records)
   })
 end
 
-def enable_codex_enforcement!(install_root, state_root)
+def enable_codex_enforcement!(install_root, state_root, events: %w[pre-tool-use stop])
   active_root = Pathname.new(install_root.join("active").realpath)
-  write_fixture_manifest(active_root, "codex", %w[pre-tool-use stop].map { |event| decision_output_fixture_record(active_root, event) })
+  records = events.map do |event|
+    decision_output_fixture_record(active_root, event, provider_action: event == "permission-request" ? "deny" : "block")
+  end
+  write_fixture_manifest(active_root, "codex", records)
   selected = StrictModeFixtureReadiness.selected_output_contracts(active_root, ["codex"])
+  if events.include?("permission-request") && selected.none? { |record| record["logical_event"] == "permission-request" }
+    manifest = StrictModeFixtures.load_json(StrictModeFixtures.manifest_path(active_root, "codex"))
+    permission_record = manifest.fetch("records").find { |record| record["event"] == "permission-request" && record["contract_kind"] == "decision-output" }
+    permission_metadata = StrictModeFixtureReadiness.decision_output_metadata(active_root, permission_record)
+    selected << StrictModeFixtureReadiness.selected_output_contract_record(permission_record, permission_metadata, manifest.fetch("manifest_hash"))
+    selected.sort_by! { |record| [record.fetch("provider"), record.fetch("logical_event"), record.fetch("contract_id")] }
+  end
 
   manifest_path = install_root.join("install-manifest.json")
   baseline_path = state_root.join("protected-install-baseline.json")
   manifest = read_json(manifest_path)
   baseline = read_json(baseline_path)
-  entries = StrictModeHookEntryPlan.apply(
-    manifest.fetch("managed_hook_entries"),
+  config_path = manifest.fetch("managed_hook_entries").find { |entry| entry["provider"] == "codex" }.fetch("config_path")
+  entries = StrictModeInstallHookPlan.managed_entries(
+    "codex",
+    config_path,
+    install_root,
+    state_root: state_root,
     selected_output_contracts: selected,
-    enforce: true,
-    install_root: install_root.to_s,
-    state_root: state_root.to_s
+    enforce: true
   )
   fixture_records = StrictModeFixtureReadiness.fixture_manifest_records(active_root, ["codex"])
   runtime_records = runtime_file_records(active_root)
@@ -272,7 +286,8 @@ end
 def codex_output_contract_id_for(event)
   {
     "pre-tool-use" => "codex.pre-tool-use.block",
-    "stop" => "codex.stop.block"
+    "stop" => "codex.stop.block",
+    "permission-request" => "codex.permission-request.deny"
   }.fetch(event)
 end
 
@@ -323,6 +338,15 @@ def fdr_ledger_records(state_root, thread_id = "t1")
   StrictModeFdrCycle.load_session_ledger_records(fdr_ledger_path(state_root, thread_id))
 end
 
+def permission_decision_path(state_root, thread_id = "t1")
+  identity = fdr_session_identity(thread_id)
+  StrictModePermissionDecision.permission_decision_path(state_root, "codex", identity.fetch("session_key"))
+end
+
+def permission_decision_records(state_root, thread_id = "t1")
+  StrictModePermissionDecision.load_records(permission_decision_path(state_root, thread_id))
+end
+
 def assert_fdr_cycle_and_ledger(name, state_root, expected_decisions)
   cycles = fdr_cycle_records(state_root)
   ledgers = fdr_ledger_records(state_root)
@@ -335,6 +359,143 @@ def assert_fdr_cycle_and_ledger(name, state_root, expected_decisions)
     assert(name, ledger.fetch("target_class") == "fdr-cycle-log" && ledger.fetch("operation") == "append", "ledger target/operation mismatch", ledger.inspect)
   end
   cycles
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "PermissionRequest network deny writes permission decision evidence"
+  enable_codex_enforcement!(install_root, state_root, events: %w[pre-tool-use stop permission-request])
+  payload = {
+    "event" => "permission-request",
+    "thread_id" => "t1",
+    "request_id" => "r-net",
+    "operation" => "network",
+    "access_mode" => "network-connect",
+    "url" => "https://example.com/api",
+    "can_approve" => true
+  }
+
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "permission-request", payload)
+  assert(name, status.zero?, "permission deny should use provider deny contract", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "deny", "wrong provider decision", stdout)
+  records = permission_decision_records(state_root)
+  assert(name, records.length == 1, "permission decision record missing", records.inspect)
+  record = records.first
+  assert(name, record.fetch("decision") == "deny", "wrong record decision", record.inspect)
+  assert(name, record.fetch("reason_code") == "deny-network", "wrong permission reason", record.inspect)
+  assert(name, record.fetch("network_tuple_list").first == { "scheme" => "https", "host" => "example.com", "port" => 443, "operation" => "connect" }, "wrong network tuple", record.inspect)
+  assert(name, StrictModePermissionDecision.validate_chain(permission_decision_path(state_root)).empty?, "permission decision chain invalid", records.inspect)
+  ledgers = fdr_ledger_records(state_root)
+  assert(name, ledgers.length == 1, "permission decision ledger missing", ledgers.inspect)
+  assert(name, ledgers.first.fetch("target_class") == "permission-decision-log" && ledgers.first.fetch("operation") == "append", "ledger target mismatch", ledgers.inspect)
+  assert(name, ledgers.first.fetch("related_record_hash") == record.fetch("record_hash"), "ledger does not bind permission decision", ledgers.inspect)
+  discovery = last_discovery_record(state_root, "permission-request")
+  assert(name, discovery.fetch("permission_decision").fetch("recorded") == true, "discovery did not report permission evidence", discovery.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "PermissionRequest filesystem write under protected root is denied with evidence"
+  enable_codex_enforcement!(install_root, state_root, events: %w[pre-tool-use stop permission-request])
+  payload = {
+    "event" => "permission-request",
+    "thread_id" => "t1",
+    "request_id" => "r-fs",
+    "operation" => "filesystem",
+    "access_mode" => "write",
+    "filesystem" => {
+      "paths" => [install_root.join("config/runtime.env").to_s],
+      "recursive" => false,
+      "scope" => "file"
+    },
+    "can_approve" => true
+  }
+
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "permission-request", payload)
+  assert(name, status.zero?, "permission protected-root deny should use provider deny contract", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "deny", "wrong provider decision", stdout)
+  record = permission_decision_records(state_root).first
+  assert(name, record.fetch("reason_code") == "deny-protected-root", "wrong permission reason", record.inspect)
+  assert(name, record.fetch("normalized_path_list").include?(install_root.join("config/runtime.env").to_s), "missing normalized protected path", record.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "PermissionRequest patch raw content is scanned for stubs"
+  enable_codex_enforcement!(install_root, state_root, events: %w[pre-tool-use stop permission-request])
+  payload = {
+    "event" => "permission-request",
+    "thread_id" => "t1",
+    "request_id" => "r-patch",
+    "operation" => "write",
+    "tool_name" => "apply_patch",
+    "tool_input" => {
+      "patch" => "*** Begin Patch\n*** Add File: src/todo.js\n@@\n+// TODO implement later\n*** End Patch\n"
+    },
+    "can_approve" => true
+  }
+
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "permission-request", payload)
+  assert(name, status.zero?, "permission stub deny should use provider deny contract", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "deny", "wrong provider decision", stdout)
+  record = permission_decision_records(state_root).first
+  assert(name, record.fetch("reason_code") == "deny-policy", "raw patch stub was not mapped to deny-policy", record.inspect)
+  assert(name, record.fetch("requested_tool_kind") == "patch", "wrong requested tool kind", record.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "PermissionRequest read-only project path records allow before provider allow"
+  enable_codex_enforcement!(install_root, state_root, events: %w[pre-tool-use stop permission-request])
+  project.join("README.md").write("# test\n")
+  payload = {
+    "event" => "permission-request",
+    "thread_id" => "t1",
+    "request_id" => "r-read",
+    "operation" => "filesystem",
+    "access_mode" => "read",
+    "filesystem" => {
+      "paths" => ["README.md"],
+      "recursive" => false,
+      "scope" => "file"
+    },
+    "can_approve" => true
+  }
+
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "permission-request", payload)
+  assert(name, status.zero?, "permission allow should not fail", stdout + stderr)
+  assert(name, stdout.empty? && stderr.empty?, "permission allow should not emit deny output", stdout + stderr)
+  record = permission_decision_records(state_root).first
+  assert(name, record.fetch("decision") == "allow", "wrong record decision", record.inspect)
+  assert(name, record.fetch("reason_code") == "allow-read-only", "wrong allow reason", record.inspect)
+  assert(name, record.fetch("normalized_path_list") == [project.join("README.md").to_s], "wrong allow path", record.inspect)
+  discovery = last_discovery_record(state_root, "permission-request")
+  assert(name, discovery.fetch("enforcement").fetch("emitted") == false, "allow emitted provider output", discovery.inspect)
+  assert(name, discovery.fetch("permission_decision").fetch("recorded") == true, "allow evidence not reported", discovery.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "PermissionRequest record failure still emits deny-record-failure"
+  enable_codex_enforcement!(install_root, state_root, events: %w[pre-tool-use stop permission-request])
+  bad_path = permission_decision_path(state_root)
+  bad_path.mkpath
+  payload = {
+    "event" => "permission-request",
+    "thread_id" => "t1",
+    "request_id" => "r-net",
+    "operation" => "network",
+    "access_mode" => "network-connect",
+    "url" => "https://example.com/api",
+    "can_approve" => true
+  }
+
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "permission-request", payload)
+  assert(name, status.zero?, "record failure should still use provider deny contract", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "deny", "wrong provider decision", stdout)
+  assert(name, emitted.fetch("reason").include?("deny-record-failure"), "provider deny did not mention record failure", stdout)
+  discovery = last_discovery_record(state_root, "permission-request")
+  summary = discovery.fetch("permission_decision")
+  assert(name, summary.fetch("recorded") == false && summary.fetch("reason_code") == "deny-record-failure", "wrong discovery failure summary", discovery.inspect)
 end
 
 with_install do |_root, home, install_root, state_root, project|

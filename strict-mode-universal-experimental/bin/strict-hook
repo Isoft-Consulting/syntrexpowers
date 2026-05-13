@@ -18,6 +18,7 @@ require_relative "../tools/fdr_import_lib"
 require_relative "../tools/fixture_readiness_lib"
 require_relative "../tools/internal_decision_lib"
 require_relative "../tools/normalized_event_lib"
+require_relative "../tools/permission_decision_lib"
 require_relative "../tools/preflight_record_lib"
 require_relative "../tools/protected_baseline_lib"
 require_relative "../tools/provider_detection_lib"
@@ -698,7 +699,7 @@ rescue RuntimeError, SystemCallError, ArgumentError => e
   judge_summary(attempted: true, reason: e.message)
 end
 
-def enforcement_result(context, provider, logical_event, preflight, stop_hook_active: false, parsed_payload: nil, state_root: nil, payload_hash: nil, approval_notice: nil)
+def enforcement_result(context, provider, logical_event, preflight, stop_hook_active: false, parsed_payload: nil, state_root: nil, payload_hash: nil, approval_notice: nil, override_decision: nil)
   entry = enforcing_hook_entry(context, provider, logical_event)
   if stop_hook_active && stop_continuation_logical_event?(logical_event) && enforcing_hook_invocation?
     contract_id = entry ? entry.fetch("output_contract_id") : ENV["STRICT_OUTPUT_CONTRACT_ID"].to_s
@@ -785,7 +786,7 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
     }, judge)
   end
 
-  decision = StrictModeInternalDecision.from_preflight(preflight, stop_hook_active: stop_hook_active)
+  decision = override_decision || StrictModeInternalDecision.from_preflight(preflight, stop_hook_active: stop_hook_active)
   if approval_notice && decision.fetch("action") == "block"
     phrase = approval_notice.fetch("phrase")
     decision["reason"] = bounded_reason("#{decision.fetch("reason")}\nAsk the user to reply with this exact line before retrying: #{phrase}")
@@ -891,6 +892,44 @@ preflight = validate_preflight_or_error(logical_event, preflight)
 context = protected_context(state_root)
 trusted_state_written = false
 approval_summary = nil
+permission_summary = nil
+permission_override_decision = nil
+if logical_event == "permission-request" &&
+   provider_detection_decision == "match" &&
+   !payload_truncated &&
+   parsed_payload.is_a?(Hash) &&
+   context.fetch("trusted", false) &&
+   enforcing_hook_invocation? &&
+   enforcing_hook_entry(context, provider, logical_event)
+  begin
+    cwd = hook_cwd
+    permission_record = StrictModePermissionDecision.append_decision_from_payload!(
+      state_root: state_root,
+      provider: provider,
+      payload: parsed_payload,
+      payload_hash: payload_hash,
+      cwd: cwd,
+      project_dir: hook_project_dir(cwd),
+      baseline: context
+    )
+    permission_override_decision = StrictModePermissionDecision.internal_decision(permission_record)
+    permission_summary = {
+      "recorded" => true,
+      "decision" => permission_record.fetch("decision"),
+      "reason_code" => permission_record.fetch("reason_code"),
+      "record_hash" => permission_record.fetch("record_hash")
+    }
+    trusted_state_written = true
+  rescue RuntimeError, SystemCallError, ArgumentError, KeyError => e
+    permission_override_decision = StrictModePermissionDecision.record_failure_decision(e.message)
+    permission_summary = {
+      "recorded" => false,
+      "decision" => "deny",
+      "reason_code" => "deny-record-failure",
+      "error" => e.message
+    }
+  end
+end
 if logical_event == "user-prompt-submit" &&
    provider_detection_decision == "match" &&
    !payload_truncated &&
@@ -1027,7 +1066,8 @@ enforcement = enforcement_result(
   parsed_payload: parsed_payload,
   state_root: state_root,
   payload_hash: payload_hash,
-  approval_notice: approval_notice
+  approval_notice: approval_notice,
+  override_decision: permission_override_decision
 )
 if preflight.fetch("would_block") && !enforcement.fetch("active")
   warn "strict-hook preflight would block in enforcement: #{preflight.fetch("reason_code")} (discovery log-only)"
@@ -1072,6 +1112,7 @@ record = {
   "trusted_state_written" => trusted_state_written
 }
 record["approval"] = approval_summary if approval_summary
+record["permission_decision"] = permission_summary if permission_summary
 
 begin
   FileUtils.mkdir_p(log_dir, mode: 0o700)
