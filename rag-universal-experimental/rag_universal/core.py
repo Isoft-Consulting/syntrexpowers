@@ -438,6 +438,37 @@ def resolve_root(root: str | os.PathLike[str] | None) -> Path:
     return Path(root or os.getcwd()).resolve()
 
 
+def config_candidates(root: Path, config_path: str | os.PathLike[str] | None = None) -> list[Path]:
+    if config_path:
+        candidate = Path(config_path)
+        if candidate.is_absolute():
+            return [candidate]
+        if len(candidate.parts) == 1:
+            return [root / candidate, Path.cwd() / candidate]
+        return [root / candidate]
+    return [root / ".mcp" / "rag-server" / "rag.config.json", root / "rag.config.json"]
+
+
+def resolve_config_path(root: Path, config_path: str | os.PathLike[str] | None = None) -> Path | None:
+    candidates = config_candidates(root, config_path)
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+    if config_path:
+        looked = ", ".join(str(candidate) for candidate in candidates)
+        raise FileNotFoundError(f"rag config not found: {config_path} (looked in: {looked})")
+    return None
+
+
+def config_source(root: Path, config_path: str | os.PathLike[str] | None = None) -> dict[str, Any]:
+    resolved = resolve_config_path(root, config_path)
+    return {
+        "explicit": bool(config_path),
+        "requested": str(config_path) if config_path else None,
+        "path": str(resolved) if resolved is not None else None,
+    }
+
+
 def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     merged = copy.deepcopy(base)
     for key, value in overlay.items():
@@ -450,24 +481,11 @@ def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
 
 def load_config(root: Path, config_path: str | os.PathLike[str] | None = None) -> dict[str, Any]:
     config = copy.deepcopy(DEFAULT_CONFIG)
-    candidates: list[Path] = []
-    if config_path:
-        candidate = Path(config_path)
-        if candidate.is_absolute():
-            candidates.append(candidate)
-        else:
-            candidates.append(root / candidate)
-            candidates.append(Path.cwd() / candidate)
-    else:
-        candidates.append(root / ".mcp" / "rag-server" / "rag.config.json")
-        candidates.append(root / "rag.config.json")
-
-    for candidate in candidates:
-        if candidate.exists():
-            with candidate.open("r", encoding="utf-8") as handle:
-                loaded = json.load(handle)
-            config = deep_merge(config, loaded)
-            break
+    resolved = resolve_config_path(root, config_path)
+    if resolved is not None:
+        with resolved.open("r", encoding="utf-8") as handle:
+            loaded = json.load(handle)
+        config = deep_merge(config, loaded)
 
     if config.get("schema_version") != CONFIG_VERSION:
         raise ValueError(f"unsupported config schema_version: {config.get('schema_version')}")
@@ -1389,6 +1407,7 @@ def artifact_names() -> dict[str, str]:
 def build_manifest(
     root: Path,
     config: dict[str, Any],
+    config_source_info: dict[str, Any],
     files: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
     symbols: list[dict[str, Any]],
@@ -1403,6 +1422,7 @@ def build_manifest(
         "project_root": str(root),
         "indexed_at": time.time(),
         "config_hash": config_hash(config),
+        "config_source": config_source_info,
         "chunker_version": CHUNKER_VERSION,
         "tokenizer_version": TOKENIZER_VERSION,
         "search_version": SEARCH_VERSION,
@@ -1471,11 +1491,12 @@ def write_index_artifacts_incremental(
 
 def build_index(root_arg: str | os.PathLike[str] | None = None, config_path: str | os.PathLike[str] | None = None, incremental: bool = False) -> dict[str, Any]:
     root = resolve_root(root_arg)
+    config_source_info = config_source(root, config_path)
     config = load_config(root, config_path)
     index_dir = get_index_dir(root, config)
 
     if incremental:
-        incremental_manifest = build_index_incremental(root, config, index_dir)
+        incremental_manifest = build_index_incremental(root, config, config_source_info, index_dir)
         if incremental_manifest is not None:
             return incremental_manifest
 
@@ -1494,7 +1515,7 @@ def build_index(root_arg: str | os.PathLike[str] | None = None, config_path: str
         deps.extend(extract_deps(text, source))
         files.append(file_record_from_stat(source, raw, stat, len(file_chunks)))
 
-    manifest = build_manifest(root, config, files, chunks, symbols, deps, source_state_entries, "full")
+    manifest = build_manifest(root, config, config_source_info, files, chunks, symbols, deps, source_state_entries, "full")
     write_index_artifacts(index_dir, config, manifest, files, chunks, symbols, deps)
     return manifest
 
@@ -1593,7 +1614,7 @@ def incremental_rebuild_plan(root: Path, config: dict[str, Any], index_dir: Path
     }
 
 
-def build_index_incremental(root: Path, config: dict[str, Any], index_dir: Path) -> dict[str, Any] | None:
+def build_index_incremental(root: Path, config: dict[str, Any], config_source_info: dict[str, Any], index_dir: Path) -> dict[str, Any] | None:
     plan = incremental_rebuild_plan(root, config, index_dir)
     if plan is None:
         return None
@@ -1629,6 +1650,7 @@ def build_index_incremental(root: Path, config: dict[str, Any], index_dir: Path)
     manifest = build_manifest(
         root,
         config,
+        config_source_info,
         files,
         chunks,
         symbols,
@@ -1747,16 +1769,19 @@ def load_lexicon(index_dir: Path) -> dict[str, Any]:
 
 def index_status(root_arg: str | os.PathLike[str] | None = None, config_path: str | os.PathLike[str] | None = None) -> dict[str, Any]:
     root = resolve_root(root_arg)
+    config_source_info = config_source(root, config_path)
     config = load_config(root, config_path)
     index_dir = get_index_dir(root, config)
     manifest = load_manifest(index_dir)
     expected_hash = config_hash(config)
     current_source_state = scan_source_state(root, config)
+    current_config = {**config_source_info, "hash": expected_hash}
     if manifest is None:
         return {
             "exists": False,
             "index_dir": str(index_dir),
             "config_hash": expected_hash,
+            "config": {"current": current_config, "indexed": None},
             "stale": True,
             "reason": "missing manifest",
             "source_state": {
@@ -1782,6 +1807,11 @@ def index_status(root_arg: str | os.PathLike[str] | None = None, config_path: st
     return {
         "exists": True,
         "index_dir": str(index_dir),
+        "config_hash": expected_hash,
+        "config": {
+            "current": current_config,
+            "indexed": manifest.get("config_source") if isinstance(manifest.get("config_source"), dict) else None,
+        },
         "stale": bool(stale_reasons),
         "reason": ", ".join(stale_reasons) if stale_reasons else None,
         "manifest": manifest,
@@ -1801,7 +1831,7 @@ def ensure_fresh_index(
     root = resolve_root(root_arg)
     config = load_config(root, config_path)
     index_dir = get_index_dir(root, config)
-    cache_key = str(index_dir.resolve())
+    cache_key = f"{index_dir.resolve()}:{config_hash(config)}"
     now = time.monotonic()
     # Only cache non-reindex calls; reindex path mutates index and must bypass cache
     if not auto_reindex:

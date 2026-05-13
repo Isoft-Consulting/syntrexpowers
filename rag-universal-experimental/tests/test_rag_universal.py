@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -559,6 +560,21 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(search_index(root, None, "watched refresh token", top_k=1)[0]["source"], "CHANGELOG.md")
         self.assertEqual(watched["status"]["manifest"]["build_mode"], "incremental")
 
+    def test_freshness_cache_is_scoped_by_config_hash(self) -> None:
+        root = self.make_project()
+        (root / "config-a.json").write_text(json.dumps({"schema_version": "rag.config.v1"}), encoding="utf-8")
+        (root / "config-b.json").write_text(
+            json.dumps({"schema_version": "rag.config.v1", "search": {"min_score": 0.01}}),
+            encoding="utf-8",
+        )
+        build_index(root, "config-a.json")
+
+        first = ensure_fresh_index(root, "config-a.json", False)
+        self.assertFalse(first["stale_before"])
+        second = ensure_fresh_index(root, "config-b.json", False)
+        self.assertTrue(second["stale_before"])
+        self.assertIn("config hash changed", second["reason_before"])
+
     def test_incremental_index_updates_changed_added_and_deleted_sources(self) -> None:
         root = self.make_project()
         build_index(root)
@@ -661,6 +677,35 @@ class RagUniversalTest(unittest.TestCase):
         )
         manifest = json.loads(index.stdout)
         self.assertEqual(manifest["num_files"], 6)
+        self.assertTrue(manifest["config_source"]["explicit"])
+        self.assertTrue(manifest["config_source"]["path"].endswith("rag.config.example.json"))
+
+    def test_explicit_missing_config_fails_closed(self) -> None:
+        root = self.make_project()
+        tool = ROOT / "tools" / "rag.py"
+        missing_config = ".mcp/rag-server/rag.config.json"
+
+        with self.assertRaises(FileNotFoundError):
+            load_config(root, missing_config)
+
+        failed = subprocess.run(
+            [sys.executable, str(tool), "status", "--root", str(root), "--config", missing_config],
+            text=True,
+            capture_output=True,
+        )
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn("rag config not found", failed.stderr)
+
+    def test_project_local_config_does_not_fallback_to_process_cwd(self) -> None:
+        server_root = self.make_project()
+        target_root = self.make_project()
+        config_rel = ".mcp/rag-server/rag.config.json"
+        (server_root / ".mcp" / "rag-server").mkdir(parents=True)
+        (server_root / config_rel).write_text(json.dumps({"schema_version": "rag.config.v1"}), encoding="utf-8")
+
+        with mock.patch("rag_universal.core.Path.cwd", return_value=server_root):
+            with self.assertRaises(FileNotFoundError):
+                load_config(target_root, config_rel)
 
     def test_default_config_can_live_under_local_rag_server_directory(self) -> None:
         root = self.make_project()
@@ -680,6 +725,74 @@ class RagUniversalTest(unittest.TestCase):
         build_index(root)
         coverage = index_coverage(root, None, ["tests/Unit/BuildAndPushNodeImagesScriptTest.php"])
         self.assertTrue(coverage["paths"][0]["indexed"])
+
+    def test_mcp_per_call_root_resolves_server_config_relative_to_effective_root(self) -> None:
+        server_root = self.make_project()
+        target_root = self.make_project()
+        config_rel = ".mcp/rag-server/rag.config.json"
+        for root in (server_root, target_root):
+            (root / ".mcp" / "rag-server").mkdir(parents=True)
+        (server_root / config_rel).write_text(
+            json.dumps({"schema_version": "rag.config.v1", "include_globs": ["server.only"]}),
+            encoding="utf-8",
+        )
+        (server_root / "server.only").write_text("server config token", encoding="utf-8")
+        (target_root / config_rel).write_text(
+            json.dumps({"schema_version": "rag.config.v1", "include_globs": ["target.only"]}),
+            encoding="utf-8",
+        )
+        (target_root / "target.only").write_text("target config token", encoding="utf-8")
+        build_index(server_root, config_rel)
+        build_index(target_root, config_rel)
+
+        called = handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "tools/call",
+                "params": {
+                    "name": "rag_search",
+                    "arguments": {"root": str(target_root.resolve()), "query": "target config token", "top_k": 1},
+                },
+            },
+            str(server_root),
+            config_rel,
+        )
+        payload = json.loads(called["result"]["content"][0]["text"])
+        self.assertEqual(payload[0]["source"], "target.only")
+
+        status_called = handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 13,
+                "method": "tools/call",
+                "params": {"name": "rag_status", "arguments": {"root": str(target_root.resolve())}},
+            },
+            str(server_root),
+            config_rel,
+        )
+        status_payload = json.loads(status_called["result"]["content"][0]["text"])
+        self.assertEqual(status_payload["mcp_server"]["effective_config"], config_rel)
+        self.assertEqual(status_payload["mcp_server"]["effective_config_path"], str((target_root / config_rel).resolve()))
+
+    def test_deploy_to_project_wires_explicit_project_local_config(self) -> None:
+        if shutil.which("rsync") is None:
+            self.skipTest("rsync is required by deploy-to-project.sh")
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        target = Path(temp.name) / "project"
+        target.mkdir()
+        deploy = ROOT / "tools" / "deploy-to-project.sh"
+
+        subprocess.run([str(deploy), str(target), "--no-index"], check=True, text=True, capture_output=True)
+
+        config_path = target / ".mcp" / "rag-server" / "rag.config.json"
+        self.assertTrue(config_path.exists())
+        mcp_config = json.loads((target / ".mcp.json").read_text(encoding="utf-8"))
+        args = mcp_config["mcpServers"]["rag"]["args"]
+        self.assertEqual(args[0], ".mcp/rag-server/tools/rag.py")
+        self.assertIn("--config", args)
+        self.assertEqual(args[args.index("--config") + 1], ".mcp/rag-server/rag.config.json")
 
     def test_force_include_contract_tests_and_coverage_report(self) -> None:
         root = self.make_project()

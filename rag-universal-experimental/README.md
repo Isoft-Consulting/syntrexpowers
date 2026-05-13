@@ -30,6 +30,8 @@ python3 tools/rag.py index --root .. --config rag.config.example.json
 ```
 
 For project-local installs under `.mcp/rag-server/`, the default config lookup now prefers `.mcp/rag-server/rag.config.json` before a root-level `rag.config.json`.
+When `--config` is passed explicitly, the file must exist. The toolkit fails closed instead of falling back to the built-in defaults, so a typo cannot silently build or search the wrong index scope.
+Explicit project-local paths such as `.mcp/rag-server/rag.config.json` resolve only under the effective project root; only bare filenames such as `rag.config.example.json` also fall back to the current directory for source-tree toolkit runs.
 
 Run as an MCP server:
 
@@ -96,7 +98,8 @@ All MCP tools accept `root` and `config` arguments per call. In hardened multi-p
 }
 ```
 
-`rag_status` can be called without `root` to inspect the server-bound root. Its `mcp_server` diagnostics include `server_root`, `effective_root`, `explicit_root`, `require_explicit_root`, and `stale_namespace_risk`. If it reports a different `manifest.project_root` or `mcp_server.server_root` than the current repository, pass an absolute `root` explicitly on every MCP call or use the CLI fallback with `--root /path/to/current/project` until the MCP client restarts with the updated tool schema.
+`rag_status` can be called without `root` to inspect the server-bound root. Its `mcp_server` diagnostics include `server_root`, `effective_root`, `effective_config_path`, `explicit_root`, `require_explicit_root`, and `stale_namespace_risk`. If it reports a different `manifest.project_root` or `mcp_server.server_root` than the current repository, pass an absolute `root` explicitly on every MCP call or use the CLI fallback with `--root /path/to/current/project` until the MCP client restarts with the updated tool schema.
+Project-local MCP entries should also pass `--config .mcp/rag-server/rag.config.json`; that relative config is resolved against the effective per-call root, so a long-lived MCP process can safely serve multiple projects only when each project has its own local config.
 
 ## Tools
 

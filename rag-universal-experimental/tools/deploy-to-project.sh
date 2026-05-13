@@ -149,6 +149,8 @@ entry = {
         ".mcp/rag-server/tools/rag.py",
         "--root",
         ".",
+        "--config",
+        ".mcp/rag-server/rag.config.json",
         "serve-mcp",
         "--require-explicit-root",
         "--cache-storage",
@@ -187,8 +189,8 @@ fi
 # Шаг 4: build index
 if [ "$SKIP_INDEX" -eq 0 ]; then
     echo "building initial index (may take several minutes on large projects)..."
-    python3 "$TARGET/tools/rag.py" index --root "$PROJECT" >/dev/null
-    python3 "$TARGET/tools/rag.py" status --root "$PROJECT" \
+    python3 "$TARGET/tools/rag.py" index --root "$PROJECT" --config "$CONFIG_DEST" >/dev/null
+    python3 "$TARGET/tools/rag.py" status --root "$PROJECT" --config "$CONFIG_DEST" \
         | python3 -c "import json,sys; d=json.load(sys.stdin); m=d.get('manifest',{}); print(f'index built: num_files={m.get(\"num_files\",\"?\")} num_chunks={m.get(\"num_chunks\",\"?\")} num_symbols={m.get(\"num_symbols\",\"?\")}')"
 fi
 

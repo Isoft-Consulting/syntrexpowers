@@ -35,9 +35,9 @@ This is intentionally a full directory sync. It keeps the installed server deter
 ```bash
 cd /path/to/project
 
-python3 .mcp/rag-server/tools/rag.py status --root .
-python3 .mcp/rag-server/tools/rag.py search --root . "project overview" --with-plan --auto-reindex --top-k 5
-python3 .mcp/rag-server/tools/rag.py quality-check --root . --auto-reindex --summary-only
+python3 .mcp/rag-server/tools/rag.py status --root . --config .mcp/rag-server/rag.config.json
+python3 .mcp/rag-server/tools/rag.py search --root . --config .mcp/rag-server/rag.config.json "project overview" --with-plan --auto-reindex --top-k 5
+python3 .mcp/rag-server/tools/rag.py quality-check --root . --config .mcp/rag-server/rag.config.json --auto-reindex --summary-only
 ```
 
 Expected result:
@@ -51,7 +51,7 @@ Expected result:
 For large projects, the first rebuild can take minutes. If it is unexpectedly slow, run:
 
 ```bash
-python3 .mcp/rag-server/tools/rag.py status --root .
+python3 .mcp/rag-server/tools/rag.py status --root . --config .mcp/rag-server/rag.config.json
 ```
 
 Check `source_state.current.num_files`. If the count is inflated by generated/runtime files, add a project `.mcp/rag-server/rag.config.json` with narrower `exclude_dirs`, `exclude_globs`, or `include_globs`.
@@ -62,8 +62,8 @@ Use a project-local config when default globs are too broad or too narrow:
 
 ```bash
 cp .mcp/rag-server/rag.config.example.json .mcp/rag-server/rag.config.json
-python3 .mcp/rag-server/tools/rag.py status --root .
-python3 .mcp/rag-server/tools/rag.py search --root . "project overview" --with-plan --auto-reindex
+python3 .mcp/rag-server/tools/rag.py status --root . --config .mcp/rag-server/rag.config.json
+python3 .mcp/rag-server/tools/rag.py search --root . --config .mcp/rag-server/rag.config.json "project overview" --with-plan --auto-reindex
 ```
 
 Keep generated/runtime directories excluded. Common examples:
@@ -108,9 +108,11 @@ For a project-local install under `.mcp/rag-server`, use this command shape in a
       "command": "python3",
       "args": [
         ".mcp/rag-server/tools/rag.py",
-        "serve-mcp",
         "--root",
         ".",
+        "--config",
+        ".mcp/rag-server/rag.config.json",
+        "serve-mcp",
         "--require-explicit-root"
       ]
     }
@@ -118,14 +120,12 @@ For a project-local install under `.mcp/rag-server`, use this command shape in a
 }
 ```
 
-If the project uses a custom config outside the default `.mcp/rag-server/rag.config.json` location, add:
+The explicit `--config` path is intentional: if the file is missing, startup/tool calls fail closed instead of silently indexing with built-in defaults. If the project uses a custom config outside the default `.mcp/rag-server/rag.config.json` location, replace the path with that project-local config:
 
 ```json
 "--config",
-".mcp/rag-server/rag.config.json"
+"path/to/project-local-rag.config.json"
 ```
-
-to the `args` list after `"."`.
 
 Ready-made examples for a source-tree install are also available:
 
@@ -179,22 +179,22 @@ Do not index secrets, `.env`, `.mcp.json`, vendor, node_modules, dist, storage, 
 
 ```bash
 # Rebuild now
-python3 .mcp/rag-server/tools/rag.py index --root .
+python3 .mcp/rag-server/tools/rag.py index --root . --config .mcp/rag-server/rag.config.json
 
 # Incremental refresh when the existing index is compatible
-python3 .mcp/rag-server/tools/rag.py index --root . --incremental
+python3 .mcp/rag-server/tools/rag.py index --root . --config .mcp/rag-server/rag.config.json --incremental
 
 # Check stale state
-python3 .mcp/rag-server/tools/rag.py status --root .
+python3 .mcp/rag-server/tools/rag.py status --root . --config .mcp/rag-server/rag.config.json
 
 # Search and rebuild only when stale
-python3 .mcp/rag-server/tools/rag.py search --root . "query" --mode fdr --with-plan --auto-reindex
+python3 .mcp/rag-server/tools/rag.py search --root . --config .mcp/rag-server/rag.config.json "query" --mode fdr --with-plan --auto-reindex
 
 # Verify server health and comparative retrieval quality
-python3 .mcp/rag-server/tools/rag.py quality-check --root . --auto-reindex --summary-only
+python3 .mcp/rag-server/tools/rag.py quality-check --root . --config .mcp/rag-server/rag.config.json --auto-reindex --summary-only
 
 # Watch and rebuild incrementally when possible
-python3 .mcp/rag-server/tools/rag.py watch --root .
+python3 .mcp/rag-server/tools/rag.py watch --root . --config .mcp/rag-server/rag.config.json
 
 # Check whether generated knowledge pack inputs changed
 python3 .mcp/rag-server/tools/rag.py knowledge-status --root . --summary Docs/knowledge/rag

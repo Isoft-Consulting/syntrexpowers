@@ -305,15 +305,19 @@ def status_with_mcp_scope(
     root: str | None,
     config: str | None,
     tool_root: str | None,
+    tool_config: str | None,
     require_explicit_root: bool,
 ) -> dict[str, Any]:
     root_value = explicit_root_argument(arguments)
+    current_config = status.get("config", {}).get("current", {}) if isinstance(status.get("config"), dict) else {}
     status["mcp_server"] = {
         "server_root": str(resolve_root(root)),
         "server_config": config,
         "effective_root": str(resolve_root(tool_root)),
-        "effective_config": config if arguments.get("config") in (None, "") else str(arguments.get("config")),
+        "effective_config": tool_config,
+        "effective_config_path": current_config.get("path") if isinstance(current_config, dict) else None,
         "explicit_root": root_value is not None,
+        "explicit_config": arguments.get("config") not in (None, ""),
         "require_explicit_root": require_explicit_root,
         "stale_namespace_risk": require_explicit_root and root_value is None,
         "guidance": "Pass an absolute root on every project-scoped MCP call in multi-project sessions.",
@@ -342,7 +346,17 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
     if name == "rag_reindex":
         return text_content(build_index(tool_root, tool_config))
     if name == "rag_status":
-        return text_content(status_with_mcp_scope(index_status(tool_root, tool_config), arguments, root, config, tool_root, require_explicit_root))
+        return text_content(
+            status_with_mcp_scope(
+                index_status(tool_root, tool_config),
+                arguments,
+                root,
+                config,
+                tool_root,
+                tool_config,
+                require_explicit_root,
+            )
+        )
     if name == "rag_coverage":
         raw_paths = arguments.get("paths", [])
         paths = [str(item) for item in raw_paths] if isinstance(raw_paths, list) else [str(raw_paths)]

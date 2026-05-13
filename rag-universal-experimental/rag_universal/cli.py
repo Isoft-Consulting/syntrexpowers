@@ -29,7 +29,11 @@ def emit(value: Any) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Universal local RAG toolkit")
     parser.add_argument("--root", default=".", help="Project root. Default: current directory.")
-    parser.add_argument("--config", default=None, help="Config path relative to root, current directory, or absolute path.")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Config path relative to root, an absolute path, or a bare filename also checked in the current directory.",
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     index = subparsers.add_parser("index", help="Build the local RAG index")
