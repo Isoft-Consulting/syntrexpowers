@@ -365,6 +365,155 @@ with_install do |_root, home, install_root, state_root, project|
   assert(name, record.fetch("trusted_state_written") == false, "enforcement hook wrote trusted state")
 end
 
+destructive_pattern_preinstall = lambda do |_root, _home, install_root, _project|
+  config_root = install_root.join("config")
+  config_root.mkpath
+  config_root.join("destructive-patterns.txt").write("shell-ere git[[:space:]]+reset[[:space:]]+--hard\n")
+  File.chmod(0o600, config_root.join("destructive-patterns.txt"))
+end
+
+with_install(preinstall: destructive_pattern_preinstall) do |_root, home, install_root, state_root, project|
+  name = "enforcing destructive pre-tool confirmation is exact and one-shot"
+  enable_codex_enforcement!(install_root, state_root)
+  command = "git reset --hard HEAD"
+  payload = {
+    "event" => "pre-tool-use",
+    "thread_id" => "t1",
+    "tool_name" => "exec_command",
+    "tool_input" => {
+      "command" => command
+    }
+  }
+
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "provider block contract should control exit code", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  approval_hash = emitted.fetch("reason")[/strict-mode confirm ([0-9a-f]{64})/, 1]
+  assert(name, emitted.fetch("decision") == "block", "initial destructive command did not block", stdout)
+  assert(name, approval_hash && approval_hash.length == 64, "block output missing exact confirmation hash", stdout)
+  pending_files = Dir.glob(state_root.join("pending-destructive-codex-*-#{approval_hash}.json").to_s)
+  assert(name, pending_files.length == 1, "pending approval file missing", pending_files.inspect)
+  pending = JSON.parse(Pathname.new(pending_files.first).read)
+  assert(name, pending.fetch("next_user_prompt_marker") == "prompt-seq:1", "pending marker mismatch", pending.inspect)
+  assert(name, pending.fetch("command_hash_source") == "shell-string", "pending command hash source mismatch", pending.inspect)
+  first_record = last_discovery_record(state_root)
+  assert(name, first_record.fetch("trusted_state_written") == true, "pending approval write not recorded", first_record.inspect)
+  audit_path = state_root.join("destructive-log.jsonl")
+  audit_path.delete if audit_path.file?
+  replay_status, replay_stdout, replay_stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", payload)
+  assert_no_stacktrace(name, replay_stdout + replay_stderr)
+  assert(name, replay_status.zero?, "pending replay should still emit provider block", replay_stdout + replay_stderr)
+  replay_hash = JSON.parse(replay_stdout).fetch("reason")[/strict-mode confirm ([0-9a-f]{64})/, 1]
+  assert(name, replay_hash == approval_hash, "pending replay changed approval hash", replay_stdout)
+  replay_actions = audit_path.read.lines.map { |line| JSON.parse(line).fetch("action") }
+  assert(name, replay_actions == %w[blocked], "pending replay did not restore blocked audit", replay_actions.inspect)
+
+  prompt_payload = {
+    "event" => "user-prompt-submit",
+    "thread_id" => "t1",
+    "prompt" => "please proceed\nstrict-mode confirm #{approval_hash}\n"
+  }
+  prompt_status, prompt_stdout, prompt_stderr = run_hook_event_capture(home, install_root, state_root, project, "user-prompt-submit", prompt_payload)
+  assert_no_stacktrace(name, prompt_stdout + prompt_stderr)
+  assert(name, prompt_status.zero?, "user prompt hook failed", prompt_stdout + prompt_stderr)
+  marker_files = Dir.glob(state_root.join("confirm-codex-*-#{approval_hash}").to_s)
+  assert(name, marker_files.length == 1, "confirmation marker was not created", marker_files.inspect)
+  marker = JSON.parse(Pathname.new(marker_files.first).read)
+  assert(name, marker.fetch("approval_prompt_seq") == 1, "marker prompt seq mismatch", marker.inspect)
+  assert(name, marker.fetch("pending_record_hash") == pending.fetch("pending_record_hash"), "marker pending hash mismatch", marker.inspect)
+
+  retry_status, retry_stdout, retry_stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", payload)
+  assert_no_stacktrace(name, retry_stdout + retry_stderr)
+  assert(name, retry_status.zero?, "confirmed destructive command should exit cleanly", retry_stdout + retry_stderr)
+  assert(name, retry_stdout.empty? && retry_stderr.empty?, "confirmed destructive command should not emit block output", retry_stdout + retry_stderr)
+  consumed_files = Dir.glob(state_root.join("consumed-confirm-codex-*-#{approval_hash}.json").to_s)
+  assert(name, consumed_files.length == 1, "confirmation tombstone missing", consumed_files.inspect)
+  assert(name, marker_files.none? { |path| Pathname.new(path).exist? }, "active marker still exists after consumption")
+
+  retry_record = last_discovery_record(state_root)
+  assert(name, retry_record.fetch("preflight").fetch("reason_code") == "destructive-confirmed", "confirmed allow reason mismatch", retry_record.inspect)
+  actions = Pathname.new(state_root.join("destructive-log.jsonl")).read.lines.map { |line| JSON.parse(line).fetch("action") }
+  assert(name, actions == %w[blocked confirmed consumed], "destructive audit action chain mismatch", actions.inspect)
+  ledgers = fdr_ledger_records(state_root)
+  assert(name, StrictModeFdrCycle.validate_session_ledger_chain(fdr_ledger_path(state_root)).empty?, "session ledger invalid", ledgers.inspect)
+  assert(name, ledgers.map { |entry| entry.fetch("target_class") }.include?("consumed-tombstone"), "missing consumed tombstone ledger", ledgers.inspect)
+  global_errors = StrictModeGlobalLedger.validate_chain(StrictModeGlobalLedger.ledger_path(state_root))
+  assert(name, global_errors.empty?, "global ledger invalid", global_errors.join("\n"))
+
+  second_retry_status, second_retry_stdout, second_retry_stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", payload)
+  assert_no_stacktrace(name, second_retry_stdout + second_retry_stderr)
+  assert(name, second_retry_status.zero?, "second retry should emit provider block contract", second_retry_stdout + second_retry_stderr)
+  second_emitted = JSON.parse(second_retry_stdout)
+  assert(name, second_emitted.fetch("decision") == "block", "consumed confirmation authorized a second execution", second_retry_stdout)
+end
+
+with_install(preinstall: destructive_pattern_preinstall) do |_root, home, install_root, state_root, project|
+  name = "destructive confirmation ignores generic affirmation"
+  enable_codex_enforcement!(install_root, state_root)
+  payload = {
+    "event" => "pre-tool-use",
+    "thread_id" => "t1",
+    "tool_name" => "exec_command",
+    "tool_input" => {
+      "command" => "git reset --hard HEAD"
+    }
+  }
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "initial destructive block failed", stdout + stderr)
+  approval_hash = JSON.parse(stdout).fetch("reason")[/strict-mode confirm ([0-9a-f]{64})/, 1]
+  assert(name, approval_hash, "missing confirmation hash", stdout)
+
+  prompt_payload = {
+    "event" => "user-prompt-submit",
+    "thread_id" => "t1",
+    "prompt" => "yes\n"
+  }
+  prompt_status, prompt_stdout, prompt_stderr = run_hook_event_capture(home, install_root, state_root, project, "user-prompt-submit", prompt_payload)
+  assert_no_stacktrace(name, prompt_stdout + prompt_stderr)
+  assert(name, prompt_status.zero?, "user prompt hook failed", prompt_stdout + prompt_stderr)
+  marker_files = Dir.glob(state_root.join("confirm-codex-*-#{approval_hash}").to_s)
+  assert(name, marker_files.empty?, "generic affirmation created confirmation marker", marker_files.inspect)
+end
+
+with_install(preinstall: destructive_pattern_preinstall) do |_root, home, install_root, state_root, project|
+  name = "destructive confirmation requires marker ledger coverage"
+  enable_codex_enforcement!(install_root, state_root)
+  payload = {
+    "event" => "pre-tool-use",
+    "thread_id" => "t1",
+    "tool_name" => "exec_command",
+    "tool_input" => {
+      "command" => "git reset --hard HEAD"
+    }
+  }
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "initial destructive block failed", stdout + stderr)
+  approval_hash = JSON.parse(stdout).fetch("reason")[/strict-mode confirm ([0-9a-f]{64})/, 1]
+  prompt_payload = {
+    "event" => "user-prompt-submit",
+    "thread_id" => "t1",
+    "prompt" => "strict-mode confirm #{approval_hash}\n"
+  }
+  prompt_status, prompt_stdout, prompt_stderr = run_hook_event_capture(home, install_root, state_root, project, "user-prompt-submit", prompt_payload)
+  assert_no_stacktrace(name, prompt_stdout + prompt_stderr)
+  assert(name, prompt_status.zero?, "user prompt hook failed", prompt_stdout + prompt_stderr)
+  ledger_path = fdr_ledger_path(state_root)
+  kept = ledger_path.read.lines.reject { |line| JSON.parse(line).fetch("target_class") == "approval-marker" }
+  ledger_path.write(kept.join)
+
+  retry_status, retry_stdout, retry_stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", payload)
+  assert_no_stacktrace(name, retry_stdout + retry_stderr)
+  assert(name, retry_status.zero?, "ledgerless marker retry should emit provider block contract", retry_stdout + retry_stderr)
+  emitted = JSON.parse(retry_stdout)
+  assert(name, emitted.fetch("decision") == "block", "ledgerless marker authorized destructive allow", retry_stdout)
+  retry_record = last_discovery_record(state_root)
+  assert(name, retry_record.fetch("preflight").fetch("reason_code") == "preflight-error", "ledgerless marker did not fail closed", retry_record.inspect)
+  assert(name, Dir.glob(state_root.join("consumed-confirm-codex-*-#{approval_hash}.json").to_s).empty?, "ledgerless marker was consumed")
+end
+
 with_install do |_root, home, install_root, state_root, project|
   name = "enforcing stop emits provider continuation block output"
   enable_codex_enforcement!(install_root, state_root)

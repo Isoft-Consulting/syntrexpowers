@@ -437,7 +437,12 @@ class StrictModeFdrCycle
     valid_writer_target = case record.fetch("writer")
                           when "strict-hook"
                             (record.fetch("target_class") == "fdr-cycle-log" && record.fetch("operation") == "append") ||
-                              (record.fetch("target_class") == "tool-intent-log" && record.fetch("operation") == "append")
+                              (record.fetch("target_class") == "tool-intent-log" && record.fetch("operation") == "append") ||
+                              (record.fetch("target_class") == "prompt-event-log" && record.fetch("operation") == "append") ||
+                              (record.fetch("target_class") == "prompt-sequence" && %w[create modify].include?(record.fetch("operation"))) ||
+                              (record.fetch("target_class") == "pending-approval" && %w[create modify delete].include?(record.fetch("operation"))) ||
+                              (record.fetch("target_class") == "approval-marker" && record.fetch("operation") == "create") ||
+                              (record.fetch("target_class") == "consumed-tombstone" && record.fetch("operation") == "rename")
                           when "strict-fdr"
                             record.fetch("target_class") == "fdr-artifact" && %w[create modify].include?(record.fetch("operation"))
                           else

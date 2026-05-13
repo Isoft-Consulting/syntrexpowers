@@ -109,6 +109,7 @@
       "non-write-tool",
       "write-targets-disjoint",
       "trusted-import-ready",
+      "destructive-confirmed",
       "invalid-identity",
       "shell-command-missing",
       "shell-parse-error",
@@ -271,5 +272,5 @@
   "fixture_requirements": [
     "preflight record parser, hash binder, and attempt/trust/decision coupling validator"
   ],
-  "profile_hash": "bc651edaa4525663c16d0ce85ef626c4638958de5c3149888203bbb47447bc0c"
+  "profile_hash": "f5b4b3e19e52a9c38aa923a9890eaf7fb106652fd46b0f7e7c8fdc9d0453de5a"
 }

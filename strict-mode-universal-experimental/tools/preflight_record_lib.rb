@@ -52,6 +52,7 @@ module StrictModePreflightRecord
     non-write-tool
     write-targets-disjoint
     trusted-import-ready
+    destructive-confirmed
   ].freeze
   CLASSIFIER_BLOCK_REASON_CODES = %w[
     invalid-identity
@@ -109,6 +110,22 @@ module StrictModePreflightRecord
         "tool_name_hash" => sha256_text(tool.fetch("name")),
         "command_hash" => sha256_text(tool.fetch("command")),
         "path_list_hash" => sha256_json(tool.fetch("file_paths"))
+      )
+    )
+  end
+
+  def trusted_allow_from_preflight(preflight, reason_code, reason)
+    raise "preflight must be trusted block" unless preflight.is_a?(Hash) && preflight.fetch("trusted") == true && preflight.fetch("decision") == "block"
+    raise "allow reason_code unsupported" unless CLASSIFIER_ALLOW_REASON_CODES.include?(reason_code)
+
+    with_hash(
+      preflight.merge(
+        "decision" => "allow",
+        "would_block" => false,
+        "reason_code" => reason_code,
+        "reason_hash" => sha256_text(reason),
+        "error_count" => 0,
+        "error_hash" => ZERO_HASH
       )
     )
   end

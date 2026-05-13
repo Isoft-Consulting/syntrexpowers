@@ -45,7 +45,7 @@ class StrictModeGlobalLedger
     tree_hash
   ].freeze
 
-  WRITERS = %w[install rollback uninstall].freeze
+  WRITERS = %w[install rollback uninstall strict-hook cleanup].freeze
   OPERATIONS = %w[create modify append rename delete checkpoint].freeze
   GLOBAL_INSTALL_TARGET_CLASSES = %w[
     installer-marker
@@ -57,6 +57,9 @@ class StrictModeGlobalLedger
     runtime-config
     protected-config
     protected-install-baseline
+  ].freeze
+  GLOBAL_APPROVAL_TARGET_CLASSES = %w[
+    approval-audit-log
   ].freeze
 
   BACKUP_KIND_TARGET_CLASS = {
@@ -181,19 +184,20 @@ class StrictModeGlobalLedger
     )
   end
 
-  def self.append_global!(state_root, writer:, target_path:, target_class:, operation:, old_fingerprint:, new_fingerprint:, related_record_hash:)
+  def self.append_global!(state_root, writer:, target_path:, target_class:, operation:, old_fingerprint:, new_fingerprint:, related_record_hash:, context: nil)
     path = ledger_path(state_root)
     path.dirname.mkpath
     previous_record_hash = last_record_hash(path)
+    tuple = ledger_tuple(context)
     record = {
       "schema_version" => 1,
       "ledger_scope" => "global",
       "writer" => writer,
-      "provider" => "",
-      "session_key" => "",
-      "raw_session_hash" => "",
-      "cwd" => "",
-      "project_dir" => "",
+      "provider" => tuple.fetch("provider"),
+      "session_key" => tuple.fetch("session_key"),
+      "raw_session_hash" => tuple.fetch("raw_session_hash"),
+      "cwd" => tuple.fetch("cwd"),
+      "project_dir" => tuple.fetch("project_dir"),
       "target_path" => Pathname.new(target_path).to_s,
       "target_class" => target_class,
       "operation" => operation,
@@ -273,15 +277,13 @@ class StrictModeGlobalLedger
     errors << "schema_version must be 1" unless record.fetch("schema_version") == 1
     errors << "ledger_scope must be global" unless record.fetch("ledger_scope") == "global"
     errors << "writer invalid" unless WRITERS.include?(record.fetch("writer"))
-    %w[provider session_key raw_session_hash cwd project_dir].each do |field|
-      errors << "#{field} must be empty for global install ledger" unless record.fetch(field) == ""
-    end
     errors << "target_path must be a string" unless record.fetch("target_path").is_a?(String)
-    errors << "target_class invalid" unless GLOBAL_INSTALL_TARGET_CLASSES.include?(record.fetch("target_class"))
+    errors << "target_class invalid" unless (GLOBAL_INSTALL_TARGET_CLASSES + GLOBAL_APPROVAL_TARGET_CLASSES).include?(record.fetch("target_class"))
+    errors << "operation invalid" unless OPERATIONS.include?(record.fetch("operation"))
+    errors.concat(validate_writer_scope_tuple(record))
     if record.fetch("target_class") == "active-runtime-link" && record.fetch("target_path").is_a?(String)
       errors << "active-runtime-link target_path must end with /active" unless Pathname.new(record.fetch("target_path")).basename.to_s == "active"
     end
-    errors << "operation invalid" unless OPERATIONS.include?(record.fetch("operation"))
     errors << "related_record_hash must be lowercase SHA-256" unless sha256?(record.fetch("related_record_hash"))
     errors << "previous_record_hash must be lowercase SHA-256" unless sha256?(record.fetch("previous_record_hash"))
     errors << "previous_record_hash mismatch" if expected_previous_hash && record.fetch("previous_record_hash") != expected_previous_hash
@@ -298,6 +300,20 @@ class StrictModeGlobalLedger
       errors << "operation does not match old/new fingerprints"
     end
     errors
+  end
+
+  def self.ledger_tuple(context)
+    return {
+      "provider" => "",
+      "session_key" => "",
+      "raw_session_hash" => "",
+      "cwd" => "",
+      "project_dir" => ""
+    } unless context
+
+    %w[provider session_key raw_session_hash cwd project_dir].each_with_object({}) do |field, tuple|
+      tuple[field] = context.fetch(field)
+    end
   end
 
   def self.validate_fingerprint(fingerprint)
@@ -350,8 +366,32 @@ class StrictModeGlobalLedger
       old_exists == 1 && new_exists == 0
     when "modify", "rename"
       old_exists == 1 && new_exists == 1
+    when "append"
+      new_exists == 1 && %w[file missing].include?(old_fingerprint.fetch("kind")) && new_fingerprint.fetch("kind") == "file"
     else
       operation == operation_for(old_fingerprint, new_fingerprint)
+    end
+  end
+
+  def self.validate_writer_scope_tuple(record)
+    target_class = record.fetch("target_class")
+    writer = record.fetch("writer")
+    tuple_fields = %w[provider session_key raw_session_hash cwd project_dir]
+    if GLOBAL_INSTALL_TARGET_CLASSES.include?(target_class)
+      errors = tuple_fields.select { |field| record.fetch(field) != "" }.map { |field| "#{field} must be empty for global install ledger" }
+      errors << "writer/target tuple invalid" unless %w[install rollback uninstall].include?(writer)
+      errors << "global install operation invalid" if %w[append checkpoint].include?(record.fetch("operation"))
+      errors
+    elsif target_class == "approval-audit-log"
+      errors = []
+      tuple_fields.each do |field|
+        errors << "#{field} must be non-empty for global approval ledger" unless record.fetch(field).is_a?(String) && !record.fetch(field).empty?
+      end
+      errors << "writer/target tuple invalid" unless %w[strict-hook cleanup].include?(writer)
+      errors << "approval-audit-log operation must be append" unless record.fetch("operation") == "append"
+      errors
+    else
+      []
     end
   end
 

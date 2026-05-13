@@ -22,7 +22,10 @@ Current implementation status:
 - The repository currently contains a pure `tools/destructive_gate_lib.rb` classifier with tests for shell parsing, configured destructive patterns, protected roots, write-capable utility target extraction, shell wrapper handling, direct write targets, protected hardlink aliases, runtime executable blocking, and intent-gated `strict-fdr import -- <path>` handling.
 - `tools/protected_baseline_lib.rb` now verifies the installed manifest/baseline hashes, active runtime target, current protected file hashes and `dev+inode` tuples, then exports protected roots, protected inode entries, and parsed destructive patterns for the classifier.
 - `strict-hook pre-tool-use` now runs the normalizer, protected baseline loader, and destructive classifier after provider proof matches. Discovery installs write hash-bound `hook.preflight.v1` records and return provider-allow; enforcing installs with a selected pre-tool output contract emit the fixture-bound provider block output when the protected/destructive preflight blocks.
-- Approval records, transaction locks, confirmation consumption, and permission-request enforcement are still incomplete. Those pieces must land before Phase 3 can be marked fully enforcing-ready across both providers.
+- Enforcing destructive-command blocks now create hash-bound `pending-destructive-*` records plus `destructive-log.jsonl` `blocked` audit records under the required global/session lock order, and provider block output includes the exact `strict-mode confirm <hash>` phrase.
+- `strict-hook user-prompt-submit` now allocates monotonic prompt events, accepts only an exact trimmed `strict-mode confirm <hash>` line for the matching next prompt marker, writes a `confirm-*` marker plus `confirmed` audit, and ignores generic affirmations.
+- Retried destructive commands now consume the matching confirmation marker exactly once by renaming it to `consumed-confirm-*.json`, appending `consumed` audit plus tombstone ledger evidence, and converting the preflight to `destructive-confirmed` allow.
+- Permission-request enforcement, previous-turn baseline evidence snapshots, min-age handling for pre-existing confirmations, and audited expiry cleanup are still incomplete. Those pieces must land before Phase 3 can be marked fully enforcing-ready across both providers.
 
 Acceptance:
 

@@ -11,6 +11,7 @@ require "rbconfig"
 require "securerandom"
 require "time"
 require_relative "../tools/decision_contract_lib"
+require_relative "../tools/approval_state_lib"
 require_relative "../tools/destructive_gate_lib"
 require_relative "../tools/fdr_cycle_lib"
 require_relative "../tools/fdr_import_lib"
@@ -697,7 +698,7 @@ rescue RuntimeError, SystemCallError, ArgumentError => e
   judge_summary(attempted: true, reason: e.message)
 end
 
-def enforcement_result(context, provider, logical_event, preflight, stop_hook_active: false, parsed_payload: nil, state_root: nil, payload_hash: nil)
+def enforcement_result(context, provider, logical_event, preflight, stop_hook_active: false, parsed_payload: nil, state_root: nil, payload_hash: nil, approval_notice: nil)
   entry = enforcing_hook_entry(context, provider, logical_event)
   if stop_hook_active && stop_continuation_logical_event?(logical_event) && enforcing_hook_invocation?
     contract_id = entry ? entry.fetch("output_contract_id") : ENV["STRICT_OUTPUT_CONTRACT_ID"].to_s
@@ -785,6 +786,14 @@ def enforcement_result(context, provider, logical_event, preflight, stop_hook_ac
   end
 
   decision = StrictModeInternalDecision.from_preflight(preflight, stop_hook_active: stop_hook_active)
+  if approval_notice && decision.fetch("action") == "block"
+    phrase = approval_notice.fetch("phrase")
+    decision["reason"] = bounded_reason("#{decision.fetch("reason")}\nAsk the user to reply with this exact line before retrying: #{phrase}")
+    decision["additional_context"] = "strict-mode destructive confirmation required: #{phrase}"
+    decision["metadata"]["approval_hash"] = approval_notice.fetch("approval_hash")
+    decision["metadata"]["pending_record_hash"] = approval_notice.fetch("pending_record_hash")
+    decision["metadata"]["next_marker"] = approval_notice.fetch("next_user_prompt_marker")
+  end
   return attach_judge_summary({ "active" => true, "emitted" => false, "failed_closed" => false, "output_contract_id" => contract.fetch("contract_id"), "stop_hook_active" => stop_hook_active, "emission" => nil, "error" => "" }, judge) unless decision.fetch("action") == "block"
 
   metadata = provider_output_metadata(contract)
@@ -881,6 +890,72 @@ preflight = if provider_detection_decision == "match" && !payload_truncated
 preflight = validate_preflight_or_error(logical_event, preflight)
 context = protected_context(state_root)
 trusted_state_written = false
+approval_summary = nil
+if logical_event == "user-prompt-submit" &&
+   provider_detection_decision == "match" &&
+   !payload_truncated &&
+   parsed_payload.is_a?(Hash) &&
+   context.fetch("trusted", false)
+  begin
+    cwd = hook_cwd
+    approval_summary = StrictModeApprovalState.record_user_prompt!(
+      state_root: state_root,
+      install_root: inferred_install_root(state_root),
+      provider: provider,
+      payload: parsed_payload,
+      payload_hash: payload_hash,
+      cwd: cwd,
+      project_dir: hook_project_dir(cwd)
+    )
+    trusted_state_written = true
+  rescue RuntimeError, SystemCallError, ArgumentError, KeyError => e
+    warn "strict-hook approval prompt handling failed: #{e.message}"
+    approval_summary = { "error" => e.message }
+  end
+end
+approval_notice = nil
+if preflight.fetch("attempted") &&
+   preflight.fetch("trusted") &&
+   preflight.fetch("decision") == "block" &&
+   preflight.fetch("reason_code") == "destructive-command" &&
+   provider_detection_decision == "match" &&
+   !payload_truncated &&
+   parsed_payload.is_a?(Hash) &&
+   context.fetch("trusted", false) &&
+   enforcing_hook_invocation? &&
+   enforcing_hook_entry(context, provider, logical_event)
+  begin
+    cwd = hook_cwd
+    consumed = StrictModeApprovalState.consume_destructive_confirmation!(
+      state_root: state_root,
+      install_root: inferred_install_root(state_root),
+      provider: provider,
+      payload: parsed_payload,
+      payload_hash: payload_hash,
+      preflight: preflight,
+      cwd: cwd,
+      project_dir: hook_project_dir(cwd)
+    )
+    if consumed.fetch("consumed")
+      approval_summary = consumed
+      trusted_state_written = true
+      preflight = validate_preflight_or_error(
+        logical_event,
+        StrictModePreflightRecord.trusted_allow_from_preflight(
+          preflight,
+          "destructive-confirmed",
+          "strict-mode destructive command confirmed by user approval #{consumed.fetch("approval_hash")}"
+        )
+      )
+    end
+  rescue RuntimeError, SystemCallError, ArgumentError, KeyError => e
+    preflight = validate_preflight_or_error(
+      logical_event,
+      preflight_error(logical_event, "preflight-error", ["destructive confirmation consume failed: #{e.message}"])
+    )
+    approval_summary = { "error" => e.message }
+  end
+end
 if preflight.fetch("attempted") &&
    preflight.fetch("trusted") &&
    preflight.fetch("decision") == "allow" &&
@@ -909,6 +984,35 @@ if preflight.fetch("attempted") &&
     preflight = validate_preflight_or_error(logical_event, preflight_error(logical_event, "preflight-error", ["trusted import intent append failed: #{e.message}"]))
   end
 end
+if preflight.fetch("attempted") &&
+   preflight.fetch("trusted") &&
+   preflight.fetch("decision") == "block" &&
+   preflight.fetch("reason_code") == "destructive-command" &&
+   provider_detection_decision == "match" &&
+   !payload_truncated &&
+   parsed_payload.is_a?(Hash) &&
+   context.fetch("trusted", false) &&
+   enforcing_hook_invocation? &&
+   enforcing_hook_entry(context, provider, logical_event)
+  begin
+    cwd = hook_cwd
+    approval_notice = StrictModeApprovalState.note_destructive_block!(
+      state_root: state_root,
+      install_root: inferred_install_root(state_root),
+      provider: provider,
+      payload: parsed_payload,
+      payload_hash: payload_hash,
+      preflight: preflight,
+      cwd: cwd,
+      project_dir: hook_project_dir(cwd)
+    )
+    approval_summary = approval_notice if approval_notice
+    trusted_state_written ||= !approval_notice.nil?
+  rescue RuntimeError, SystemCallError, ArgumentError, KeyError => e
+    warn "strict-hook approval pending write failed: #{e.message}"
+    approval_summary = { "error" => e.message }
+  end
+end
 stop_hook_active = provider_detection_decision == "match" &&
                    !payload_truncated &&
                    parsed_payload.is_a?(Hash) &&
@@ -922,7 +1026,8 @@ enforcement = enforcement_result(
   stop_hook_active: stop_hook_active,
   parsed_payload: parsed_payload,
   state_root: state_root,
-  payload_hash: payload_hash
+  payload_hash: payload_hash,
+  approval_notice: approval_notice
 )
 if preflight.fetch("would_block") && !enforcement.fetch("active")
   warn "strict-hook preflight would block in enforcement: #{preflight.fetch("reason_code")} (discovery log-only)"
@@ -966,6 +1071,7 @@ record = {
   "enforcement" => enforcement.reject { |key, _value| key == "emission" },
   "trusted_state_written" => trusted_state_written
 }
+record["approval"] = approval_summary if approval_summary
 
 begin
   FileUtils.mkdir_p(log_dir, mode: 0o700)
