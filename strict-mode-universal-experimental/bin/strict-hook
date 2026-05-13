@@ -22,6 +22,7 @@ require_relative "../tools/permission_decision_lib"
 require_relative "../tools/preflight_record_lib"
 require_relative "../tools/protected_baseline_lib"
 require_relative "../tools/provider_detection_lib"
+require_relative "../tools/record_edit_lib"
 
 options = { "provider" => nil }
 parser = OptionParser.new do |opts|
@@ -894,6 +895,49 @@ trusted_state_written = false
 approval_summary = nil
 permission_summary = nil
 permission_override_decision = nil
+tool_intent_summary = nil
+post_tool_summary = nil
+if logical_event == "pre-tool-use" &&
+   preflight.fetch("attempted") &&
+   preflight.fetch("trusted") &&
+   preflight.fetch("decision") == "allow" &&
+   preflight.fetch("reason_code") != "trusted-import-ready" &&
+   provider_detection_decision == "match" &&
+   !payload_truncated &&
+   parsed_payload.is_a?(Hash) &&
+   context.fetch("trusted", false) &&
+   enforcing_hook_invocation? &&
+   enforcing_hook_entry(context, provider, logical_event)
+  begin
+    cwd = hook_cwd
+    intent = StrictModeRecordEdit.append_pre_tool_intent_from_payload!(
+      state_root: state_root,
+      provider: provider,
+      payload: parsed_payload,
+      payload_hash: payload_hash,
+      cwd: cwd,
+      project_dir: hook_project_dir(cwd)
+    )
+    if intent
+      trusted_state_written = true
+      tool_intent_summary = {
+        "recorded" => true,
+        "seq" => intent.fetch("seq"),
+        "intent_hash" => intent.fetch("intent_hash"),
+        "tool_kind" => intent.fetch("tool_kind"),
+        "write_intent" => intent.fetch("write_intent")
+      }
+    else
+      tool_intent_summary = { "recorded" => false, "reason" => "not-required" }
+    end
+  rescue RuntimeError, SystemCallError, ArgumentError, KeyError => e
+    preflight = validate_preflight_or_error(
+      logical_event,
+      preflight_error(logical_event, "preflight-error", ["tool intent append failed: #{e.message}"])
+    )
+    tool_intent_summary = { "recorded" => false, "reason" => "record-failure", "error" => e.message }
+  end
+end
 if logical_event == "permission-request" &&
    provider_detection_decision == "match" &&
    !payload_truncated &&
@@ -928,6 +972,28 @@ if logical_event == "permission-request" &&
       "reason_code" => "deny-record-failure",
       "error" => e.message
     }
+  end
+end
+if logical_event == "post-tool-use" &&
+   provider_arg_source == "argv" &&
+   provider_detection_decision == "match" &&
+   !payload_truncated &&
+   parsed_payload.is_a?(Hash) &&
+   context.fetch("trusted", false)
+  begin
+    cwd = hook_cwd
+    post_tool_summary = StrictModeRecordEdit.append_post_tool_records_from_payload!(
+      state_root: state_root,
+      provider: provider,
+      payload: parsed_payload,
+      payload_hash: payload_hash,
+      cwd: cwd,
+      project_dir: hook_project_dir(cwd)
+    )
+    trusted_state_written = true
+  rescue RuntimeError, SystemCallError, ArgumentError, KeyError => e
+    warn "strict-hook post-tool record failed: #{e.message}"
+    post_tool_summary = { "recorded" => false, "error" => e.message }
   end
 end
 if logical_event == "user-prompt-submit" &&
@@ -1113,6 +1179,8 @@ record = {
 }
 record["approval"] = approval_summary if approval_summary
 record["permission_decision"] = permission_summary if permission_summary
+record["tool_intent"] = tool_intent_summary if tool_intent_summary
+record["post_tool_record"] = post_tool_summary if post_tool_summary
 
 begin
   FileUtils.mkdir_p(log_dir, mode: 0o700)

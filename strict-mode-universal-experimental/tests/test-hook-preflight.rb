@@ -16,6 +16,7 @@ require_relative "../tools/metadata_lib"
 require_relative "../tools/permission_decision_lib"
 require_relative "../tools/preflight_record_lib"
 require_relative "../tools/protected_baseline_lib"
+require_relative "../tools/record_edit_lib"
 
 ROOT = StrictModeMetadata.project_root
 INSTALL = ROOT.join("install.sh")
@@ -347,6 +348,21 @@ def permission_decision_records(state_root, thread_id = "t1")
   StrictModePermissionDecision.load_records(permission_decision_path(state_root, thread_id))
 end
 
+def tool_intent_records(state_root, thread_id = "t1")
+  identity = fdr_session_identity(thread_id)
+  StrictModeRecordEdit.load_jsonl(StrictModeRecordEdit.tool_intent_log_path(state_root, "codex", identity.fetch("session_key")))
+end
+
+def tool_records(state_root, thread_id = "t1")
+  identity = fdr_session_identity(thread_id)
+  StrictModeRecordEdit.load_jsonl(StrictModeRecordEdit.tool_log_path(state_root, "codex", identity.fetch("session_key")))
+end
+
+def edit_records(state_root, thread_id = "t1")
+  identity = fdr_session_identity(thread_id)
+  StrictModeRecordEdit.load_jsonl(StrictModeRecordEdit.edit_log_path(state_root, "codex", identity.fetch("session_key")))
+end
+
 def assert_fdr_cycle_and_ledger(name, state_root, expected_decisions)
   cycles = fdr_cycle_records(state_root)
   ledgers = fdr_ledger_records(state_root)
@@ -496,6 +512,107 @@ with_install do |_root, home, install_root, state_root, project|
   discovery = last_discovery_record(state_root, "permission-request")
   summary = discovery.fetch("permission_decision")
   assert(name, summary.fetch("recorded") == false && summary.fetch("reason_code") == "deny-record-failure", "wrong discovery failure summary", discovery.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "pre and post tool write records intent tool and edit evidence"
+  enable_codex_enforcement!(install_root, state_root)
+  pre_payload = {
+    "event" => "pre-tool-use",
+    "thread_id" => "t1",
+    "tool_name" => "write",
+    "tool_input" => {
+      "file_path" => "src/new.js",
+      "content" => "console.log('ok');\n"
+    }
+  }
+  post_payload = pre_payload.merge("event" => "post-tool-use")
+
+  pre_status, pre_stdout, pre_stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", pre_payload)
+  assert(name, pre_status.zero?, "pre-tool write should allow", pre_stdout + pre_stderr)
+  assert(name, pre_stdout.empty? && pre_stderr.empty?, "allowed pre-tool emitted output", pre_stdout + pre_stderr)
+  intent = tool_intent_records(state_root).first
+  assert(name, intent.fetch("tool_kind") == "write", "wrong intent kind", intent.inspect)
+  assert(name, intent.fetch("write_intent") == "write", "wrong intent write intent", intent.inspect)
+  assert(name, intent.fetch("normalized_path_list") == [project.join("src/new.js").to_s], "wrong intent path list", intent.inspect)
+  assert(name, StrictModeRecordEdit.validate_tool_intent_record(intent).empty?, "intent record invalid", intent.inspect)
+  bad_intent = JSON.parse(JSON.generate(intent.merge("normalized_path_list" => ["src/new.js"])))
+  bad_errors = StrictModeRecordEdit.validate_tool_intent_record(bad_intent)
+  assert(name, bad_errors.include?("normalized_path_list entries must be absolute paths or unknown"), "relative intent path was accepted", bad_errors.inspect)
+  pre_record = last_discovery_record(state_root, "pre-tool-use")
+  assert(name, pre_record.fetch("tool_intent").fetch("recorded") == true, "pre-tool discovery missing intent summary", pre_record.inspect)
+
+  post_status, post_stdout, post_stderr = run_hook_event_capture(home, install_root, state_root, project, "post-tool-use", post_payload)
+  assert(name, post_status.zero?, "post-tool should allow after recording", post_stdout + post_stderr)
+  assert(name, post_stdout.empty?, "post-tool should not emit stdout", post_stdout)
+  tool_record = tool_records(state_root).first
+  edit_record = edit_records(state_root).first
+  assert(name, tool_record.fetch("pre_tool_intent_seq") == intent.fetch("seq"), "tool did not link intent seq", tool_record.inspect)
+  assert(name, tool_record.fetch("pre_tool_intent_hash") == intent.fetch("intent_hash"), "tool did not link intent hash", tool_record.inspect)
+  assert(name, edit_record.fetch("action") == "create", "wrong edit action", edit_record.inspect)
+  assert(name, edit_record.fetch("path") == project.join("src/new.js").to_s, "wrong edit path", edit_record.inspect)
+  assert(name, StrictModeRecordEdit.validate_tool_record(tool_record).empty?, "tool record invalid", tool_record.inspect)
+  assert(name, StrictModeRecordEdit.validate_edit_record(edit_record).empty?, "edit record invalid", edit_record.inspect)
+  ledgers = fdr_ledger_records(state_root)
+  assert(name, ledgers.map { |ledger| ledger.fetch("target_class") }.include?("tool-intent-log"), "missing tool-intent ledger", ledgers.inspect)
+  assert(name, ledgers.map { |ledger| ledger.fetch("target_class") }.include?("tool-log"), "missing tool ledger", ledgers.inspect)
+  assert(name, ledgers.map { |ledger| ledger.fetch("target_class") }.include?("edit-log"), "missing edit ledger", ledgers.inspect)
+  post_record = last_discovery_record(state_root, "post-tool-use")
+  assert(name, post_record.fetch("post_tool_record").fetch("edit_count") == 1, "post-tool discovery missing edit count", post_record.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "post tool without matching pre intent records unresolved zero link"
+  enable_codex_enforcement!(install_root, state_root)
+  payload = {
+    "event" => "post-tool-use",
+    "thread_id" => "t1",
+    "tool_name" => "edit",
+    "tool_input" => {
+      "file_path" => "src/existing.js",
+      "old_string" => "old",
+      "new_string" => "new"
+    }
+  }
+
+  status, stdout, stderr = run_hook_event_capture(home, install_root, state_root, project, "post-tool-use", payload)
+  assert(name, status.zero?, "post-tool without intent should still allow", stdout + stderr)
+  tool_record = tool_records(state_root).first
+  edit_record = edit_records(state_root).first
+  assert(name, tool_record.fetch("pre_tool_intent_seq") == 0, "unmatched tool did not use zero intent seq", tool_record.inspect)
+  assert(name, tool_record.fetch("pre_tool_intent_hash") == "0" * 64, "unmatched tool did not use zero intent hash", tool_record.inspect)
+  assert(name, edit_record.fetch("action") == "modify", "wrong edit action", edit_record.inspect)
+  post_record = last_discovery_record(state_root, "post-tool-use")
+  assert(name, post_record.fetch("post_tool_record").fetch("pre_tool_intent_seq") == 0, "discovery did not expose unresolved intent", post_record.inspect)
+end
+
+with_install do |_root, home, install_root, state_root, project|
+  name = "pre-tool intent dangling symlink fails closed before append"
+  enable_codex_enforcement!(install_root, state_root)
+  identity = fdr_session_identity("t-symlink")
+  intent_path = StrictModeRecordEdit.tool_intent_log_path(state_root, "codex", identity.fetch("session_key"))
+  symlink_target = project.join("unexpected-intent-target.jsonl")
+  File.symlink(symlink_target.to_s, intent_path.to_s)
+  payload = {
+    "event" => "pre-tool-use",
+    "thread_id" => "t-symlink",
+    "tool_name" => "write",
+    "tool_input" => {
+      "file_path" => "src/new.js",
+      "content" => "console.log('ok');\n"
+    }
+  }
+
+  status, stdout, stderr = run_enforcing_hook_event_capture(home, install_root, state_root, project, "pre-tool-use", payload)
+  assert_no_stacktrace(name, stdout + stderr)
+  assert(name, status.zero?, "provider block contract should control record-failure exit code", stdout + stderr)
+  emitted = JSON.parse(stdout)
+  assert(name, emitted.fetch("decision") == "block", "record-failure did not block", stdout)
+  assert(name, !symlink_target.exist?, "dangling symlink target was created", symlink_target.to_s)
+  discovery = last_discovery_record(state_root, "pre-tool-use")
+  assert(name, discovery.fetch("preflight").fetch("reason_code") == "preflight-error", "record failure did not fail closed", discovery.inspect)
+  assert(name, discovery.fetch("tool_intent").fetch("recorded") == false, "record failure reported successful intent", discovery.inspect)
+  assert(name, discovery.fetch("tool_intent").fetch("reason") == "record-failure", "wrong intent failure reason", discovery.inspect)
 end
 
 with_install do |_root, home, install_root, state_root, project|
