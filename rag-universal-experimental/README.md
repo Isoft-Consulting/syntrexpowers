@@ -30,13 +30,11 @@ python3 tools/rag.py index --root .. --config rag.config.example.json
 ```
 
 For project-local installs under `.mcp/rag-server/`, the default config lookup now prefers `.mcp/rag-server/rag.config.json` before a root-level `rag.config.json`.
-When `--config` is passed explicitly, the file must exist. The toolkit fails closed instead of falling back to the built-in defaults, so a typo cannot silently build or search the wrong index scope.
-Explicit project-local paths such as `.mcp/rag-server/rag.config.json` resolve only under the effective project root; only bare filenames such as `rag.config.example.json` also fall back to the current directory for source-tree toolkit runs.
 
 Run as an MCP server:
 
 ```bash
-python3 tools/rag.py serve-mcp --root .. --config rag.config.example.json --require-explicit-root
+python3 tools/rag.py serve-mcp --root .. --config rag.config.example.json
 ```
 
 Example MCP config entry for a generic stdio MCP client:
@@ -52,7 +50,6 @@ Example MCP config entry for a generic stdio MCP client:
         "serve-mcp",
         "--root",
         ".",
-        "--require-explicit-root",
         "--config",
         "rag-universal-experimental/rag.config.example.json"
       ]
@@ -74,7 +71,6 @@ DeepSeek Code and Claude Code use the same command shape when configured through
         "serve-mcp",
         "--root",
         ".",
-        "--require-explicit-root",
         "--config",
         "rag-universal-experimental/rag.config.example.json"
       ]
@@ -86,20 +82,6 @@ DeepSeek Code and Claude Code use the same command shape when configured through
 Ready-to-copy examples are available in `examples/mcp.generic.json`, `examples/mcp.deepseek.json`, and `examples/mcp.claude.json`.
 
 The server does not branch on `clientInfo.name`; it exposes the same tool contracts to every MCP client.
-
-All MCP tools accept `root` and `config` arguments per call. In hardened multi-project mode (`serve-mcp --require-explicit-root`, `RAG_MCP_REQUIRE_EXPLICIT_ROOT=1`, or `mcp.require_explicit_root=true`), every project-scoped tool except diagnostic `rag_status` rejects missing or relative roots. Use an absolute `root` when a long-lived agent session may expose an `mcp__rag__` namespace from another project:
-
-```json
-{
-  "root": "/path/to/current/project",
-  "query": "current task",
-  "mode": "implementation",
-  "with_plan": true
-}
-```
-
-`rag_status` can be called without `root` to inspect the server-bound root. Its `mcp_server` diagnostics include `server_root`, `effective_root`, `effective_config_path`, `explicit_root`, `require_explicit_root`, and `stale_namespace_risk`. If it reports a different `manifest.project_root` or `mcp_server.server_root` than the current repository, pass an absolute `root` explicitly on every MCP call or use the CLI fallback with `--root /path/to/current/project` until the MCP client restarts with the updated tool schema.
-Project-local MCP entries should also pass `--config .mcp/rag-server/rag.config.json`; that relative config is resolved against the effective per-call root, so a long-lived MCP process can safely serve multiple projects only when each project has its own local config.
 
 ## Tools
 

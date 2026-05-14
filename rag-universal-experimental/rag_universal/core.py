@@ -177,14 +177,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "follow_symlinks": False,
     "mcp": {
         "auto_reindex_default": True,
-        "require_explicit_root": False,
     },
     "cli": {
         "auto_reindex_default": False,
-    },
-    "freshness": {
-        "auto_reindex_source_grace_seconds": 30.0,
-        "source_delta_report_limit": 20,
     },
     "chunk": {
         "max_chars": 2400,
@@ -378,6 +373,23 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "migration": ["migration", "schema", "repository", "rollback", "backfill", "contract test"],
             "knowledge": ["knowledge", "lesson", "pattern registry", "failure taxonomy", "owner map", "query template"],
         },
+        "budget_profiles": {
+            "economy": {
+                "top_k": 3,
+                "preview_chars": 220,
+                "max_chunks_per_source": 1,
+                "candidate_limit": 900,
+                "disable_query_variants": True,
+            },
+            "deep": {
+                "top_k": 8,
+                "preview_chars": 500,
+                "max_chunks_per_source": 2,
+                "candidate_limit": 5000,
+                "disable_query_variants": False,
+            },
+        },
+        "default_budget": "economy",
         "preview_chars": 500,
         "expand_english_synonyms": False,
         "synonyms": {
@@ -442,37 +454,6 @@ def resolve_root(root: str | os.PathLike[str] | None) -> Path:
     return Path(root or os.getcwd()).resolve()
 
 
-def config_candidates(root: Path, config_path: str | os.PathLike[str] | None = None) -> list[Path]:
-    if config_path:
-        candidate = Path(config_path)
-        if candidate.is_absolute():
-            return [candidate]
-        if len(candidate.parts) == 1:
-            return [root / candidate, Path.cwd() / candidate]
-        return [root / candidate]
-    return [root / ".mcp" / "rag-server" / "rag.config.json", root / "rag.config.json"]
-
-
-def resolve_config_path(root: Path, config_path: str | os.PathLike[str] | None = None) -> Path | None:
-    candidates = config_candidates(root, config_path)
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate.resolve()
-    if config_path:
-        looked = ", ".join(str(candidate) for candidate in candidates)
-        raise FileNotFoundError(f"rag config not found: {config_path} (looked in: {looked})")
-    return None
-
-
-def config_source(root: Path, config_path: str | os.PathLike[str] | None = None) -> dict[str, Any]:
-    resolved = resolve_config_path(root, config_path)
-    return {
-        "explicit": bool(config_path),
-        "requested": str(config_path) if config_path else None,
-        "path": str(resolved) if resolved is not None else None,
-    }
-
-
 def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     merged = copy.deepcopy(base)
     for key, value in overlay.items():
@@ -485,11 +466,24 @@ def deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
 
 def load_config(root: Path, config_path: str | os.PathLike[str] | None = None) -> dict[str, Any]:
     config = copy.deepcopy(DEFAULT_CONFIG)
-    resolved = resolve_config_path(root, config_path)
-    if resolved is not None:
-        with resolved.open("r", encoding="utf-8") as handle:
-            loaded = json.load(handle)
-        config = deep_merge(config, loaded)
+    candidates: list[Path] = []
+    if config_path:
+        candidate = Path(config_path)
+        if candidate.is_absolute():
+            candidates.append(candidate)
+        else:
+            candidates.append(root / candidate)
+            candidates.append(Path.cwd() / candidate)
+    else:
+        candidates.append(root / ".mcp" / "rag-server" / "rag.config.json")
+        candidates.append(root / "rag.config.json")
+
+    for candidate in candidates:
+        if candidate.exists():
+            with candidate.open("r", encoding="utf-8") as handle:
+                loaded = json.load(handle)
+            config = deep_merge(config, loaded)
+            break
 
     if config.get("schema_version") != CONFIG_VERSION:
         raise ValueError(f"unsupported config schema_version: {config.get('schema_version')}")
@@ -513,7 +507,6 @@ def config_hash(config: dict[str, Any]) -> str:
 
 
 def get_index_dir(root: Path, config: dict[str, Any]) -> Path:
-    root = root.resolve()
     configured = Path(str(config.get("index_dir", ".rag-index")))
     index_dir = configured if configured.is_absolute() else root / configured
     resolved = index_dir.resolve()
@@ -1411,7 +1404,6 @@ def artifact_names() -> dict[str, str]:
 def build_manifest(
     root: Path,
     config: dict[str, Any],
-    config_source_info: dict[str, Any],
     files: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
     symbols: list[dict[str, Any]],
@@ -1426,7 +1418,6 @@ def build_manifest(
         "project_root": str(root),
         "indexed_at": time.time(),
         "config_hash": config_hash(config),
-        "config_source": config_source_info,
         "chunker_version": CHUNKER_VERSION,
         "tokenizer_version": TOKENIZER_VERSION,
         "search_version": SEARCH_VERSION,
@@ -1495,12 +1486,11 @@ def write_index_artifacts_incremental(
 
 def build_index(root_arg: str | os.PathLike[str] | None = None, config_path: str | os.PathLike[str] | None = None, incremental: bool = False) -> dict[str, Any]:
     root = resolve_root(root_arg)
-    config_source_info = config_source(root, config_path)
     config = load_config(root, config_path)
     index_dir = get_index_dir(root, config)
 
     if incremental:
-        incremental_manifest = build_index_incremental(root, config, config_source_info, index_dir)
+        incremental_manifest = build_index_incremental(root, config, index_dir)
         if incremental_manifest is not None:
             return incremental_manifest
 
@@ -1519,7 +1509,7 @@ def build_index(root_arg: str | os.PathLike[str] | None = None, config_path: str
         deps.extend(extract_deps(text, source))
         files.append(file_record_from_stat(source, raw, stat, len(file_chunks)))
 
-    manifest = build_manifest(root, config, config_source_info, files, chunks, symbols, deps, source_state_entries, "full")
+    manifest = build_manifest(root, config, files, chunks, symbols, deps, source_state_entries, "full")
     write_index_artifacts(index_dir, config, manifest, files, chunks, symbols, deps)
     return manifest
 
@@ -1562,27 +1552,6 @@ def load_json_dict(path: Path) -> dict[str, Any]:
 
 def load_file_records(index_dir: Path) -> list[dict[str, Any]]:
     return load_json_list(index_dir / "files.json")
-
-
-def auto_reindex_state_path(index_dir: Path) -> Path:
-    return index_dir / "auto-reindex-state.json"
-
-
-def load_auto_reindex_state(index_dir: Path) -> dict[str, Any]:
-    return load_json_dict(auto_reindex_state_path(index_dir))
-
-
-def write_auto_reindex_state(index_dir: Path, status: dict[str, Any], reason_before: str | None) -> None:
-    source_state = status.get("source_state", {}).get("current", {}) if isinstance(status.get("source_state"), dict) else {}
-    write_json_atomic(
-        auto_reindex_state_path(index_dir),
-        {
-            "schema_version": "rag.auto-reindex-state.v1",
-            "last_reindex_wall_time": time.time(),
-            "reason_before": reason_before,
-            "source_state_fingerprint": source_state.get("fingerprint") if isinstance(source_state, dict) else None,
-        },
-    )
 
 
 def incremental_rebuild_plan(root: Path, config: dict[str, Any], index_dir: Path) -> dict[str, Any] | None:
@@ -1639,7 +1608,7 @@ def incremental_rebuild_plan(root: Path, config: dict[str, Any], index_dir: Path
     }
 
 
-def build_index_incremental(root: Path, config: dict[str, Any], config_source_info: dict[str, Any], index_dir: Path) -> dict[str, Any] | None:
+def build_index_incremental(root: Path, config: dict[str, Any], index_dir: Path) -> dict[str, Any] | None:
     plan = incremental_rebuild_plan(root, config, index_dir)
     if plan is None:
         return None
@@ -1675,7 +1644,6 @@ def build_index_incremental(root: Path, config: dict[str, Any], config_source_in
     manifest = build_manifest(
         root,
         config,
-        config_source_info,
         files,
         chunks,
         symbols,
@@ -1794,19 +1762,16 @@ def load_lexicon(index_dir: Path) -> dict[str, Any]:
 
 def index_status(root_arg: str | os.PathLike[str] | None = None, config_path: str | os.PathLike[str] | None = None) -> dict[str, Any]:
     root = resolve_root(root_arg)
-    config_source_info = config_source(root, config_path)
     config = load_config(root, config_path)
     index_dir = get_index_dir(root, config)
     manifest = load_manifest(index_dir)
     expected_hash = config_hash(config)
     current_source_state = scan_source_state(root, config)
-    current_config = {**config_source_info, "hash": expected_hash}
     if manifest is None:
         return {
             "exists": False,
             "index_dir": str(index_dir),
             "config_hash": expected_hash,
-            "config": {"current": current_config, "indexed": None},
             "stale": True,
             "reason": "missing manifest",
             "source_state": {
@@ -1832,11 +1797,6 @@ def index_status(root_arg: str | os.PathLike[str] | None = None, config_path: st
     return {
         "exists": True,
         "index_dir": str(index_dir),
-        "config_hash": expected_hash,
-        "config": {
-            "current": current_config,
-            "indexed": manifest.get("config_source") if isinstance(manifest.get("config_source"), dict) else None,
-        },
         "stale": bool(stale_reasons),
         "reason": ", ".join(stale_reasons) if stale_reasons else None,
         "manifest": manifest,
@@ -1847,155 +1807,16 @@ def index_status(root_arg: str | os.PathLike[str] | None = None, config_path: st
     }
 
 
-def split_stale_reasons(reason: str | None) -> set[str]:
-    if not reason:
-        return set()
-    return {part.strip() for part in str(reason).split(",") if part.strip()}
-
-
-def source_change_only_status(status: dict[str, Any]) -> bool:
-    return split_stale_reasons(status.get("reason")) == {"source files changed"}
-
-
-def freshness_grace_seconds(config: dict[str, Any]) -> float:
-    freshness = config.get("freshness")
-    if not isinstance(freshness, dict):
-        return 30.0
-    value = freshness.get("auto_reindex_source_grace_seconds", 30.0)
-    try:
-        return max(0.0, float(value))
-    except (TypeError, ValueError):
-        return 30.0
-
-
-def source_delta_report_limit(config: dict[str, Any]) -> int:
-    freshness = config.get("freshness")
-    if not isinstance(freshness, dict):
-        return 20
-    value = freshness.get("source_delta_report_limit", 20)
-    try:
-        return max(1, int(value))
-    except (TypeError, ValueError):
-        return 20
-
-
-def source_delta_summary(delta: dict[str, Any] | None, limit: int) -> dict[str, Any] | None:
-    if delta is None:
-        return None
-    changed = [str(item) for item in delta.get("changed_sources", [])]
-    deleted = [str(item) for item in delta.get("deleted_sources", [])]
-    return {
-        "changed_count": len(changed),
-        "deleted_count": len(deleted),
-        "changed_sources": changed[:limit],
-        "deleted_sources": deleted[:limit],
-        "truncated": len(changed) > limit or len(deleted) > limit,
-    }
-
-
-def normalize_focus_path(path: str) -> str | None:
-    text = str(path or "").strip().replace("\\", "/")
-    if not text:
-        return None
-    if text.startswith("./"):
-        text = text[2:]
-    text = text.strip("/")
-    if text in {"", "."} or text.startswith("../") or "/../" in f"/{text}/":
-        return None
-    return text
-
-
-def search_focus_paths(query: str, filter_source: str | None = None, focus_paths: list[str] | None = None) -> list[str]:
-    raw_paths: list[str] = []
-    raw_paths.extend(str(path) for path in (focus_paths or []))
-    raw_paths.extend(extract_query_paths(query))
-    if filter_source and any(marker in str(filter_source) for marker in ("/", ".")):
-        raw_paths.append(str(filter_source))
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for raw_path in raw_paths:
-        path = normalize_focus_path(raw_path)
-        if path is not None and path not in seen:
-            normalized.append(path)
-            seen.add(path)
-    return normalized
-
-
-def source_matches_focus(source: str, focus: str) -> bool:
-    normalized_source = normalize_focus_path(source)
-    normalized_focus = normalize_focus_path(focus)
-    if normalized_source is None or normalized_focus is None:
-        return False
-    source_with_slash = f"{normalized_source}/"
-    focus_with_slash = f"{normalized_focus}/"
-    return (
-        normalized_source == normalized_focus
-        or normalized_source.startswith(focus_with_slash)
-        or normalized_focus.startswith(source_with_slash)
-    )
-
-
-def source_delta_intersects_focus(delta: dict[str, Any], focus_paths: list[str]) -> bool:
-    changed = [str(item) for item in delta.get("changed_sources", [])]
-    deleted = [str(item) for item in delta.get("deleted_sources", [])]
-    for source in changed + deleted:
-        if any(source_matches_focus(source, focus) for focus in focus_paths):
-            return True
-    return False
-
-
-def source_auto_reindex_skip(
-    root: Path,
-    config: dict[str, Any],
-    index_dir: Path,
-    status_before: dict[str, Any],
-    focus_paths: list[str],
-) -> dict[str, Any] | None:
-    if not source_change_only_status(status_before):
-        return None
-    delta = incremental_rebuild_plan(root, config, index_dir)
-    if delta is None:
-        return None
-    limit = source_delta_report_limit(config)
-    summary = source_delta_summary(delta, limit)
-    if focus_paths:
-        if not source_delta_intersects_focus(delta, focus_paths):
-            return {
-                "reason": "source changes outside focus_paths",
-                "focus_paths": focus_paths,
-                "source_delta": summary,
-            }
-        return None
-    grace_seconds = freshness_grace_seconds(config)
-    state = load_auto_reindex_state(index_dir)
-    last_reindex = state.get("last_reindex_wall_time")
-    try:
-        age = time.time() - float(last_reindex)
-    except (TypeError, ValueError):
-        age = None
-    if grace_seconds > 0 and age is not None and 0 <= age < grace_seconds:
-        return {
-            "reason": "source changes inside auto-reindex grace window",
-            "grace_seconds": grace_seconds,
-            "last_reindex_age_seconds": round(age, 3),
-            "focus_paths": focus_paths,
-            "source_delta": summary,
-        }
-    return None
-
-
 def ensure_fresh_index(
     root_arg: str | os.PathLike[str] | None = None,
     config_path: str | os.PathLike[str] | None = None,
     auto_reindex: bool = False,
     prefer_incremental: bool = True,
-    allow_source_grace: bool = False,
-    focus_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     root = resolve_root(root_arg)
     config = load_config(root, config_path)
     index_dir = get_index_dir(root, config)
-    cache_key = f"{index_dir.resolve()}:{config_hash(config)}"
+    cache_key = str(index_dir.resolve())
     now = time.monotonic()
     # Only cache non-reindex calls; reindex path mutates index and must bypass cache
     if not auto_reindex:
@@ -2011,29 +1832,11 @@ def ensure_fresh_index(
         "stale_before": stale_before,
         "reason_before": status_before.get("reason"),
         "reindexed": False,
-        "auto_reindex_skipped": False,
         "status": status_before,
     }
     if stale_before and auto_reindex:
-        if allow_source_grace:
-            skip = source_auto_reindex_skip(root, config, index_dir, status_before, focus_paths or [])
-            if skip is not None:
-                result.update(
-                    {
-                        "auto_reindex_skipped": True,
-                        "auto_reindex_skip_reason": skip["reason"],
-                        "auto_reindex_focus_paths": skip.get("focus_paths", []),
-                        "source_delta": skip.get("source_delta"),
-                    }
-                )
-                if "grace_seconds" in skip:
-                    result["auto_reindex_grace_seconds"] = skip["grace_seconds"]
-                    result["last_reindex_age_seconds"] = skip["last_reindex_age_seconds"]
-                _FRESHNESS_CACHE[cache_key] = (now, result)
-                return result
         manifest = build_index(root_arg, config_path, incremental=prefer_incremental)
         status_after = index_status(root_arg, config_path)
-        write_auto_reindex_state(index_dir, status_after, str(status_before.get("reason") or "unknown"))
         result.update(
             {
                 "reindexed": True,
@@ -3012,6 +2815,82 @@ def adaptive_max_chunks_per_source(base_limit: int, profile: dict[str, Any]) -> 
     if profile["review_comment"] or profile["broad"] or profile["knowledge_intent"]:
         return 1
     return base_limit
+
+
+def resolve_search_budget(search_cfg: dict[str, Any], economy: bool) -> dict[str, Any]:
+    profiles = search_cfg.get("budget_profiles", {})
+    if not isinstance(profiles, dict):
+        return {}
+    profile_name = "economy" if economy else "deep"
+    profile = profiles.get(profile_name)
+    if isinstance(profile, dict):
+        return profile
+    return {}
+
+
+def resolve_search_budget_mode(search_cfg: dict[str, Any], economy: bool | None) -> bool:
+    if isinstance(economy, bool):
+        return economy
+    default_budget = str(search_cfg.get("default_budget", "deep")).strip().lower()
+    return default_budget == "economy"
+
+
+def clamp_economy_top_k(top_k: int, search_cfg: dict[str, Any], economy: bool) -> int:
+    if not economy:
+        return max(1, min(int(top_k), 50))
+    budget = resolve_search_budget(search_cfg, True)
+    configured = int(budget.get("top_k", 3))
+    if configured <= 0:
+        configured = 3
+    return max(1, min(int(top_k), configured))
+
+
+def compact_search_entry(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source": result.get("source"),
+        "section": result.get("section", ""),
+        "read_hint": result.get("read_hint"),
+        "artifact_type": result.get("artifact_type"),
+        "document_status": result.get("document_status"),
+        "start_line": result.get("start_line"),
+        "preview": str(result.get("preview", ""))[:240],
+    }
+
+
+def compact_search_results(results: list[dict[str, Any]], economy: bool) -> list[dict[str, Any]]:
+    if not economy:
+        return results
+    return [compact_search_entry(result) for result in results]
+
+
+def compact_read_plan(read_plan: dict[str, Any], economy: bool) -> dict[str, Any]:
+    if not economy:
+        return read_plan
+    compact_items = [
+        {
+            "source": item.get("source"),
+            "read_hint": item.get("read_hint"),
+            "role": item.get("role"),
+            "section": item.get("section", ""),
+            "status": item.get("status"),
+        }
+        for item in read_plan.get("items", [])
+        if isinstance(item, dict)
+    ]
+    compact_blocked = [
+        {
+            "source": item.get("source"),
+            "reason": item.get("reason"),
+        }
+        for item in read_plan.get("deprioritized", [])
+        if isinstance(item, dict)
+    ]
+    return {
+        **read_plan,
+        "items": compact_items,
+        "deprioritized": compact_blocked[:3],
+        "budget_hint": "Read compacted hits first; open full context only if required.",
+    }
 
 
 def adaptive_read_plan_limit(profile: dict[str, Any], default_limit: int = 6) -> int:
@@ -4002,7 +3881,7 @@ PATH_QUERY_RE = re.compile(
 )
 FILENAME_TOKEN_RE = re.compile(
     r"(?<![A-Za-z0-9_./-])"
-    r"[A-Za-z0-9_.-]+\.(?:php|vue|tsx?|jsx?|ya?ml|json|md|py|sh|css|scss|sql|xml|html|service)"
+    r"[A-Za-z0-9_.-]+\\.(?:php|vue|tsx?|jsx?|ya?ml|json|md|py|sh|css|scss|sql|xml|html|service)"
     r"(?![A-Za-z0-9_./-])",
     re.IGNORECASE,
 )
@@ -4040,11 +3919,6 @@ def extract_query_paths(query: str) -> list[str]:
             if candidate not in seen:
                 paths.append(candidate)
                 seen.add(candidate)
-    for match in FILENAME_TOKEN_RE.finditer(query):
-        candidate = match.group(0).strip("`'\"()[]{}:,;")
-        if candidate and candidate not in seen:
-            paths.append(candidate)
-            seen.add(candidate)
     for match in PATH_QUERY_RE.finditer(query):
         candidate = match.group(0).strip("`'\"()[]{}:,;")
         while len(candidate) > 1 and candidate[-1] in ".,;:":
@@ -4554,6 +4428,7 @@ def search_precomputed_cache_once(
     filter_type: str | None = None,
     mode: str = "default",
     candidate_limit_override: int | None = None,
+    economy: bool = False,
     bm25_token_cache: dict[str, list[sqlite3.Row]] | None = None,
     path_candidate_cache: dict[tuple[str, ...], dict[int, float]] | None = None,
     filename_candidate_cache: dict[tuple[str, tuple[str, ...]], dict[int, float]] | None = None,
@@ -4569,7 +4444,12 @@ def search_precomputed_cache_once(
     heading_weight = float(search_cfg.get("heading_weight", 0.06))
     exact_filename_boost = float(search_cfg.get("exact_filename_boost", 1.05))
     base_max_chunks_per_source = max(1, int(search_cfg.get("max_chunks_per_source", 2)))
+    search_budget = resolve_search_budget(search_cfg, economy)
     base_candidate_limit = max(50, int(search_cfg.get("candidate_limit", 5000)))
+    if economy:
+        budget_candidate_limit = int(search_budget.get("candidate_limit", base_candidate_limit))
+        if budget_candidate_limit > 0:
+            base_candidate_limit = min(base_candidate_limit, budget_candidate_limit)
     explicit_path_boost = float(search_cfg.get("explicit_path_boost", 0.75))
     lexicon_weight = 0.42
 
@@ -4579,7 +4459,7 @@ def search_precomputed_cache_once(
         max_chunks_per_source = adaptive_max_chunks_per_source(base_max_chunks_per_source, profile)
         candidate_limit = adaptive_candidate_limit(base_candidate_limit, profile)
         if candidate_limit_override is not None:
-            candidate_limit = max(50, int(candidate_limit_override))
+            candidate_limit = max(50, min(base_candidate_limit, int(candidate_limit_override)))
         expanded_query = expand_for_search_mode(query, config, search_mode)
         query_counts = trim_query_counts(token_counts(expanded_query), config)
         query_terms = set(query_counts)
@@ -4702,6 +4582,7 @@ def search_precomputed_cache(
     filter_source: str | None = None,
     filter_type: str | None = None,
     mode: str = "default",
+    economy: bool = False,
 ) -> list[dict[str, Any]]:
     bm25_token_cache: dict[str, list[sqlite3.Row]] = {}
     path_candidate_cache: dict[tuple[str, ...], dict[int, float]] = {}
@@ -4715,20 +4596,34 @@ def search_precomputed_cache(
             filter_source,
             filter_type,
             mode,
+            economy=economy,
             bm25_token_cache=bm25_token_cache,
             path_candidate_cache=path_candidate_cache,
             filename_candidate_cache=filename_candidate_cache,
             lexicon_candidate_cache=lexicon_candidate_cache,
         )
-    if profile.get("mode") != "frontend" and not profile.get("schema_flow_review") and not profile.get("spec_cross_cutting"):
-        return select_search_results(primary_results, top_k, max_chunks_per_source, mode, config, profile)
+    if (
+        profile.get("mode") != "frontend"
+        and not profile.get("schema_flow_review")
+        and not profile.get("spec_cross_cutting")
+    ):
+        return select_search_results(primary_results, top_k, max_chunks_per_source, mode, config, profile, economy)
+    if economy:
+        top_k = clamp_economy_top_k(top_k, config.get("search", {}), economy)
+        return select_search_results(primary_results, top_k, max_chunks_per_source, mode, config, profile, economy)
     with PerfTimer("cache.variants"):
         variants = build_query_variants(query, config, mode, profile)
-    if len(variants) <= 1 or not should_decompose_query(primary_results, profile):
-        return select_search_results(primary_results, top_k, max_chunks_per_source, mode, config, profile)
+    search_budget = resolve_search_budget(config.get("search", {}), economy)
+    disable_variants = bool(search_budget.get("disable_query_variants", economy))
+    if disable_variants or len(variants) <= 1 or not should_decompose_query(primary_results, profile):
+        return select_search_results(primary_results, top_k, max_chunks_per_source, mode, config, profile, economy)
 
     search_cfg = config.get("search", {})
     base_candidate_limit = max(50, int(search_cfg.get("candidate_limit", 5000)))
+    if economy:
+        budget_candidate_limit = int(search_budget.get("candidate_limit", base_candidate_limit))
+        if budget_candidate_limit > 0:
+            base_candidate_limit = min(base_candidate_limit, budget_candidate_limit)
     variant_candidate_limit = max(150, min(base_candidate_limit, base_candidate_limit // 2))
     result_sets: list[list[dict[str, Any]]] = [primary_results]
     fused_results = primary_results
@@ -4743,6 +4638,7 @@ def search_precomputed_cache(
                 filter_type,
                 mode,
                 candidate_limit_override=variant_candidate_limit,
+                economy=economy,
                 bm25_token_cache=bm25_token_cache,
                 path_candidate_cache=path_candidate_cache,
                 filename_candidate_cache=filename_candidate_cache,
@@ -4759,7 +4655,8 @@ def search_precomputed_cache(
         fused_results = primary_results
     elif variant_count == 0:
         fused_results = fuse_ranked_results(result_sets)
-    return select_search_results(fused_results, top_k, max_chunks_per_source, mode, config, profile)
+    top_k = clamp_economy_top_k(top_k, search_cfg, economy)
+    return select_search_results(fused_results, top_k, max_chunks_per_source, mode, config, profile, economy)
 
 
 def select_search_results(
@@ -4769,8 +4666,9 @@ def select_search_results(
     mode: str,
     config: dict[str, Any] | None = None,
     profile: dict[str, Any] | None = None,
+    economy: bool = False,
 ) -> list[dict[str, Any]]:
-    limit = max(1, min(int(top_k), 50))
+    limit = clamp_economy_top_k(top_k, config.get("search", {}) if config else {}, economy)
     selected: list[dict[str, Any]] = []
     source_counts: Counter[str] = Counter()
     selected_keys: set[tuple[str, int, str]] = set()
@@ -4829,7 +4727,7 @@ def select_search_results(
         ):
             continue
         add_result(result)
-    return selected
+    return compact_search_results(selected, economy)
 
 
 def self_rag_review_companion_kind(result: dict[str, Any]) -> str | None:
@@ -4866,6 +4764,7 @@ def build_read_plan(
     max_items: int = 6,
     config: dict[str, Any] | None = None,
     profile: dict[str, Any] | None = None,
+    economy: bool = False,
 ) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     blocked: list[dict[str, Any]] = []
@@ -4935,14 +4834,17 @@ def build_read_plan(
         token_budget_hint = "Start with the first section only; expand only if that evidence is insufficient."
     elif confidence_level == "medium":
         token_budget_hint = "Start with the first 1-2 sections; expand only if the first hit does not resolve the task."
-    return {
-        "mode": normalize_search_mode(mode),
-        "budget_hint": "Read only the listed sections first; avoid full-file reads unless these sections are insufficient.",
-        "token_budget_hint": token_budget_hint,
-        "confidence": confidence,
-        "items": items,
-        "deprioritized": blocked[:3],
-    }
+    return compact_read_plan(
+        {
+            "mode": normalize_search_mode(mode),
+            "budget_hint": "Read only the listed sections first; avoid full-file reads unless these sections are insufficient.",
+            "token_budget_hint": token_budget_hint,
+            "confidence": confidence,
+            "items": items,
+            "deprioritized": blocked[:3],
+        },
+        economy,
+    )
 
 
 def allow_frontend_high_confidence_result(result: dict[str, Any], profile: dict[str, Any]) -> bool:
@@ -5052,13 +4954,22 @@ def search_index_with_plan(
     filter_type: str | None = None,
     mode: str = "default",
     auto_reindex: bool = False,
-    focus_paths: list[str] | None = None,
+    economy: bool | None = None,
 ) -> dict[str, Any]:
-    inferred_focus_paths = search_focus_paths(query, filter_source, focus_paths)
     with PerfTimer("search.freshness"):
-        freshness = ensure_fresh_index(root_arg, config_path, auto_reindex, allow_source_grace=True, focus_paths=inferred_focus_paths)
+        freshness = ensure_fresh_index(root_arg, config_path, auto_reindex)
     with PerfTimer("search.index"):
-        results = search_index(root_arg, config_path, query, top_k, filter_source, filter_type, mode)
+        results = search_index(
+            root_arg,
+            config_path,
+            query,
+            top_k,
+            filter_source,
+            filter_type,
+            mode,
+            auto_reindex,
+            economy=economy,
+        )
     with PerfTimer("search.profile"):
         profile = score_query_profile(query, mode, filter_source)
     diagnostics: dict[str, Any] = {
@@ -5067,10 +4978,6 @@ def search_index_with_plan(
         "index_stale_before_search": bool(freshness.get("stale_before")),
         "index_stale_reason": freshness.get("reason_before"),
         "index_reindexed": bool(freshness.get("reindexed")),
-        "auto_reindex_skipped": bool(freshness.get("auto_reindex_skipped")),
-        "auto_reindex_skip_reason": freshness.get("auto_reindex_skip_reason"),
-        "auto_reindex_focus_paths": freshness.get("auto_reindex_focus_paths", inferred_focus_paths),
-        "source_delta": freshness.get("source_delta"),
         "index_stale_after_search": bool(freshness.get("status", {}).get("stale")),
         "query_profile": {
             "broad": profile["broad"],
@@ -5092,7 +4999,14 @@ def search_index_with_plan(
     with PerfTimer("search.read_plan"):
         root = resolve_root(root_arg)
         config = load_config(root, config_path)
-        read_plan = build_read_plan(results, mode, adaptive_read_plan_limit(profile), config, profile)
+        read_plan = build_read_plan(
+            results,
+            mode,
+            adaptive_read_plan_limit(profile),
+            config,
+            profile,
+            economy=resolve_search_budget_mode(config.get("search", {}), economy),
+        )
     return {
         "results": results,
         "read_plan": read_plan,
@@ -5109,18 +5023,13 @@ def search_index(
     filter_type: str | None = None,
     mode: str = "default",
     auto_reindex: bool = False,
-    focus_paths: list[str] | None = None,
+    economy: bool | None = None,
 ) -> list[dict[str, Any]]:
     if auto_reindex:
-        ensure_fresh_index(
-            root_arg,
-            config_path,
-            True,
-            allow_source_grace=True,
-            focus_paths=search_focus_paths(query, filter_source, focus_paths),
-        )
+        ensure_fresh_index(root_arg, config_path, True)
     root = resolve_root(root_arg)
     config = load_config(root, config_path)
+    search_budget_mode = resolve_search_budget_mode(config.get("search", {}), economy)
     index_dir = get_index_dir(root, config)
     index_key = str(index_dir.resolve())
     search_cache = load_search_cache(index_dir)
@@ -5129,7 +5038,16 @@ def search_index(
             search_cache = load_search_cache(index_dir)
     if search_cache is not None:
         try:
-            return search_precomputed_cache(search_cache, config, query, top_k, filter_source, filter_type, mode)
+            return search_precomputed_cache(
+                search_cache,
+                config,
+                query,
+                top_k,
+                filter_source,
+                filter_type,
+                mode,
+                economy=search_budget_mode,
+            )
         except sqlite3.DatabaseError:
             close_search_cache_connections(index_dir)
             _SEARCH_CACHE_FAILURES[index_key] = "query_error"
@@ -5137,7 +5055,16 @@ def search_index(
                 search_cache = load_search_cache(index_dir)
                 if search_cache is not None:
                     try:
-                        return search_precomputed_cache(search_cache, config, query, top_k, filter_source, filter_type, mode)
+                        return search_precomputed_cache(
+                            search_cache,
+                            config,
+                            query,
+                            top_k,
+                            filter_source,
+                            filter_type,
+                            mode,
+                            economy=search_budget_mode,
+                        )
                     except sqlite3.DatabaseError:
                         close_search_cache_connections(index_dir)
                         _SEARCH_CACHE_FAILURES[index_key] = "query_error"
@@ -5147,15 +5074,19 @@ def search_index(
         return []
 
     search_cfg = config.get("search", {})
+    search_budget_cfg = resolve_search_budget(search_cfg, search_budget_mode)
     dim = int(search_cfg.get("hash_dim", 512))
     min_score = float(search_cfg.get("min_score", 0.02))
-    preview_chars = int(search_cfg.get("preview_chars", 500))
+    preview_chars = int(search_budget_cfg.get("preview_chars", search_cfg.get("preview_chars", 500)))
     vector_weight = float(search_cfg.get("vector_weight", 0.45))
     bm25_weight = float(search_cfg.get("bm25_weight", 0.35))
     source_weight = float(search_cfg.get("source_weight", 0.14))
     heading_weight = float(search_cfg.get("heading_weight", 0.06))
     exact_filename_boost = float(search_cfg.get("exact_filename_boost", 1.05))
-    base_max_chunks_per_source = max(1, int(search_cfg.get("max_chunks_per_source", 2)))
+    base_max_chunks_per_source = max(
+        1,
+        int(search_budget_cfg.get("max_chunks_per_source", search_cfg.get("max_chunks_per_source", 2))),
+    )
 
     search_mode = normalize_search_mode(mode)
     profile = score_query_profile(query, search_mode, filter_source)
@@ -5240,7 +5171,15 @@ def search_index(
         )
 
     results.sort(key=lambda item: search_sort_key(item, config))
-    return select_search_results(results, top_k, max_chunks_per_source, search_mode, config, profile)
+    return select_search_results(
+        results,
+        top_k,
+        max_chunks_per_source,
+        search_mode,
+        config,
+        profile,
+        economy=search_budget_mode,
+    )
 
 
 def lookup_symbol(

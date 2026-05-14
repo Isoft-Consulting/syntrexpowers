@@ -29,11 +29,7 @@ def emit(value: Any) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Universal local RAG toolkit")
     parser.add_argument("--root", default=".", help="Project root. Default: current directory.")
-    parser.add_argument(
-        "--config",
-        default=None,
-        help="Config path relative to root, an absolute path, or a bare filename also checked in the current directory.",
-    )
+    parser.add_argument("--config", default=None, help="Config path relative to root, current directory, or absolute path.")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     index = subparsers.add_parser("index", help="Build the local RAG index")
@@ -47,15 +43,14 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--top-k", type=int, default=5)
     search.add_argument("--filter-source", default=None)
     search.add_argument("--filter-type", default=None)
-    search.add_argument(
-        "--focus-path",
-        action="append",
-        dest="focus_paths",
-        default=None,
-        help="Repo-relative file or directory in the current task scope. Repeatable; source-only changes outside this scope do not auto-reindex.",
-    )
     search.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"], default="default")
     search.add_argument("--with-plan", action="store_true", help="Return results with a section-level read plan.")
+    search.add_argument(
+        "--economy",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Override search budget mode (default comes from search.default_budget in rag config). Omit for default.",
+    )
     search.add_argument(
         "--auto-reindex",
         action=argparse.BooleanOptionalAction,
@@ -135,12 +130,6 @@ def build_parser() -> argparse.ArgumentParser:
         default="disk",
         help="MCP-only SQLite search cache storage. Use memory only for long-lived MCP processes.",
     )
-    serve_mcp.add_argument(
-        "--require-explicit-root",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Require an absolute per-call root for project-scoped MCP tools. Omit to use mcp.require_explicit_root.",
-    )
     return parser
 
 
@@ -193,9 +182,33 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "search":
         auto_reindex = resolve_cli_auto_reindex(args.auto_reindex, args.root, args.config)
         if args.with_plan:
-            emit(search_index_with_plan(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode, auto_reindex, args.focus_paths))
+            emit(
+                search_index_with_plan(
+                    args.root,
+                    args.config,
+                    args.query,
+                    args.top_k,
+                    args.filter_source,
+                    args.filter_type,
+                    args.mode,
+                    auto_reindex=auto_reindex,
+                    economy=args.economy,
+                )
+            )
         else:
-            emit(search_index(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode, auto_reindex, args.focus_paths))
+            emit(
+                search_index(
+                    args.root,
+                    args.config,
+                    args.query,
+                    args.top_k,
+                    args.filter_source,
+                    args.filter_type,
+                    args.mode,
+                    auto_reindex,
+                    economy=args.economy,
+                )
+            )
         return 0
     if args.command == "watch":
         try:
@@ -270,5 +283,5 @@ def main(argv: list[str] | None = None) -> int:
         emit(generate_project_profile(args.root, args.output, args.project))
         return 0
     if args.command == "serve-mcp":
-        return run_stdio(args.root, args.config, args.cache_storage, args.require_explicit_root)
+        return run_stdio(args.root, args.config, args.cache_storage)
     raise RuntimeError(f"unhandled command: {args.command}")

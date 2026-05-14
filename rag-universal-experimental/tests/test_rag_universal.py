@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import sqlite3
 import subprocess
 import sys
@@ -63,9 +62,7 @@ from rag_universal.cli import cli_auto_reindex_default
 from rag_universal.cli import resolve_cli_auto_reindex
 from rag_universal.mcp_server import handle_message
 from rag_universal.mcp_server import mcp_auto_reindex_default
-from rag_universal.mcp_server import mcp_require_explicit_root_default
 from rag_universal.mcp_server import resolve_mcp_auto_reindex
-from rag_universal.mcp_server import resolve_mcp_require_explicit_root
 from rag_universal.mcp_server import tool_definitions
 
 
@@ -312,10 +309,6 @@ class RagUniversalTest(unittest.TestCase):
             },
             names,
         )
-        for tool in listed["result"]["tools"]:
-            properties = tool["inputSchema"]["properties"]
-            self.assertIn("root", properties)
-            self.assertIn("config", properties)
 
         called = handle_message(
             {
@@ -348,118 +341,6 @@ class RagUniversalTest(unittest.TestCase):
         self.assertEqual(quality_payload["schema_version"], "rag.quality-check.v1")
         self.assertEqual(quality_payload["health"]["baseline"], "keyword")
         self.assertIn("delta", quality_payload["summary"])
-
-    def test_mcp_tool_calls_can_override_server_root_per_call(self) -> None:
-        server_root = self.make_project()
-        target_root = self.make_project()
-        (target_root / "README.md").write_text(
-            "# Target\n\nMCP per-call root override beta token lives here.",
-            encoding="utf-8",
-        )
-        build_index(server_root)
-        build_index(target_root)
-
-        status_called = handle_message(
-            {
-                "jsonrpc": "2.0",
-                "id": 5,
-                "method": "tools/call",
-                "params": {"name": "rag_status", "arguments": {"root": str(target_root)}},
-            },
-            str(server_root),
-            None,
-        )
-        status_payload = json.loads(status_called["result"]["content"][0]["text"])
-        self.assertEqual(status_payload["manifest"]["project_root"], str(target_root.resolve()))
-        self.assertTrue(status_payload["index_dir"].startswith(str(target_root.resolve())))
-
-        search_called = handle_message(
-            {
-                "jsonrpc": "2.0",
-                "id": 6,
-                "method": "tools/call",
-                "params": {
-                    "name": "rag_search",
-                    "arguments": {"root": str(target_root), "query": "per-call root override beta token", "top_k": 1},
-                },
-            },
-            str(server_root),
-            None,
-        )
-        search_payload = json.loads(search_called["result"]["content"][0]["text"])
-        self.assertEqual(search_payload[0]["source"], "README.md")
-        self.assertIn("beta token", search_payload[0]["preview"])
-
-    def test_mcp_hardened_mode_requires_absolute_root_for_project_tools(self) -> None:
-        root = self.make_project()
-        config_path = root / ".mcp" / "rag-server" / "rag.config.json"
-        config_path.parent.mkdir(parents=True)
-        config_path.write_text(
-            json.dumps({"schema_version": "rag.config.v1", "mcp": {"require_explicit_root": True}}),
-            encoding="utf-8",
-        )
-        build_index(root)
-
-        listed = handle_message({"jsonrpc": "2.0", "id": 7, "method": "tools/list"}, str(root), None)
-        schemas = {tool["name"]: tool["inputSchema"] for tool in listed["result"]["tools"]}
-        self.assertIn("root", schemas["rag_search"]["required"])
-        self.assertNotIn("required", schemas["rag_status"])
-
-        missing_root = handle_message(
-            {
-                "jsonrpc": "2.0",
-                "id": 8,
-                "method": "tools/call",
-                "params": {"name": "rag_search", "arguments": {"query": "stop guard", "top_k": 1}},
-            },
-            str(root),
-            None,
-        )
-        self.assertIn("error", missing_root)
-        self.assertIn("explicit root required", missing_root["error"]["message"])
-
-        relative_root = handle_message(
-            {
-                "jsonrpc": "2.0",
-                "id": 9,
-                "method": "tools/call",
-                "params": {"name": "rag_search", "arguments": {"root": ".", "query": "stop guard", "top_k": 1}},
-            },
-            str(root),
-            None,
-        )
-        self.assertIn("error", relative_root)
-        self.assertIn("absolute path", relative_root["error"]["message"])
-
-        status_called = handle_message(
-            {
-                "jsonrpc": "2.0",
-                "id": 10,
-                "method": "tools/call",
-                "params": {"name": "rag_status", "arguments": {}},
-            },
-            str(root),
-            None,
-        )
-        status_payload = json.loads(status_called["result"]["content"][0]["text"])
-        self.assertEqual(status_payload["mcp_server"]["server_root"], str(root.resolve()))
-        self.assertEqual(status_payload["mcp_server"]["effective_root"], str(root.resolve()))
-        self.assertFalse(status_payload["mcp_server"]["explicit_root"])
-        self.assertTrue(status_payload["mcp_server"]["require_explicit_root"])
-        self.assertTrue(status_payload["mcp_server"]["stale_namespace_risk"])
-
-        absolute_root = handle_message(
-            {
-                "jsonrpc": "2.0",
-                "id": 11,
-                "method": "tools/call",
-                "params": {"name": "rag_search", "arguments": {"root": str(root.resolve()), "query": "stop guard", "top_k": 1}},
-            },
-            str(root),
-            None,
-        )
-        payload = json.loads(absolute_root["result"]["content"][0]["text"])
-        self.assertEqual(payload[0]["source"], "README.md")
 
     def test_mcp_search_auto_reindex_defaults_to_configured_true(self) -> None:
         root = self.make_project()
@@ -499,13 +380,9 @@ class RagUniversalTest(unittest.TestCase):
         self.assertNotIn("default", schema["properties"]["auto_reindex"])
         self.assertTrue(mcp_auto_reindex_default({"mcp": {"auto_reindex_default": True}}))
         self.assertFalse(mcp_auto_reindex_default({"mcp": {"auto_reindex_default": False}}))
-        self.assertTrue(mcp_require_explicit_root_default({"mcp": {"require_explicit_root": True}}))
-        self.assertFalse(mcp_require_explicit_root_default({"mcp": {"require_explicit_root": False}}))
         self.assertFalse(resolve_mcp_auto_reindex({}, str(root), None))
         self.assertTrue(resolve_mcp_auto_reindex({"auto_reindex": True}, str(root), None))
         self.assertFalse(resolve_mcp_auto_reindex({"auto_reindex": False}, str(root), None))
-        self.assertFalse(resolve_mcp_require_explicit_root(str(root), None))
-        self.assertTrue(resolve_mcp_require_explicit_root(str(root), None, override=True))
         self.assertFalse(cli_auto_reindex_default({"cli": {"auto_reindex_default": False}}))
         self.assertTrue(cli_auto_reindex_default({"cli": {"auto_reindex_default": True}}))
         self.assertFalse(resolve_cli_auto_reindex(None, str(root), None))
@@ -559,75 +436,6 @@ class RagUniversalTest(unittest.TestCase):
         self.assertFalse(watched["status"]["stale"])
         self.assertEqual(search_index(root, None, "watched refresh token", top_k=1)[0]["source"], "CHANGELOG.md")
         self.assertEqual(watched["status"]["manifest"]["build_mode"], "incremental")
-
-    def test_freshness_cache_is_scoped_by_config_hash(self) -> None:
-        root = self.make_project()
-        (root / "config-a.json").write_text(json.dumps({"schema_version": "rag.config.v1"}), encoding="utf-8")
-        (root / "config-b.json").write_text(
-            json.dumps({"schema_version": "rag.config.v1", "search": {"min_score": 0.01}}),
-            encoding="utf-8",
-        )
-        build_index(root, "config-a.json")
-
-        first = ensure_fresh_index(root, "config-a.json", False)
-        self.assertFalse(first["stale_before"])
-        second = ensure_fresh_index(root, "config-b.json", False)
-        self.assertTrue(second["stale_before"])
-        self.assertIn("config hash changed", second["reason_before"])
-
-    def test_search_auto_reindex_skips_source_changes_outside_focus_paths(self) -> None:
-        root = self.make_project()
-        build_index(root)
-        (root / "src" / "service.py").write_text(
-            "import json\n\nclass StrictGuard:\n    def unrelated_worker(self):\n        return 'changed elsewhere'\n",
-            encoding="utf-8",
-        )
-
-        payload = search_index_with_plan(root, None, "README.md strict stop guard", top_k=1, auto_reindex=True)
-
-        diagnostics = payload["diagnostics"]
-        self.assertTrue(diagnostics["index_stale_before_search"])
-        self.assertFalse(diagnostics["index_reindexed"])
-        self.assertTrue(diagnostics["auto_reindex_skipped"])
-        self.assertEqual(diagnostics["auto_reindex_skip_reason"], "source changes outside focus_paths")
-        self.assertEqual(diagnostics["auto_reindex_focus_paths"], ["README.md"])
-        self.assertEqual(diagnostics["source_delta"]["changed_sources"], ["src/service.py"])
-        self.assertTrue(diagnostics["index_stale_after_search"])
-        self.assertEqual(payload["results"][0]["source"], "README.md")
-
-    def test_search_auto_reindex_uses_grace_window_for_broad_source_changes(self) -> None:
-        root = self.make_project()
-        build_index(root)
-        (root / "README.md").write_text("# Demo\n\nFirst grace refresh token.", encoding="utf-8")
-        refreshed = search_index_with_plan(root, None, "First grace refresh token", top_k=1, auto_reindex=True)
-        self.assertTrue(refreshed["diagnostics"]["index_reindexed"])
-
-        (root / "CHANGELOG.md").write_text("# Changelog\n\nConcurrent agent changed another source.", encoding="utf-8")
-        skipped = search_index_with_plan(root, None, "strict stop guard", top_k=1, auto_reindex=True)
-
-        diagnostics = skipped["diagnostics"]
-        self.assertTrue(diagnostics["index_stale_before_search"])
-        self.assertFalse(diagnostics["index_reindexed"])
-        self.assertTrue(diagnostics["auto_reindex_skipped"])
-        self.assertEqual(diagnostics["auto_reindex_skip_reason"], "source changes inside auto-reindex grace window")
-        self.assertEqual(diagnostics["source_delta"]["changed_sources"], ["CHANGELOG.md"])
-        self.assertTrue(diagnostics["index_stale_after_search"])
-
-    def test_search_auto_reindex_refreshes_changed_focus_even_inside_grace_window(self) -> None:
-        root = self.make_project()
-        build_index(root)
-        (root / "README.md").write_text("# Demo\n\nInitial grace state token.", encoding="utf-8")
-        refreshed = search_index_with_plan(root, None, "Initial grace state token", top_k=1, auto_reindex=True)
-        self.assertTrue(refreshed["diagnostics"]["index_reindexed"])
-
-        (root / "README.md").write_text("# Demo\n\nFocused change must refresh.", encoding="utf-8")
-        focused = search_index_with_plan(root, None, "README.md Focused change must refresh", top_k=1, auto_reindex=True)
-
-        self.assertTrue(focused["diagnostics"]["index_stale_before_search"])
-        self.assertTrue(focused["diagnostics"]["index_reindexed"])
-        self.assertFalse(focused["diagnostics"]["auto_reindex_skipped"])
-        self.assertFalse(focused["diagnostics"]["index_stale_after_search"])
-        self.assertEqual(focused["results"][0]["source"], "README.md")
 
     def test_incremental_index_updates_changed_added_and_deleted_sources(self) -> None:
         root = self.make_project()
@@ -731,35 +539,6 @@ class RagUniversalTest(unittest.TestCase):
         )
         manifest = json.loads(index.stdout)
         self.assertEqual(manifest["num_files"], 6)
-        self.assertTrue(manifest["config_source"]["explicit"])
-        self.assertTrue(manifest["config_source"]["path"].endswith("rag.config.example.json"))
-
-    def test_explicit_missing_config_fails_closed(self) -> None:
-        root = self.make_project()
-        tool = ROOT / "tools" / "rag.py"
-        missing_config = ".mcp/rag-server/rag.config.json"
-
-        with self.assertRaises(FileNotFoundError):
-            load_config(root, missing_config)
-
-        failed = subprocess.run(
-            [sys.executable, str(tool), "status", "--root", str(root), "--config", missing_config],
-            text=True,
-            capture_output=True,
-        )
-        self.assertNotEqual(failed.returncode, 0)
-        self.assertIn("rag config not found", failed.stderr)
-
-    def test_project_local_config_does_not_fallback_to_process_cwd(self) -> None:
-        server_root = self.make_project()
-        target_root = self.make_project()
-        config_rel = ".mcp/rag-server/rag.config.json"
-        (server_root / ".mcp" / "rag-server").mkdir(parents=True)
-        (server_root / config_rel).write_text(json.dumps({"schema_version": "rag.config.v1"}), encoding="utf-8")
-
-        with mock.patch("rag_universal.core.Path.cwd", return_value=server_root):
-            with self.assertRaises(FileNotFoundError):
-                load_config(target_root, config_rel)
 
     def test_default_config_can_live_under_local_rag_server_directory(self) -> None:
         root = self.make_project()
@@ -779,74 +558,6 @@ class RagUniversalTest(unittest.TestCase):
         build_index(root)
         coverage = index_coverage(root, None, ["tests/Unit/BuildAndPushNodeImagesScriptTest.php"])
         self.assertTrue(coverage["paths"][0]["indexed"])
-
-    def test_mcp_per_call_root_resolves_server_config_relative_to_effective_root(self) -> None:
-        server_root = self.make_project()
-        target_root = self.make_project()
-        config_rel = ".mcp/rag-server/rag.config.json"
-        for root in (server_root, target_root):
-            (root / ".mcp" / "rag-server").mkdir(parents=True)
-        (server_root / config_rel).write_text(
-            json.dumps({"schema_version": "rag.config.v1", "include_globs": ["server.only"]}),
-            encoding="utf-8",
-        )
-        (server_root / "server.only").write_text("server config token", encoding="utf-8")
-        (target_root / config_rel).write_text(
-            json.dumps({"schema_version": "rag.config.v1", "include_globs": ["target.only"]}),
-            encoding="utf-8",
-        )
-        (target_root / "target.only").write_text("target config token", encoding="utf-8")
-        build_index(server_root, config_rel)
-        build_index(target_root, config_rel)
-
-        called = handle_message(
-            {
-                "jsonrpc": "2.0",
-                "id": 12,
-                "method": "tools/call",
-                "params": {
-                    "name": "rag_search",
-                    "arguments": {"root": str(target_root.resolve()), "query": "target config token", "top_k": 1},
-                },
-            },
-            str(server_root),
-            config_rel,
-        )
-        payload = json.loads(called["result"]["content"][0]["text"])
-        self.assertEqual(payload[0]["source"], "target.only")
-
-        status_called = handle_message(
-            {
-                "jsonrpc": "2.0",
-                "id": 13,
-                "method": "tools/call",
-                "params": {"name": "rag_status", "arguments": {"root": str(target_root.resolve())}},
-            },
-            str(server_root),
-            config_rel,
-        )
-        status_payload = json.loads(status_called["result"]["content"][0]["text"])
-        self.assertEqual(status_payload["mcp_server"]["effective_config"], config_rel)
-        self.assertEqual(status_payload["mcp_server"]["effective_config_path"], str((target_root / config_rel).resolve()))
-
-    def test_deploy_to_project_wires_explicit_project_local_config(self) -> None:
-        if shutil.which("rsync") is None:
-            self.skipTest("rsync is required by deploy-to-project.sh")
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        target = Path(temp.name) / "project"
-        target.mkdir()
-        deploy = ROOT / "tools" / "deploy-to-project.sh"
-
-        subprocess.run([str(deploy), str(target), "--no-index"], check=True, text=True, capture_output=True)
-
-        config_path = target / ".mcp" / "rag-server" / "rag.config.json"
-        self.assertTrue(config_path.exists())
-        mcp_config = json.loads((target / ".mcp.json").read_text(encoding="utf-8"))
-        args = mcp_config["mcpServers"]["rag"]["args"]
-        self.assertEqual(args[0], ".mcp/rag-server/tools/rag.py")
-        self.assertIn("--config", args)
-        self.assertEqual(args[args.index("--config") + 1], ".mcp/rag-server/rag.config.json")
 
     def test_force_include_contract_tests_and_coverage_report(self) -> None:
         root = self.make_project()

@@ -22,16 +22,6 @@
     "project_root": { "type": "string" },
     "indexed_at": { "type": "number" },
     "config_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-    "config_source": {
-      "type": "object",
-      "required": ["explicit", "requested", "path"],
-      "additionalProperties": false,
-      "properties": {
-        "explicit": { "type": "boolean" },
-        "requested": { "type": ["string", "null"] },
-        "path": { "type": ["string", "null"] }
-      }
-    },
     "chunker_version": { "type": "string" },
     "tokenizer_version": { "type": "string" },
     "search_version": { "type": "string" },

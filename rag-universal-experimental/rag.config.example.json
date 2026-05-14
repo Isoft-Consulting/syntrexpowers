@@ -88,8 +88,7 @@
   "max_file_bytes": 1048576,
   "follow_symlinks": false,
   "mcp": {
-    "auto_reindex_default": true,
-    "require_explicit_root": true
+    "auto_reindex_default": true
   },
   "cli": {
     "auto_reindex_default": false
@@ -104,6 +103,7 @@
     "overlap_chars": 160
   },
   "search": {
+    "default_budget": "economy",
     "hash_dim": 512,
     "min_score": 0.02,
     "docs_boost": 1.28,
@@ -254,6 +254,22 @@
       "knowledge": ["knowledge", "lesson", "pattern registry", "failure taxonomy", "owner map", "query template"]
     },
     "expand_english_synonyms": false,
-    "preview_chars": 500
+    "preview_chars": 500,
+    "budget_profiles": {
+      "economy": {
+        "top_k": 3,
+        "preview_chars": 220,
+        "max_chunks_per_source": 1,
+        "candidate_limit": 900,
+        "disable_query_variants": true
+      },
+      "deep": {
+        "top_k": 8,
+        "preview_chars": 500,
+        "max_chunks_per_source": 2,
+        "candidate_limit": 5000,
+        "disable_query_variants": false
+      }
+    }
   }
 }
