@@ -575,6 +575,60 @@ class RagUniversalTest(unittest.TestCase):
         self.assertTrue(second["stale_before"])
         self.assertIn("config hash changed", second["reason_before"])
 
+    def test_search_auto_reindex_skips_source_changes_outside_focus_paths(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        (root / "src" / "service.py").write_text(
+            "import json\n\nclass StrictGuard:\n    def unrelated_worker(self):\n        return 'changed elsewhere'\n",
+            encoding="utf-8",
+        )
+
+        payload = search_index_with_plan(root, None, "README.md strict stop guard", top_k=1, auto_reindex=True)
+
+        diagnostics = payload["diagnostics"]
+        self.assertTrue(diagnostics["index_stale_before_search"])
+        self.assertFalse(diagnostics["index_reindexed"])
+        self.assertTrue(diagnostics["auto_reindex_skipped"])
+        self.assertEqual(diagnostics["auto_reindex_skip_reason"], "source changes outside focus_paths")
+        self.assertEqual(diagnostics["auto_reindex_focus_paths"], ["README.md"])
+        self.assertEqual(diagnostics["source_delta"]["changed_sources"], ["src/service.py"])
+        self.assertTrue(diagnostics["index_stale_after_search"])
+        self.assertEqual(payload["results"][0]["source"], "README.md")
+
+    def test_search_auto_reindex_uses_grace_window_for_broad_source_changes(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        (root / "README.md").write_text("# Demo\n\nFirst grace refresh token.", encoding="utf-8")
+        refreshed = search_index_with_plan(root, None, "First grace refresh token", top_k=1, auto_reindex=True)
+        self.assertTrue(refreshed["diagnostics"]["index_reindexed"])
+
+        (root / "CHANGELOG.md").write_text("# Changelog\n\nConcurrent agent changed another source.", encoding="utf-8")
+        skipped = search_index_with_plan(root, None, "strict stop guard", top_k=1, auto_reindex=True)
+
+        diagnostics = skipped["diagnostics"]
+        self.assertTrue(diagnostics["index_stale_before_search"])
+        self.assertFalse(diagnostics["index_reindexed"])
+        self.assertTrue(diagnostics["auto_reindex_skipped"])
+        self.assertEqual(diagnostics["auto_reindex_skip_reason"], "source changes inside auto-reindex grace window")
+        self.assertEqual(diagnostics["source_delta"]["changed_sources"], ["CHANGELOG.md"])
+        self.assertTrue(diagnostics["index_stale_after_search"])
+
+    def test_search_auto_reindex_refreshes_changed_focus_even_inside_grace_window(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        (root / "README.md").write_text("# Demo\n\nInitial grace state token.", encoding="utf-8")
+        refreshed = search_index_with_plan(root, None, "Initial grace state token", top_k=1, auto_reindex=True)
+        self.assertTrue(refreshed["diagnostics"]["index_reindexed"])
+
+        (root / "README.md").write_text("# Demo\n\nFocused change must refresh.", encoding="utf-8")
+        focused = search_index_with_plan(root, None, "README.md Focused change must refresh", top_k=1, auto_reindex=True)
+
+        self.assertTrue(focused["diagnostics"]["index_stale_before_search"])
+        self.assertTrue(focused["diagnostics"]["index_reindexed"])
+        self.assertFalse(focused["diagnostics"]["auto_reindex_skipped"])
+        self.assertFalse(focused["diagnostics"]["index_stale_after_search"])
+        self.assertEqual(focused["results"][0]["source"], "README.md")
+
     def test_incremental_index_updates_changed_added_and_deleted_sources(self) -> None:
         root = self.make_project()
         build_index(root)

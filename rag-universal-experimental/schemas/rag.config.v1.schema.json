@@ -27,6 +27,13 @@
         "auto_reindex_default": { "type": "boolean", "default": false }
       }
     },
+    "freshness": {
+      "type": "object",
+      "properties": {
+        "auto_reindex_source_grace_seconds": { "type": "number", "minimum": 0, "default": 30 },
+        "source_delta_report_limit": { "type": "integer", "minimum": 1, "default": 20 }
+      }
+    },
     "chunk": {
       "type": "object",
       "properties": {

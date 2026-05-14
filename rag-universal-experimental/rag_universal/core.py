@@ -182,6 +182,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "cli": {
         "auto_reindex_default": False,
     },
+    "freshness": {
+        "auto_reindex_source_grace_seconds": 30.0,
+        "source_delta_report_limit": 20,
+    },
     "chunk": {
         "max_chars": 2400,
         "min_chars": 160,
@@ -1560,6 +1564,27 @@ def load_file_records(index_dir: Path) -> list[dict[str, Any]]:
     return load_json_list(index_dir / "files.json")
 
 
+def auto_reindex_state_path(index_dir: Path) -> Path:
+    return index_dir / "auto-reindex-state.json"
+
+
+def load_auto_reindex_state(index_dir: Path) -> dict[str, Any]:
+    return load_json_dict(auto_reindex_state_path(index_dir))
+
+
+def write_auto_reindex_state(index_dir: Path, status: dict[str, Any], reason_before: str | None) -> None:
+    source_state = status.get("source_state", {}).get("current", {}) if isinstance(status.get("source_state"), dict) else {}
+    write_json_atomic(
+        auto_reindex_state_path(index_dir),
+        {
+            "schema_version": "rag.auto-reindex-state.v1",
+            "last_reindex_wall_time": time.time(),
+            "reason_before": reason_before,
+            "source_state_fingerprint": source_state.get("fingerprint") if isinstance(source_state, dict) else None,
+        },
+    )
+
+
 def incremental_rebuild_plan(root: Path, config: dict[str, Any], index_dir: Path) -> dict[str, Any] | None:
     manifest = load_manifest(index_dir)
     if manifest is None:
@@ -1822,11 +1847,150 @@ def index_status(root_arg: str | os.PathLike[str] | None = None, config_path: st
     }
 
 
+def split_stale_reasons(reason: str | None) -> set[str]:
+    if not reason:
+        return set()
+    return {part.strip() for part in str(reason).split(",") if part.strip()}
+
+
+def source_change_only_status(status: dict[str, Any]) -> bool:
+    return split_stale_reasons(status.get("reason")) == {"source files changed"}
+
+
+def freshness_grace_seconds(config: dict[str, Any]) -> float:
+    freshness = config.get("freshness")
+    if not isinstance(freshness, dict):
+        return 30.0
+    value = freshness.get("auto_reindex_source_grace_seconds", 30.0)
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return 30.0
+
+
+def source_delta_report_limit(config: dict[str, Any]) -> int:
+    freshness = config.get("freshness")
+    if not isinstance(freshness, dict):
+        return 20
+    value = freshness.get("source_delta_report_limit", 20)
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 20
+
+
+def source_delta_summary(delta: dict[str, Any] | None, limit: int) -> dict[str, Any] | None:
+    if delta is None:
+        return None
+    changed = [str(item) for item in delta.get("changed_sources", [])]
+    deleted = [str(item) for item in delta.get("deleted_sources", [])]
+    return {
+        "changed_count": len(changed),
+        "deleted_count": len(deleted),
+        "changed_sources": changed[:limit],
+        "deleted_sources": deleted[:limit],
+        "truncated": len(changed) > limit or len(deleted) > limit,
+    }
+
+
+def normalize_focus_path(path: str) -> str | None:
+    text = str(path or "").strip().replace("\\", "/")
+    if not text:
+        return None
+    if text.startswith("./"):
+        text = text[2:]
+    text = text.strip("/")
+    if text in {"", "."} or text.startswith("../") or "/../" in f"/{text}/":
+        return None
+    return text
+
+
+def search_focus_paths(query: str, filter_source: str | None = None, focus_paths: list[str] | None = None) -> list[str]:
+    raw_paths: list[str] = []
+    raw_paths.extend(str(path) for path in (focus_paths or []))
+    raw_paths.extend(extract_query_paths(query))
+    if filter_source and any(marker in str(filter_source) for marker in ("/", ".")):
+        raw_paths.append(str(filter_source))
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_path in raw_paths:
+        path = normalize_focus_path(raw_path)
+        if path is not None and path not in seen:
+            normalized.append(path)
+            seen.add(path)
+    return normalized
+
+
+def source_matches_focus(source: str, focus: str) -> bool:
+    normalized_source = normalize_focus_path(source)
+    normalized_focus = normalize_focus_path(focus)
+    if normalized_source is None or normalized_focus is None:
+        return False
+    source_with_slash = f"{normalized_source}/"
+    focus_with_slash = f"{normalized_focus}/"
+    return (
+        normalized_source == normalized_focus
+        or normalized_source.startswith(focus_with_slash)
+        or normalized_focus.startswith(source_with_slash)
+    )
+
+
+def source_delta_intersects_focus(delta: dict[str, Any], focus_paths: list[str]) -> bool:
+    changed = [str(item) for item in delta.get("changed_sources", [])]
+    deleted = [str(item) for item in delta.get("deleted_sources", [])]
+    for source in changed + deleted:
+        if any(source_matches_focus(source, focus) for focus in focus_paths):
+            return True
+    return False
+
+
+def source_auto_reindex_skip(
+    root: Path,
+    config: dict[str, Any],
+    index_dir: Path,
+    status_before: dict[str, Any],
+    focus_paths: list[str],
+) -> dict[str, Any] | None:
+    if not source_change_only_status(status_before):
+        return None
+    delta = incremental_rebuild_plan(root, config, index_dir)
+    if delta is None:
+        return None
+    limit = source_delta_report_limit(config)
+    summary = source_delta_summary(delta, limit)
+    if focus_paths:
+        if not source_delta_intersects_focus(delta, focus_paths):
+            return {
+                "reason": "source changes outside focus_paths",
+                "focus_paths": focus_paths,
+                "source_delta": summary,
+            }
+        return None
+    grace_seconds = freshness_grace_seconds(config)
+    state = load_auto_reindex_state(index_dir)
+    last_reindex = state.get("last_reindex_wall_time")
+    try:
+        age = time.time() - float(last_reindex)
+    except (TypeError, ValueError):
+        age = None
+    if grace_seconds > 0 and age is not None and 0 <= age < grace_seconds:
+        return {
+            "reason": "source changes inside auto-reindex grace window",
+            "grace_seconds": grace_seconds,
+            "last_reindex_age_seconds": round(age, 3),
+            "focus_paths": focus_paths,
+            "source_delta": summary,
+        }
+    return None
+
+
 def ensure_fresh_index(
     root_arg: str | os.PathLike[str] | None = None,
     config_path: str | os.PathLike[str] | None = None,
     auto_reindex: bool = False,
     prefer_incremental: bool = True,
+    allow_source_grace: bool = False,
+    focus_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     root = resolve_root(root_arg)
     config = load_config(root, config_path)
@@ -1847,11 +2011,29 @@ def ensure_fresh_index(
         "stale_before": stale_before,
         "reason_before": status_before.get("reason"),
         "reindexed": False,
+        "auto_reindex_skipped": False,
         "status": status_before,
     }
     if stale_before and auto_reindex:
+        if allow_source_grace:
+            skip = source_auto_reindex_skip(root, config, index_dir, status_before, focus_paths or [])
+            if skip is not None:
+                result.update(
+                    {
+                        "auto_reindex_skipped": True,
+                        "auto_reindex_skip_reason": skip["reason"],
+                        "auto_reindex_focus_paths": skip.get("focus_paths", []),
+                        "source_delta": skip.get("source_delta"),
+                    }
+                )
+                if "grace_seconds" in skip:
+                    result["auto_reindex_grace_seconds"] = skip["grace_seconds"]
+                    result["last_reindex_age_seconds"] = skip["last_reindex_age_seconds"]
+                _FRESHNESS_CACHE[cache_key] = (now, result)
+                return result
         manifest = build_index(root_arg, config_path, incremental=prefer_incremental)
         status_after = index_status(root_arg, config_path)
+        write_auto_reindex_state(index_dir, status_after, str(status_before.get("reason") or "unknown"))
         result.update(
             {
                 "reindexed": True,
@@ -3820,7 +4002,7 @@ PATH_QUERY_RE = re.compile(
 )
 FILENAME_TOKEN_RE = re.compile(
     r"(?<![A-Za-z0-9_./-])"
-    r"[A-Za-z0-9_.-]+\\.(?:php|vue|tsx?|jsx?|ya?ml|json|md|py|sh|css|scss|sql|xml|html|service)"
+    r"[A-Za-z0-9_.-]+\.(?:php|vue|tsx?|jsx?|ya?ml|json|md|py|sh|css|scss|sql|xml|html|service)"
     r"(?![A-Za-z0-9_./-])",
     re.IGNORECASE,
 )
@@ -3858,6 +4040,11 @@ def extract_query_paths(query: str) -> list[str]:
             if candidate not in seen:
                 paths.append(candidate)
                 seen.add(candidate)
+    for match in FILENAME_TOKEN_RE.finditer(query):
+        candidate = match.group(0).strip("`'\"()[]{}:,;")
+        if candidate and candidate not in seen:
+            paths.append(candidate)
+            seen.add(candidate)
     for match in PATH_QUERY_RE.finditer(query):
         candidate = match.group(0).strip("`'\"()[]{}:,;")
         while len(candidate) > 1 and candidate[-1] in ".,;:":
@@ -4865,9 +5052,11 @@ def search_index_with_plan(
     filter_type: str | None = None,
     mode: str = "default",
     auto_reindex: bool = False,
+    focus_paths: list[str] | None = None,
 ) -> dict[str, Any]:
+    inferred_focus_paths = search_focus_paths(query, filter_source, focus_paths)
     with PerfTimer("search.freshness"):
-        freshness = ensure_fresh_index(root_arg, config_path, auto_reindex)
+        freshness = ensure_fresh_index(root_arg, config_path, auto_reindex, allow_source_grace=True, focus_paths=inferred_focus_paths)
     with PerfTimer("search.index"):
         results = search_index(root_arg, config_path, query, top_k, filter_source, filter_type, mode)
     with PerfTimer("search.profile"):
@@ -4878,6 +5067,10 @@ def search_index_with_plan(
         "index_stale_before_search": bool(freshness.get("stale_before")),
         "index_stale_reason": freshness.get("reason_before"),
         "index_reindexed": bool(freshness.get("reindexed")),
+        "auto_reindex_skipped": bool(freshness.get("auto_reindex_skipped")),
+        "auto_reindex_skip_reason": freshness.get("auto_reindex_skip_reason"),
+        "auto_reindex_focus_paths": freshness.get("auto_reindex_focus_paths", inferred_focus_paths),
+        "source_delta": freshness.get("source_delta"),
         "index_stale_after_search": bool(freshness.get("status", {}).get("stale")),
         "query_profile": {
             "broad": profile["broad"],
@@ -4916,9 +5109,16 @@ def search_index(
     filter_type: str | None = None,
     mode: str = "default",
     auto_reindex: bool = False,
+    focus_paths: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     if auto_reindex:
-        ensure_fresh_index(root_arg, config_path, True)
+        ensure_fresh_index(
+            root_arg,
+            config_path,
+            True,
+            allow_source_grace=True,
+            focus_paths=search_focus_paths(query, filter_source, focus_paths),
+        )
     root = resolve_root(root_arg)
     config = load_config(root, config_path)
     index_dir = get_index_dir(root, config)

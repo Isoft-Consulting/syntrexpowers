@@ -47,6 +47,13 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--top-k", type=int, default=5)
     search.add_argument("--filter-source", default=None)
     search.add_argument("--filter-type", default=None)
+    search.add_argument(
+        "--focus-path",
+        action="append",
+        dest="focus_paths",
+        default=None,
+        help="Repo-relative file or directory in the current task scope. Repeatable; source-only changes outside this scope do not auto-reindex.",
+    )
     search.add_argument("--mode", choices=["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"], default="default")
     search.add_argument("--with-plan", action="store_true", help="Return results with a section-level read plan.")
     search.add_argument(
@@ -186,9 +193,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "search":
         auto_reindex = resolve_cli_auto_reindex(args.auto_reindex, args.root, args.config)
         if args.with_plan:
-            emit(search_index_with_plan(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode, auto_reindex))
+            emit(search_index_with_plan(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode, auto_reindex, args.focus_paths))
         else:
-            emit(search_index(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode, auto_reindex))
+            emit(search_index(args.root, args.config, args.query, args.top_k, args.filter_source, args.filter_type, args.mode, auto_reindex, args.focus_paths))
         return 0
     if args.command == "watch":
         try:

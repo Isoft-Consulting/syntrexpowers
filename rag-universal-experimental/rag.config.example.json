@@ -94,6 +94,10 @@
   "cli": {
     "auto_reindex_default": false
   },
+  "freshness": {
+    "auto_reindex_source_grace_seconds": 30,
+    "source_delta_report_limit": 20
+  },
   "chunk": {
     "max_chars": 2400,
     "min_chars": 160,

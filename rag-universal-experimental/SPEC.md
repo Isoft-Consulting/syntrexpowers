@@ -96,7 +96,7 @@ Projects can loosen the rules explicitly in their own `rag.config.json`, but the
 - `python3 tools/rag.py search --root <repo> --config <config> "query" --mode fdr` returns review-oriented evidence bundles across plan/spec, implementation, test, and build/config roles when available.
 - `python3 tools/rag.py search --root <repo> --config <config> "query" --mode architecture --with-plan` returns ranked chunks plus a section-level read plan and diagnostics.
 - `python3 tools/rag.py search --root <repo> --config <config> "query" --mode knowledge --with-plan` prioritizes generated project-memory packs.
-- `python3 tools/rag.py search --root <repo> --config <config> "query" --auto-reindex` rebuilds the full index first only when `status` reports a missing/stale manifest.
+- `python3 tools/rag.py search --root <repo> --config <config> "query" --auto-reindex` rebuilds the index when the manifest is missing/stale, prefers incremental source refreshes, and may skip source-only reindexing when changed files are outside explicit focus paths or inside the configured multi-agent grace window.
 - `python3 tools/rag.py watch --root <repo> --config <config>` polls the source-state fingerprint and performs full rebuilds when indexed files are added, changed, or deleted.
 - Search results include `document_status`, `status_boost`, `section`, and `read_hint`.
 - Superseded or historical documents are downranked and marked as deprioritized in read plans.

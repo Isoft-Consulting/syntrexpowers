@@ -82,6 +82,12 @@ def tool_definitions(require_explicit_root: bool = False) -> list[dict[str, Any]
                     "top_k": {"type": "integer", "default": 5, "minimum": 1, "maximum": 50},
                     "filter_source": {"type": ["string", "null"], "default": None},
                     "filter_type": {"type": ["string", "null"], "default": None},
+                    "focus_paths": {
+                        "type": ["array", "null"],
+                        "items": {"type": "string"},
+                        "default": None,
+                        "description": "Repo-relative files/directories in the current task scope. Source-only changes outside this scope do not auto-reindex.",
+                    },
                     "mode": {
                         "type": "string",
                         "enum": ["default", "fdr", "architecture", "implementation", "frontend", "migration", "knowledge"],
@@ -341,6 +347,7 @@ def call_tool(name: str, arguments: dict[str, Any], root: str | None, config: st
                 arguments.get("filter_type"),
                 str(arguments.get("mode", "default")),
                 auto_reindex,
+                [str(item) for item in arguments.get("focus_paths", [])] if isinstance(arguments.get("focus_paths"), list) else None,
             )
         )
     if name == "rag_reindex":

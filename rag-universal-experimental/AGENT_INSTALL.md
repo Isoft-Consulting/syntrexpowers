@@ -90,11 +90,15 @@ Keep generated/runtime directories excluded. Common examples:
   },
   "cli": {
     "auto_reindex_default": false
+  },
+  "freshness": {
+    "auto_reindex_source_grace_seconds": 30,
+    "source_delta_report_limit": 20
   }
 }
 ```
 
-`mcp.auto_reindex_default=true` means MCP `rag_search` refreshes stale indexes incrementally when possible. CLI commands stay explicit by default through `cli.auto_reindex_default=false`; use `search --auto-reindex`, `quality-check --auto-reindex`, or `index --incremental`. If a project enables CLI auto-reindex by config, disable it for one run with `--no-auto-reindex`.
+`mcp.auto_reindex_default=true` means MCP `rag_search` refreshes stale indexes incrementally when needed. Source-only staleness is scoped: pass MCP `focus_paths` or CLI `--focus-path` for the current task files/directories, and source changes outside that scope will not trigger auto-reindex. Broad searches without focus observe `freshness.auto_reindex_source_grace_seconds` after a recent auto-reindex to avoid multi-agent rebuild storms. CLI commands stay explicit by default through `cli.auto_reindex_default=false`; use `search --auto-reindex`, `quality-check --auto-reindex`, or `index --incremental`. If a project enables CLI auto-reindex by config, disable it for one run with `--no-auto-reindex`.
 
 ## MCP Configuration
 
@@ -160,7 +164,7 @@ Project-local RAG server is installed at `.mcp/rag-server`.
 Before design, FDR, large implementation, or unfamiliar code exploration:
 1. Call `rag_status`.
 2. Pass the absolute current project path as `root` on every project-scoped MCP call; if `rag_status` points at another repository or a root-required tool rejects the call, use the CLI fallback with explicit `--root`.
-3. Use `rag_search` with `with_plan=true` and the task mode; MCP auto-reindexes stale indexes by default through `mcp.auto_reindex_default=true`.
+3. Use `rag_search` with `with_plan=true`, the task mode, and `focus_paths` for the current files/directories when known; MCP auto-reindexes relevant stale indexes by default through `mcp.auto_reindex_default=true`.
 4. Run `rag_quality_check` when installing/updating RAG or when search quality is suspect.
 5. Prefer `with_plan=true` for review/design work.
 6. Use task modes:
@@ -187,8 +191,8 @@ python3 .mcp/rag-server/tools/rag.py index --root . --config .mcp/rag-server/rag
 # Check stale state
 python3 .mcp/rag-server/tools/rag.py status --root . --config .mcp/rag-server/rag.config.json
 
-# Search and rebuild only when stale
-python3 .mcp/rag-server/tools/rag.py search --root . --config .mcp/rag-server/rag.config.json "query" --mode fdr --with-plan --auto-reindex
+# Search and rebuild only when stale in the current scope
+python3 .mcp/rag-server/tools/rag.py search --root . --config .mcp/rag-server/rag.config.json "query" --mode fdr --with-plan --auto-reindex --focus-path src/current-scope
 
 # Verify server health and comparative retrieval quality
 python3 .mcp/rag-server/tools/rag.py quality-check --root . --config .mcp/rag-server/rag.config.json --auto-reindex --summary-only
