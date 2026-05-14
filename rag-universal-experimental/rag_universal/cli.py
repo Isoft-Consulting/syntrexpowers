@@ -33,7 +33,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     index = subparsers.add_parser("index", help="Build the local RAG index")
-    index.add_argument("--incremental", action="store_true", help="Refresh only changed/deleted sources when the existing index is compatible.")
+    index.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Refresh only changed/deleted sources when the existing index is compatible. This is the CLI default; kept for compatibility.",
+    )
+    index.add_argument("--full-rebuild", action="store_true", help="Disable incremental planning and rebuild the full index.")
     subparsers.add_parser("status", help="Show local RAG index status")
     coverage = subparsers.add_parser("coverage", help="Report whether specific paths are indexed")
     coverage.add_argument("paths", nargs="+")
@@ -171,7 +176,7 @@ def resolve_cli_auto_reindex(value: bool | None, root: str, config: str | None) 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(normalize_global_args(argv))
     if args.command == "index":
-        emit(build_index(args.root, args.config, incremental=bool(args.incremental)))
+        emit(build_index(args.root, args.config, incremental=not bool(args.full_rebuild)))
         return 0
     if args.command == "status":
         emit(index_status(args.root, args.config))

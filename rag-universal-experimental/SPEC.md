@@ -89,7 +89,7 @@ Projects can loosen the rules explicitly in their own `rag.config.json`, but the
 
 ## Acceptance Criteria
 
-- `python3 tools/rag.py index --root <repo> --config <config>` builds all artifact files.
+- `python3 tools/rag.py index --root <repo> --config <config>` builds all artifact files and prefers incremental refresh when an existing compatible manifest is present; `--full-rebuild` forces a full rebuild.
 - `python3 tools/rag.py status --root <repo> --config <config>` reports index counts, stale config state, and stale source-file state.
 - `python3 tools/rag.py coverage --root <repo> --config <config> <path>...` reports whether exact paths are indexed or why they are excluded.
 - `python3 tools/rag.py search --root <repo> --config <config> "query"` returns ranked chunks.
@@ -97,7 +97,7 @@ Projects can loosen the rules explicitly in their own `rag.config.json`, but the
 - `python3 tools/rag.py search --root <repo> --config <config> "query" --mode architecture --with-plan` returns ranked chunks plus a section-level read plan and diagnostics.
 - `python3 tools/rag.py search --root <repo> --config <config> "query" --mode knowledge --with-plan` prioritizes generated project-memory packs.
 - `python3 tools/rag.py search --root <repo> --config <config> "query" --auto-reindex` rebuilds the index when the manifest is missing/stale, prefers incremental source refreshes, and may skip source-only reindexing when changed files are outside explicit focus paths or inside the configured multi-agent grace window.
-- `python3 tools/rag.py watch --root <repo> --config <config>` polls the source-state fingerprint and performs full rebuilds when indexed files are added, changed, or deleted.
+- `python3 tools/rag.py watch --root <repo> --config <config>` polls the source-state fingerprint and prefers incremental refreshes when indexed files are added, changed, or deleted.
 - Search results include `document_status`, `status_boost`, `section`, and `read_hint`.
 - Superseded or historical documents are downranked and marked as deprioritized in read plans.
 - `python3 tools/rag.py symbol --root <repo> --config <config> Name` returns exact symbol matches.

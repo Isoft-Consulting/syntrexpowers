@@ -115,13 +115,13 @@ The server does not branch on `clientInfo.name`; it exposes the same tool contra
 For changing projects, use one of three refresh modes:
 
 ```bash
-python3 tools/rag.py index --root /path/to/project --incremental
+python3 tools/rag.py index --root /path/to/project
 python3 tools/rag.py search --root /path/to/project "query" --auto-reindex
 python3 tools/rag.py search --root /path/to/project "query" --with-plan --auto-reindex --focus-path src/current-scope
 python3 tools/rag.py watch --root /path/to/project
 ```
 
-`index --incremental` refreshes only changed/deleted sources when the current manifest, config hash, tokenizer, chunker, and search version are compatible; otherwise it falls back to a full rebuild. `--auto-reindex` checks `rag_status` before a CLI search and rebuilds when the manifest is missing or stale, preferring an incremental rebuild when possible. CLI can opt into that behavior by default through `cli.auto_reindex_default=true`, with `--no-auto-reindex` for one read-only run. MCP `rag_search` does the same by default through `mcp.auto_reindex_default=true`; set it to `false` or pass `auto_reindex=false` for read-only MCP calls. `--with-plan` diagnostics report whether the index was stale before search, whether it was rebuilt, and whether it is still stale after search. `watch` is a simple polling loop for long-lived local sessions and also prefers incremental rebuilds when possible.
+`index` refreshes only changed/deleted sources when the current manifest, config hash, tokenizer, chunker, and search version are compatible; otherwise it falls back to a full rebuild. Use `index --full-rebuild` only when you intentionally want to discard incremental planning. `--auto-reindex` checks `rag_status` before a CLI search and rebuilds when the manifest is missing or stale, preferring an incremental rebuild when possible. CLI can opt into that behavior by default through `cli.auto_reindex_default=true`, with `--no-auto-reindex` for one read-only run. MCP `rag_search` does the same by default through `mcp.auto_reindex_default=true`; set it to `false` or pass `auto_reindex=false` for read-only MCP calls. `--with-plan` diagnostics report whether the index was stale before search, whether it was rebuilt, and whether it is still stale after search. `watch` is a simple polling loop for long-lived local sessions and also prefers incremental rebuilds when possible.
 
 For multi-agent sessions, source-only staleness is treated as scoped. `rag_search` infers focus paths from explicit repo paths in the query and also accepts CLI `--focus-path` or MCP `focus_paths`. If all changed/deleted sources are outside that focus, auto-reindex is skipped and diagnostics report `auto_reindex_skipped`, `auto_reindex_skip_reason`, and a bounded `source_delta`. Broad searches without focus also respect `freshness.auto_reindex_source_grace_seconds` after a recent auto-reindex, preventing parallel agents from rebuilding the same `.rag-index` every few seconds. Manifest/config/search-version staleness still reindexes immediately.
 

@@ -482,6 +482,38 @@ class RagUniversalTest(unittest.TestCase):
             cached_results = search_index(root, None, "strict stop guard", top_k=1)
         self.assertEqual(cached_results[0]["source"], "README.md")
 
+    def test_cli_index_prefers_incremental_after_existing_manifest(self) -> None:
+        root = self.make_project()
+        tool = ROOT / "tools" / "rag.py"
+        subprocess.run([sys.executable, str(tool), "index", "--root", str(root)], check=True, text=True, capture_output=True)
+        (root / "README.md").write_text("# Demo\n\nCLI index incremental default token.", encoding="utf-8")
+
+        incremental = subprocess.run(
+            [sys.executable, str(tool), "index", "--root", str(root)],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        incremental_manifest = json.loads(incremental.stdout)
+        self.assertEqual(incremental_manifest["build_mode"], "incremental")
+        self.assertEqual(incremental_manifest["change_summary"]["changed_sources"], 1)
+
+        full = subprocess.run(
+            [sys.executable, str(tool), "index", "--root", str(root), "--full-rebuild"],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        full_manifest = json.loads(full.stdout)
+        self.assertEqual(full_manifest["build_mode"], "full")
+
+    def test_rag_refresh_full_forces_full_rebuild(self) -> None:
+        script = (ROOT / "rag-refresh.sh").read_text(encoding="utf-8")
+        self.assertIn(
+            'python3 "${RAG_BIN}" index --root "${ROOT_DIR}" --config "${RAG_CONFIG}" --full-rebuild',
+            script,
+        )
+
     def test_cli_auto_reindex_default_uses_project_config_and_can_be_disabled(self) -> None:
         root = self.make_project()
         tool = ROOT / "tools" / "rag.py"

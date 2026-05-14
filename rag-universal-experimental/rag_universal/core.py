@@ -375,7 +375,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
         "budget_profiles": {
             "economy": {
-                "top_k": 3,
+                "top_k": 4,
                 "preview_chars": 220,
                 "max_chunks_per_source": 1,
                 "candidate_limit": 900,
@@ -507,6 +507,7 @@ def config_hash(config: dict[str, Any]) -> str:
 
 
 def get_index_dir(root: Path, config: dict[str, Any]) -> Path:
+    root = root.resolve()
     configured = Path(str(config.get("index_dir", ".rag-index")))
     index_dir = configured if configured.is_absolute() else root / configured
     resolved = index_dir.resolve()
@@ -2846,15 +2847,9 @@ def clamp_economy_top_k(top_k: int, search_cfg: dict[str, Any], economy: bool) -
 
 
 def compact_search_entry(result: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "source": result.get("source"),
-        "section": result.get("section", ""),
-        "read_hint": result.get("read_hint"),
-        "artifact_type": result.get("artifact_type"),
-        "document_status": result.get("document_status"),
-        "start_line": result.get("start_line"),
-        "preview": str(result.get("preview", ""))[:240],
-    }
+    compact = dict(result)
+    compact["preview"] = str(result.get("preview", ""))[:240]
+    return compact
 
 
 def compact_search_results(results: list[dict[str, Any]], economy: bool) -> list[dict[str, Any]]:
@@ -2889,7 +2884,7 @@ def compact_read_plan(read_plan: dict[str, Any], economy: bool) -> dict[str, Any
         **read_plan,
         "items": compact_items,
         "deprioritized": compact_blocked[:3],
-        "budget_hint": "Read compacted hits first; open full context only if required.",
+        "budget_hint": "Read only compacted hits first; open full context only if required.",
     }
 
 

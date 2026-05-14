@@ -257,7 +257,7 @@
     "preview_chars": 500,
     "budget_profiles": {
       "economy": {
-        "top_k": 3,
+        "top_k": 4,
         "preview_chars": 220,
         "max_chunks_per_source": 1,
         "candidate_limit": 900,

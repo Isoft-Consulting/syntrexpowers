@@ -93,7 +93,7 @@ Keep generated/runtime directories excluded. Common examples:
 }
 ```
 
-`mcp.auto_reindex_default=true` means MCP `rag_search` refreshes stale indexes incrementally when possible. CLI commands stay explicit by default through `cli.auto_reindex_default=false`; use `search --auto-reindex`, `quality-check --auto-reindex`, or `index --incremental`. If a project enables CLI auto-reindex by config, disable it for one run with `--no-auto-reindex`.
+`mcp.auto_reindex_default=true` means MCP `rag_search` refreshes stale indexes incrementally when needed. Source-only staleness is scoped: pass MCP `focus_paths` or CLI `--focus-path` for the current task files/directories, and source changes outside that scope will not trigger auto-reindex. Broad searches without focus observe `freshness.auto_reindex_source_grace_seconds` after a recent auto-reindex to avoid multi-agent rebuild storms. CLI commands stay explicit by default through `cli.auto_reindex_default=false`; use `search --auto-reindex`, `quality-check --auto-reindex`, or `index`. Plain `index` prefers incremental planning when an existing compatible manifest is present; use `index --full-rebuild` only for intentional full rebuilds. If a project enables CLI auto-reindex by config, disable it for one run with `--no-auto-reindex`.
 
 ## MCP Configuration
 
@@ -167,14 +167,14 @@ Do not index secrets, `.env`, `.mcp.json`, vendor, node_modules, dist, storage, 
 ./rag-refresh.sh --quality  # + quality-check summary
 ./rag-refresh.sh --full     # rebuild full index
 
-# Rebuild now
-python3 .mcp/rag-server/tools/rag.py index --root .
+# Refresh now, incremental when compatible
+python3 .mcp/rag-server/tools/rag.py index --root . --config .mcp/rag-server/rag.config.json
 
-# Incremental refresh when the existing index is compatible
-python3 .mcp/rag-server/tools/rag.py index --root . --incremental
+# Force a full rebuild only when incremental planning is not desired
+python3 .mcp/rag-server/tools/rag.py index --root . --config .mcp/rag-server/rag.config.json --full-rebuild
 
 # Check stale state
-python3 .mcp/rag-server/tools/rag.py status --root .
+python3 .mcp/rag-server/tools/rag.py status --root . --config .mcp/rag-server/rag.config.json
 
 # Quick daily workflow (incremental when stale + smoke verification, no forced full rebuild):
 ./rag-refresh.sh --daily
@@ -183,17 +183,17 @@ python3 .mcp/rag-server/tools/rag.py status --root .
 # Backward-compatible quick workflow (manual checks only):
 ./rag-refresh.sh  # status + optional incremental rebuild + smoke search
 
-# Search and rebuild only when stale
-python3 .mcp/rag-server/tools/rag.py search --root . "query" --mode fdr --with-plan --auto-reindex
+# Search and rebuild only when stale in the current scope
+python3 .mcp/rag-server/tools/rag.py search --root . --config .mcp/rag-server/rag.config.json "query" --mode fdr --with-plan --auto-reindex --focus-path src/current-scope
 
 # Verify server health and comparative retrieval quality
-python3 .mcp/rag-server/tools/rag.py quality-check --root . --auto-reindex --summary-only
+python3 .mcp/rag-server/tools/rag.py quality-check --root . --config .mcp/rag-server/rag.config.json --auto-reindex --summary-only
 
 # Watch and rebuild incrementally when possible
-python3 .mcp/rag-server/tools/rag.py watch --root .
+python3 .mcp/rag-server/tools/rag.py watch --root . --config .mcp/rag-server/rag.config.json
 
 # Check whether generated knowledge pack inputs changed
-python3 .mcp/rag-server/tools/rag.py knowledge-status --root . --summary Docs/knowledge/rag
+python3 .mcp/rag-server/tools/rag.py knowledge-status --root . --config .mcp/rag-server/rag.config.json --summary Docs/knowledge/rag
 ```
 
 ## Safety Notes

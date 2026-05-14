@@ -94,7 +94,7 @@ print(f"manifest: build_mode={manifest.get('build_mode')} indexed_at={manifest.g
 PY
 
 if [[ "${FORCE_FULL}" == "1" ]]; then
-  python3 "${RAG_BIN}" index --root "${ROOT_DIR}" --config "${RAG_CONFIG}"
+  python3 "${RAG_BIN}" index --root "${ROOT_DIR}" --config "${RAG_CONFIG}" --full-rebuild
 elif [[ "${stale}" == "1" ]]; then
   python3 "${RAG_BIN}" index --root "${ROOT_DIR}" --config "${RAG_CONFIG}" --incremental
 else
