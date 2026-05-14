@@ -135,6 +135,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="disk",
         help="MCP-only SQLite search cache storage. Use memory only for long-lived MCP processes.",
     )
+    serve_mcp.add_argument(
+        "--require-explicit-root",
+        action="store_true",
+        help="Fail before starting MCP stdio unless --root was provided explicitly.",
+    )
     return parser
 
 
@@ -174,7 +179,8 @@ def resolve_cli_auto_reindex(value: bool | None, root: str, config: str | None) 
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(normalize_global_args(argv))
+    raw_args = list(sys.argv[1:] if argv is None else argv)
+    args = build_parser().parse_args(normalize_global_args(raw_args))
     if args.command == "index":
         emit(build_index(args.root, args.config, incremental=not bool(args.full_rebuild)))
         return 0
@@ -288,5 +294,8 @@ def main(argv: list[str] | None = None) -> int:
         emit(generate_project_profile(args.root, args.output, args.project))
         return 0
     if args.command == "serve-mcp":
+        if args.require_explicit_root and "--root" not in raw_args:
+            print("rag.py serve-mcp requires explicit --root when --require-explicit-root is set", file=sys.stderr)
+            return 2
         return run_stdio(args.root, args.config, args.cache_storage)
     raise RuntimeError(f"unhandled command: {args.command}")

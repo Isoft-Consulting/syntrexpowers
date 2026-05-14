@@ -507,6 +507,17 @@ class RagUniversalTest(unittest.TestCase):
         full_manifest = json.loads(full.stdout)
         self.assertEqual(full_manifest["build_mode"], "full")
 
+    def test_cli_serve_mcp_require_explicit_root_fails_before_stdio(self) -> None:
+        tool = ROOT / "tools" / "rag.py"
+        result = subprocess.run(
+            [sys.executable, str(tool), "serve-mcp", "--require-explicit-root"],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("requires explicit --root", result.stderr)
+
     def test_rag_refresh_full_forces_full_rebuild(self) -> None:
         script = (ROOT / "rag-refresh.sh").read_text(encoding="utf-8")
         self.assertIn(
