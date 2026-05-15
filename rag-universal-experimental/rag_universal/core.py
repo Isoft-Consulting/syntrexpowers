@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import copy
 import fnmatch
 import hashlib
@@ -11,7 +12,21 @@ import sqlite3
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
+
+try:  # POSIX-only; на Windows межпроцессный lock деградирует до no-op
+    import fcntl as _fcntl
+except ImportError:  # pragma: no cover - Windows fallback
+    _fcntl = None
+
+# Безопасный потолок для удаления осиротевших tmp-{pid} файлов от прошлых
+# aborted rebuild_search_cache. Меньше — рискуем стереть tmp идущего сейчас
+# (под lock) rebuild'а на медленной системе; больше — orphan-ы копятся.
+_SEARCH_CACHE_TMP_MAX_AGE_SECONDS = 3600.0
+# Сколько ждать освобождения writer-lock до отказа. Один rebuild на
+# большом индексе (≥ 100K чанков) занимает 1-2 минуты, ставим 5 минут
+# чтобы покрыть worst-case без бесконечного зависания.
+_SEARCH_CACHE_WRITE_LOCK_TIMEOUT_SECONDS = 300.0
 
 CONFIG_VERSION = "rag.config.v1"
 MANIFEST_VERSION = "rag.index-manifest.v1"
@@ -1055,6 +1070,91 @@ def search_cache_path(index_dir: Path) -> Path | None:
     return index_dir / cache_name
 
 
+def _search_cache_lock_path(cache_path: Path) -> Path:
+    return cache_path.with_suffix(cache_path.suffix + ".lock")
+
+
+@contextlib.contextmanager
+def _acquire_search_cache_write_lock(
+    cache_path: Path,
+    timeout_seconds: float = _SEARCH_CACHE_WRITE_LOCK_TIMEOUT_SECONDS,
+) -> Iterator[bool]:
+    """Межпроцессный exclusive writer-lock на search-cache.
+
+    Несколько RAG-серверов и CLI-сессий могут одновременно обнаружить stale
+    SQLite cache и запустить rebuild_search_cache; без сериализации каждый
+    из них пишет в свой tmp-{pid} и финальный os.replace race оставляет
+    orphan tmp-файлы и может повредить B-tree через несогласованные WAL
+    транзакции. fcntl.flock на отдельном lock-файле рядом с search.sqlite
+    гарантирует single-writer. На платформах без fcntl (Windows) lock
+    деградирует до no-op — на этих платформах эксклюзивная сериализация
+    не поддерживается.
+
+    Yields True, если lock получен, иначе False (timeout).
+    """
+    if _fcntl is None:
+        yield True
+        return
+
+    lock_path = _search_cache_lock_path(cache_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o644)
+    acquired = False
+    try:
+        while True:
+            try:
+                _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+                acquired = True
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.5)
+        yield acquired
+    finally:
+        if acquired:
+            try:
+                _fcntl.flock(fd, _fcntl.LOCK_UN)
+            except OSError:
+                pass
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def _cleanup_search_cache_tmp_files(
+    cache_path: Path,
+    max_age_seconds: float = _SEARCH_CACHE_TMP_MAX_AGE_SECONDS,
+) -> int:
+    """Удалить осиротевшие tmp-файлы прошлых aborted rebuild_search_cache.
+
+    Стабильное состояние — отсутствие .tmp-{pid} рядом с search.sqlite между
+    rebuild'ами (write_search_cache_sqlite делает os.replace в финале).
+    Если процесс был killed между PRAGMA quick_check tmp DB и os.replace —
+    tmp остаётся навсегда. Под writer-lock'ом не может существовать живой
+    конкурирующий rebuild, поэтому любые tmp старше max_age_seconds считаем
+    orphan и удаляем (включая sidecar -journal/-wal/-shm).
+    """
+    removed = 0
+    pattern = cache_path.name + ".tmp-*"
+    now = time.time()
+    for sibling in cache_path.parent.glob(pattern):
+        try:
+            age = now - sibling.stat().st_mtime
+        except OSError:
+            continue
+        if age < max_age_seconds:
+            continue
+        try:
+            sibling.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
 def rebuild_search_cache(index_dir: Path, config: dict[str, Any]) -> bool:
     cache_path = search_cache_path(index_dir)
     if cache_path is None:
@@ -1062,8 +1162,13 @@ def rebuild_search_cache(index_dir: Path, config: dict[str, Any]) -> bool:
     chunks = load_chunks(index_dir)
     if not chunks:
         return False
-    close_search_cache_connections(index_dir)
-    write_search_cache_sqlite(cache_path, chunks, config)
+    timeout = _SEARCH_CACHE_WRITE_LOCK_TIMEOUT_SECONDS
+    with _acquire_search_cache_write_lock(cache_path, timeout) as acquired:
+        if not acquired:
+            return False
+        _cleanup_search_cache_tmp_files(cache_path)
+        close_search_cache_connections(index_dir)
+        write_search_cache_sqlite(cache_path, chunks, config)
     _SEARCH_CACHE_FAILURES.pop(str(index_dir.resolve()), None)
     return True
 
@@ -1233,6 +1338,24 @@ def write_search_cache_sqlite(path: Path, chunks: list[dict[str, Any]], config: 
 def update_search_cache_sqlite_incremental(path: Path, changed_chunks: list[dict[str, Any]], affected_sources: set[str], config: dict[str, Any]) -> bool:
     if not path.exists():
         return False
+    timeout = _SEARCH_CACHE_WRITE_LOCK_TIMEOUT_SECONDS
+    with _acquire_search_cache_write_lock(path, timeout) as acquired:
+        if not acquired:
+            return False
+        if not path.exists():
+            return False
+        _cleanup_search_cache_tmp_files(path)
+        return _update_search_cache_sqlite_incremental_locked(
+            path, changed_chunks, affected_sources, config
+        )
+
+
+def _update_search_cache_sqlite_incremental_locked(
+    path: Path,
+    changed_chunks: list[dict[str, Any]],
+    affected_sources: set[str],
+    config: dict[str, Any],
+) -> bool:
     search_cfg = config.get("search", {})
     dim = int(search_cfg.get("hash_dim", 512))
     preview_chars = int(search_cfg.get("preview_chars", 500))

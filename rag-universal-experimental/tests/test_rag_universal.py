@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from collections import Counter
 from unittest import mock
@@ -34,7 +37,9 @@ from rag_universal.core import (
     query_role_bias_multiplier,
     read_hint_with_role,
     read_plan_role_rank,
+    rebuild_search_cache,
     score_query_profile,
+    search_cache_path,
     section_anchor_multiplier,
     source_preview_chars,
     lookup_deps,
@@ -48,6 +53,11 @@ from rag_universal.core import (
     token_counts,
     trim_query_counts,
     watch_index,
+)
+from rag_universal.core import (
+    _acquire_search_cache_write_lock,
+    _cleanup_search_cache_tmp_files,
+    _search_cache_lock_path,
 )
 from rag_universal.eval_quality import benchmark_quality
 from rag_universal.eval_quality import evaluate_case_rows
@@ -166,6 +176,125 @@ class RagUniversalTest(unittest.TestCase):
         results = search_index(root, None, "strict stop guard", top_k=1)
         self.assertEqual(results[0]["source"], "README.md")
         self.assertIsNotNone(load_search_cache(index_dir))
+
+    def test_rebuild_search_cache_removes_orphan_tmp_files(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        index_dir = get_index_dir(root, load_config(root, None))
+        cache_path = search_cache_path(index_dir)
+        self.assertIsNotNone(cache_path)
+        orphan = cache_path.with_suffix(cache_path.suffix + ".tmp-99999")
+        orphan.write_bytes(b"")
+        old = time.time() - 7200  # 2 часа назад — > _SEARCH_CACHE_TMP_MAX_AGE_SECONDS
+        os.utime(orphan, (old, old))
+        fresh = cache_path.with_suffix(cache_path.suffix + ".tmp-88888")
+        fresh.write_bytes(b"")
+        close_search_cache_connections(index_dir)
+        self.assertTrue(rebuild_search_cache(index_dir, load_config(root, None)))
+        self.assertFalse(orphan.exists(), "stale orphan tmp must be removed")
+        self.assertTrue(fresh.exists(), "fresh tmp from another rebuild must not be deleted")
+        fresh.unlink()
+
+    def test_rebuild_search_cache_serializes_concurrent_writers(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        index_dir = get_index_dir(root, load_config(root, None))
+        cache_path = search_cache_path(index_dir)
+        self.assertIsNotNone(cache_path)
+        config = load_config(root, None)
+        close_search_cache_connections(index_dir)
+
+        results: list[bool] = []
+        errors: list[BaseException] = []
+        barrier = threading.Barrier(2)
+
+        def worker() -> None:
+            try:
+                barrier.wait(timeout=5.0)
+                ok = rebuild_search_cache(index_dir, config)
+                results.append(ok)
+            except BaseException as exc:  # noqa: BLE001 — собираем для diagnostics
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=60.0)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(results, [True, True])
+        # search.sqlite должна остаться целостной после двух последовательных
+        # rebuild'ов (lock сериализует их); отсутствие orphan tmp подтверждает,
+        # что каждый rebuild финализировался через os.replace без race.
+        for sibling in cache_path.parent.glob(cache_path.name + ".tmp-*"):
+            self.fail(f"unexpected leftover tmp after locked rebuild: {sibling.name}")
+        connection = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True)
+        try:
+            row = connection.execute("PRAGMA quick_check").fetchone()
+            self.assertEqual(str(row[0]).lower(), "ok")
+        finally:
+            connection.close()
+
+    def test_rebuild_search_cache_returns_false_when_writer_lock_unavailable(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        index_dir = get_index_dir(root, load_config(root, None))
+        cache_path = search_cache_path(index_dir)
+        self.assertIsNotNone(cache_path)
+        config = load_config(root, None)
+        close_search_cache_connections(index_dir)
+
+        lock_path = _search_cache_lock_path(cache_path)
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with mock.patch.object(
+                sys.modules["rag_universal.core"],
+                "_SEARCH_CACHE_WRITE_LOCK_TIMEOUT_SECONDS",
+                1.0,
+            ):
+                t0 = time.monotonic()
+                acquired_outcome = rebuild_search_cache(index_dir, config)
+                elapsed = time.monotonic() - t0
+            self.assertFalse(acquired_outcome)
+            self.assertGreaterEqual(elapsed, 0.5)
+            self.assertLess(elapsed, 5.0)
+        finally:
+            try:
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            os.close(fd)
+
+    def test_acquire_search_cache_write_lock_no_op_without_fcntl(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        index_dir = get_index_dir(root, load_config(root, None))
+        cache_path = search_cache_path(index_dir)
+        with mock.patch.object(sys.modules["rag_universal.core"], "_fcntl", None):
+            with _acquire_search_cache_write_lock(cache_path) as acquired:
+                self.assertTrue(acquired)
+
+    def test_cleanup_search_cache_tmp_files_respects_age_floor(self) -> None:
+        root = self.make_project()
+        build_index(root)
+        index_dir = get_index_dir(root, load_config(root, None))
+        cache_path = search_cache_path(index_dir)
+        fresh = cache_path.with_suffix(cache_path.suffix + ".tmp-1")
+        old = cache_path.with_suffix(cache_path.suffix + ".tmp-2")
+        fresh.write_bytes(b"")
+        old.write_bytes(b"")
+        past = time.time() - 10_000
+        os.utime(old, (past, past))
+        removed = _cleanup_search_cache_tmp_files(cache_path)
+        self.assertEqual(removed, 1)
+        self.assertTrue(fresh.exists())
+        self.assertFalse(old.exists())
+        fresh.unlink()
 
     def test_build_query_variants_includes_anchor_and_compact_focus_terms(self) -> None:
         root = self.make_project()
