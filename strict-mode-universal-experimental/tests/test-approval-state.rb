@@ -860,6 +860,155 @@ Dir.mktmpdir("strict-retry-collision-") do |dir|
   )
 end
 
+# Retry-collision e2e for MARKER tombstone (was uncovered): user
+# typed `strict-mode confirm <hash>` -> create_marker_for_prompt!
+# wrote confirm-* marker. Marker expired. Retry path creates new
+# pending + new marker via same approval_hash. Sweep must:
+#   - preserve original expired-confirm-* tombstone
+#   - rename new marker to a timestamped expired-confirm-* path
+#   - NOT silently overwrite either side
+Dir.mktmpdir("strict-marker-retry-") do |dir|
+  root = Pathname.new(dir)
+  install_root = root.join("install")
+  state_root = install_root.join("state")
+  install_root.mkpath
+  state_root.mkpath
+  project_dir = root.join("project")
+  cwd = project_dir
+  project_dir.mkpath
+
+  payload_block = {
+    "thread_id" => "marker-retry-thread",
+    "tool_name" => "shell",
+    "tool_input" => { "command" => "rm -rf /tmp/marker-retry-target" }
+  }
+  payload_block_hash = Digest::SHA256.hexdigest(JSON.generate(payload_block))
+  preflight = {
+    "trusted" => true,
+    "decision" => "block",
+    "reason_code" => "destructive-command",
+    "reason_hash" => Digest::SHA256.hexdigest("marker-retry"),
+    "attempted" => true
+  }
+
+  # First cycle: block -> user confirms -> marker created -> expire.
+  notice = StrictModeApprovalState.note_destructive_block!(
+    state_root: state_root,
+    install_root: install_root,
+    provider: "codex",
+    payload: payload_block,
+    payload_hash: payload_block_hash,
+    preflight: preflight,
+    cwd: cwd.to_s,
+    project_dir: project_dir.to_s
+  )
+  approval_hash = notice.fetch("approval_hash")
+  pending_path = Pathname.new(notice.fetch("pending_path"))
+  marker_path = pending_path.dirname.join("confirm-codex-#{StrictModeFdrCycle.session_identity("codex", payload_block).fetch("session_key")}-#{approval_hash}")
+
+  # user-prompt-submit с exact confirm phrase создаёт marker.
+  prompt_payload = {
+    "thread_id" => "marker-retry-thread",
+    "prompt" => "strict-mode confirm #{approval_hash}"
+  }
+  StrictModeApprovalState.record_user_prompt!(
+    state_root: state_root,
+    install_root: install_root,
+    provider: "codex",
+    payload: prompt_payload,
+    payload_hash: Digest::SHA256.hexdigest(JSON.generate(prompt_payload)),
+    cwd: cwd.to_s,
+    project_dir: project_dir.to_s
+  )
+  assert(
+    "marker file exists after confirm phrase",
+    marker_path.file?,
+    "expected marker at #{marker_path}"
+  )
+
+  # Состариваем pending для первого sweep'а.
+  rec = JSON.parse(pending_path.read)
+  past = Time.now.utc - 7200
+  rec["created_at"] = past.iso8601
+  rec["expires_at"] = (past + 60).iso8601
+  rec["pending_record_hash"] = ""
+  rec["pending_record_hash"] = StrictModeMetadata.hash_record(rec, "pending_record_hash")
+  pending_path.write(JSON.pretty_generate(rec) + "\n")
+
+  identity = StrictModeFdrCycle.session_identity("codex", payload_block)
+  ctx = identity.merge(
+    "provider" => "codex",
+    "cwd" => cwd.to_s,
+    "project_dir" => project_dir.to_s
+  )
+  StrictModeApprovalState.with_approval_locks!(install_root, state_root, ctx, "prompt-event") do
+    StrictModeApprovalState.sweep_expired_approvals!(state_root, ctx, 1)
+  end
+
+  base_marker_tombstone = marker_path.dirname.join("expired-#{marker_path.basename}")
+  assert(
+    "first sweep renamed marker to base expired-confirm tombstone",
+    base_marker_tombstone.file? && !marker_path.exist?,
+    "expected #{base_marker_tombstone.basename} to exist and marker gone"
+  )
+
+  # Retry: те же payload_block + approval_hash → новый pending + новый
+  # confirm marker. Возможно ли в production? Да: same destructive
+  # command, same session, user заново даёт confirm.
+  StrictModeApprovalState.note_destructive_block!(
+    state_root: state_root,
+    install_root: install_root,
+    provider: "codex",
+    payload: payload_block,
+    payload_hash: payload_block_hash,
+    preflight: preflight,
+    cwd: cwd.to_s,
+    project_dir: project_dir.to_s
+  )
+  prompt_payload2 = {
+    "thread_id" => "marker-retry-thread",
+    "prompt" => "strict-mode confirm #{approval_hash}"
+  }
+  StrictModeApprovalState.record_user_prompt!(
+    state_root: state_root,
+    install_root: install_root,
+    provider: "codex",
+    payload: prompt_payload2,
+    payload_hash: Digest::SHA256.hexdigest(JSON.generate(prompt_payload2)),
+    cwd: cwd.to_s,
+    project_dir: project_dir.to_s
+  )
+  assert(
+    "marker re-created after retry confirm",
+    marker_path.file?,
+    "expected fresh marker at #{marker_path}"
+  )
+
+  # Состариваем pending для второго sweep'а.
+  rec2 = JSON.parse(pending_path.read)
+  rec2["created_at"] = past.iso8601
+  rec2["expires_at"] = (past + 60).iso8601
+  rec2["pending_record_hash"] = ""
+  rec2["pending_record_hash"] = StrictModeMetadata.hash_record(rec2, "pending_record_hash")
+  pending_path.write(JSON.pretty_generate(rec2) + "\n")
+
+  StrictModeApprovalState.with_approval_locks!(install_root, state_root, ctx, "prompt-event") do
+    StrictModeApprovalState.sweep_expired_approvals!(state_root, ctx, 3)
+  end
+
+  retry_marker_tombstones = marker_path.dirname.glob("expired-confirm-codex-*-#{approval_hash}.*").reject { |p| p == base_marker_tombstone }
+  assert(
+    "second sweep created timestamped expired-confirm tombstone (preserves original)",
+    retry_marker_tombstones.length == 1 && base_marker_tombstone.file?,
+    "expected base + 1 timestamped marker tombstone, got base=#{base_marker_tombstone.file?}, retries=#{retry_marker_tombstones.map(&:basename).inspect}"
+  )
+  assert(
+    "marker gone after second sweep",
+    !marker_path.exist?,
+    "expected marker #{marker_path.basename} to be renamed away"
+  )
+end
+
 # unique_tombstone_for_retry чистая функция: проверяем shape для
 # .json pending и для no-extension confirm marker.
 ret_json = StrictModeApprovalState.unique_tombstone_for_retry(

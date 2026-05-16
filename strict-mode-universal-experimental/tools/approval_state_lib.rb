@@ -333,7 +333,10 @@ class StrictModeApprovalState
       # expired-audit binding и нельзя его терять. Даём НОВОМУ
       # tombstone'у уникальный timestamp suffix; original tombstone
       # сохраняется, new pending получает свой expired audit
-      # отдельно.
+      # отдельно. Сохраняем observability для operator'а — retry-
+      # collision должна быть видна в hook stderr даже когда sweep
+      # продолжает работать.
+      warn "approval-sweep retry-collision (same approval_hash re-block): preserving original tombstone, expiring new pending to timestamped path"
       expired_pending_path = unique_tombstone_for_retry(pending_path, "expired")
     end
 
