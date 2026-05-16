@@ -608,6 +608,159 @@ end
   )
 end
 
+# read_protected_min_age_sec coverage: 4 fallback paths (untrusted
+# baseline, key absent, malformed value, valid integer). Stub
+# StrictModeProtectedBaseline.load чтобы избежать full install setup.
+require_relative "../tools/protected_baseline_lib"
+
+def with_stubbed_baseline_load(loaded)
+  original = StrictModeProtectedBaseline.method(:load)
+  StrictModeProtectedBaseline.define_singleton_method(:load) { |**_kwargs| loaded }
+  yield
+ensure
+  StrictModeProtectedBaseline.define_singleton_method(:load, &original)
+end
+
+untrusted = { "trusted" => false, "config_results" => {}, "errors" => [], "config_errors" => [] }
+with_stubbed_baseline_load(untrusted) do
+  result = StrictModeApprovalState.read_protected_min_age_sec("/tmp/s", "/tmp/s/state", "/tmp/p")
+  assert(
+    "read_protected_min_age_sec returns DEFAULT when baseline untrusted",
+    result == StrictModeApprovalState::DEFAULT_CONFIRM_MIN_AGE_SEC,
+    "expected default, got #{result.inspect}"
+  )
+end
+
+trusted_no_key = {
+  "trusted" => true,
+  "config_results" => { "runtime.env" => { "records" => [{ "key" => "OTHER_KEY", "value" => "x" }] } },
+  "errors" => [],
+  "config_errors" => []
+}
+with_stubbed_baseline_load(trusted_no_key) do
+  result = StrictModeApprovalState.read_protected_min_age_sec("/tmp/s", "/tmp/s/state", "/tmp/p")
+  assert(
+    "read_protected_min_age_sec returns DEFAULT when key absent",
+    result == StrictModeApprovalState::DEFAULT_CONFIRM_MIN_AGE_SEC,
+    "expected default when key absent, got #{result.inspect}"
+  )
+end
+
+trusted_malformed = {
+  "trusted" => true,
+  "config_results" => { "runtime.env" => { "records" => [{ "key" => "STRICT_CONFIRM_MIN_AGE_SEC", "value" => "not-a-number" }] } },
+  "errors" => [],
+  "config_errors" => []
+}
+with_stubbed_baseline_load(trusted_malformed) do
+  result = StrictModeApprovalState.read_protected_min_age_sec("/tmp/s", "/tmp/s/state", "/tmp/p")
+  assert(
+    "read_protected_min_age_sec falls back on malformed integer",
+    result == StrictModeApprovalState::DEFAULT_CONFIRM_MIN_AGE_SEC,
+    "expected default fallback, got #{result.inspect}"
+  )
+end
+
+trusted_valid = {
+  "trusted" => true,
+  "config_results" => { "runtime.env" => { "records" => [{ "key" => "STRICT_CONFIRM_MIN_AGE_SEC", "value" => "45" }] } },
+  "errors" => [],
+  "config_errors" => []
+}
+with_stubbed_baseline_load(trusted_valid) do
+  result = StrictModeApprovalState.read_protected_min_age_sec("/tmp/s", "/tmp/s/state", "/tmp/p")
+  assert(
+    "read_protected_min_age_sec returns integer value when trusted+present+valid",
+    result == 45,
+    "expected 45, got #{result.inspect}"
+  )
+end
+
+# approval_evidence_cap_from_runtime coverage: 4 fallback paths +
+# install_root nil short-circuit.
+require_relative "../tools/record_edit_lib"
+
+result_nil_install = StrictModeRecordEdit.approval_evidence_cap_from_runtime(
+  "/tmp/s",
+  { "project_dir" => "/tmp/p" },
+  nil
+)
+assert(
+  "approval_evidence_cap_from_runtime returns nil when install_root nil",
+  result_nil_install.nil?,
+  "expected nil, got #{result_nil_install.inspect}"
+)
+
+with_stubbed_baseline_load(untrusted) do
+  result = StrictModeRecordEdit.approval_evidence_cap_from_runtime(
+    "/tmp/s",
+    { "project_dir" => "/tmp/p" },
+    "/tmp/install"
+  )
+  assert(
+    "approval_evidence_cap_from_runtime returns nil when baseline untrusted",
+    result.nil?,
+    "expected nil, got #{result.inspect}"
+  )
+end
+
+trusted_no_cap_key = {
+  "trusted" => true,
+  "config_results" => { "runtime.env" => { "records" => [{ "key" => "OTHER", "value" => "x" }] } },
+  "errors" => [],
+  "config_errors" => []
+}
+with_stubbed_baseline_load(trusted_no_cap_key) do
+  result = StrictModeRecordEdit.approval_evidence_cap_from_runtime(
+    "/tmp/s",
+    { "project_dir" => "/tmp/p" },
+    "/tmp/install"
+  )
+  assert(
+    "approval_evidence_cap_from_runtime returns nil when cap key absent",
+    result.nil?,
+    "expected nil when key absent, got #{result.inspect}"
+  )
+end
+
+trusted_malformed_cap = {
+  "trusted" => true,
+  "config_results" => { "runtime.env" => { "records" => [{ "key" => "STRICT_APPROVAL_EVIDENCE_CAP", "value" => "abc" }] } },
+  "errors" => [],
+  "config_errors" => []
+}
+with_stubbed_baseline_load(trusted_malformed_cap) do
+  result = StrictModeRecordEdit.approval_evidence_cap_from_runtime(
+    "/tmp/s",
+    { "project_dir" => "/tmp/p" },
+    "/tmp/install"
+  )
+  assert(
+    "approval_evidence_cap_from_runtime returns nil on malformed integer",
+    result.nil?,
+    "expected nil fallback, got #{result.inspect}"
+  )
+end
+
+trusted_valid_cap = {
+  "trusted" => true,
+  "config_results" => { "runtime.env" => { "records" => [{ "key" => "STRICT_APPROVAL_EVIDENCE_CAP", "value" => "1024" }] } },
+  "errors" => [],
+  "config_errors" => []
+}
+with_stubbed_baseline_load(trusted_valid_cap) do
+  result = StrictModeRecordEdit.approval_evidence_cap_from_runtime(
+    "/tmp/s",
+    { "project_dir" => "/tmp/p" },
+    "/tmp/install"
+  )
+  assert(
+    "approval_evidence_cap_from_runtime returns parsed integer when trusted+present+valid",
+    result == 1024,
+    "expected 1024, got #{result.inspect}"
+  )
+end
+
 if $failures.empty?
   puts "approval-state: #{$cases} cases ok"
 else
