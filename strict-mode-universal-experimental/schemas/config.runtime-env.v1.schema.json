@@ -76,6 +76,7 @@
       "STRICT_CONFIRM_MIN_AGE_SEC",
       "STRICT_FDR_SOURCE_MAX_BYTES",
       "STRICT_DIRTY_IGNORED_MAX_FILES",
+      "STRICT_APPROVAL_EVIDENCE_CAP",
       "STRICT_CONFIG_LINE_MAX_BYTES",
       "STRICT_CLAUDE_JUDGE_MODEL",
       "STRICT_CODEX_JUDGE_MODEL",
@@ -207,5 +208,5 @@
   "fixture_requirements": [
     "protected text parser plus runtime config domain matrix"
   ],
-  "profile_hash": "8a0390a7e6cd2ab89286c30654fcd671a94cbc5dca136b84508d512a804b59aa"
+  "profile_hash": "48a56bc94c3540d533ffa71447fcaf9187d46daa7674bc7f8106c82ec37fc0af"
 }
