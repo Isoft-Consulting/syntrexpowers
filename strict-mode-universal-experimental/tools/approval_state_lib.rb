@@ -213,20 +213,101 @@ class StrictModeApprovalState
       payload_sha256: payload_hash
     )
     ctx = context(provider: provider, payload: payload, cwd: cwd, project_dir: project_dir)
-    return { "prompt_seq" => 0, "marker_created" => false } unless ctx
+    return { "prompt_seq" => 0, "marker_created" => false, "expired_swept" => [] } unless ctx
 
     with_approval_locks!(install_root, state_root, ctx, "prompt-event") do
       prompt_event = append_prompt_event!(state_root, ctx, payload_hash, normalized)
       approval_hash = exact_confirm_hash(normalized.fetch("prompt").fetch("text"))
       marker = approval_hash ? create_marker_for_prompt!(state_root, ctx, approval_hash, prompt_event.fetch("prompt_seq")) : nil
+      # Чистим истёкшие confirmation markers и pending records одним
+      # next-user-turn проходом. Sweep идёт ПОСЛЕ append_prompt_event,
+      # чтобы prompt_seq был monotonic — невозможно создать и
+      # истечь маркер в одном prompt'е (acceptance line 47).
+      expired_swept = sweep_expired_approvals!(state_root, ctx, prompt_event.fetch("prompt_seq"))
       {
         "prompt_seq" => prompt_event.fetch("prompt_seq"),
         "prompt_event_hash" => prompt_event.fetch("record_hash"),
         "approval_hash" => approval_hash || "",
         "marker_created" => !marker.nil?,
-        "marker_hash" => marker ? marker.fetch("marker_hash") : ZERO_HASH
+        "marker_hash" => marker ? marker.fetch("marker_hash") : ZERO_HASH,
+        "expired_swept" => expired_swept
       }
     end
+  end
+
+  # Идёт ПОД approval session+global lock'ом (вызывается из record_user_prompt!).
+  # Возвращает список approval_hash'ей вычищенных pending'ов. Каждый
+  # expired pending порождает:
+  #   - audit с action="expired", source="user-prompt-hook"
+  #   - rename pending -> expired-pending-... (idempotent через File.rename)
+  #   - если соответствующий confirm-marker ещё активен — rename в
+  #     expired-confirm-...
+  # Любая ошибка при отдельном pending'е не должна валить весь sweep —
+  # warn'аем и продолжаем (other pending'и тоже expire).
+  def self.sweep_expired_approvals!(state_root, ctx, prompt_seq)
+    swept = []
+    return swept unless prompt_seq.is_a?(Integer) && prompt_seq.positive?
+
+    provider = ctx.fetch("provider")
+    session_key = ctx.fetch("session_key")
+    pattern = "pending-destructive-#{provider}-#{session_key}-*.json"
+    Pathname.glob(Pathname.new(state_root).join(pattern)).each do |path|
+      next unless path.file? && !path.symlink?
+
+      begin
+        record = load_json_or_nil(path)
+        next unless record
+        next unless expired?(record.fetch("expires_at"))
+
+        expire_pending_record!(state_root, ctx, record, path, prompt_seq)
+        swept << record.fetch("approval_hash")
+      rescue RuntimeError, SystemCallError, ArgumentError, KeyError => e
+        warn "approval-sweep skip #{path}: #{e.message}"
+      end
+    end
+    swept
+  end
+
+  def self.expire_pending_record!(state_root, ctx, pending, pending_path, prompt_seq)
+    approval_hash = pending.fetch("approval_hash")
+    marker_path = confirm_path(state_root, ctx, approval_hash)
+    pending_pre_rename = StrictModeGlobalLedger.fingerprint(pending_path)
+    marker_pre_rename = marker_path.exist? ? StrictModeGlobalLedger.fingerprint(marker_path) : nil
+    audit = append_destructive_audit!(
+      state_root,
+      ctx,
+      action: "expired",
+      source: "user-prompt-hook",
+      pending: pending,
+      prompt_seq: prompt_seq
+    )
+    expired_pending_path = pending_path.dirname.join("expired-#{pending_path.basename}")
+    File.rename(pending_path, expired_pending_path) if pending_path.file? && !pending_path.symlink?
+    StrictModeFdrCycle.append_session_ledger!(
+      state_root,
+      ctx,
+      target_path: expired_pending_path,
+      target_class: "expired-pending",
+      operation: "rename",
+      old_fingerprint: pending_pre_rename,
+      new_fingerprint: StrictModeGlobalLedger.fingerprint(expired_pending_path),
+      related_record_hash: audit.fetch("record_hash")
+    )
+    if marker_path.file? && !marker_path.symlink?
+      expired_marker_path = marker_path.dirname.join("expired-#{marker_path.basename}")
+      File.rename(marker_path, expired_marker_path)
+      StrictModeFdrCycle.append_session_ledger!(
+        state_root,
+        ctx,
+        target_path: expired_marker_path,
+        target_class: "expired-confirm-marker",
+        operation: "rename",
+        old_fingerprint: marker_pre_rename || StrictModeGlobalLedger.fingerprint(expired_marker_path),
+        new_fingerprint: StrictModeGlobalLedger.fingerprint(expired_marker_path),
+        related_record_hash: audit.fetch("record_hash")
+      )
+    end
+    audit
   end
 
   def self.consume_destructive_confirmation!(state_root:, install_root:, provider:, payload:, payload_hash:, preflight:, cwd:, project_dir:, min_age_sec: DEFAULT_CONFIRM_MIN_AGE_SEC)
