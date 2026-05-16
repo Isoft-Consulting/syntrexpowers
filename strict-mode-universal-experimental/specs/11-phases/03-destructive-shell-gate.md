@@ -25,7 +25,8 @@ Current implementation status:
 - Enforcing destructive-command blocks now create hash-bound `pending-destructive-*` records plus `destructive-log.jsonl` `blocked` audit records under the required global/session lock order, and provider block output includes the exact `strict-mode confirm <hash>` phrase.
 - `strict-hook user-prompt-submit` now allocates monotonic prompt events, accepts only an exact trimmed `strict-mode confirm <hash>` line for the matching next prompt marker, writes a `confirm-*` marker plus `confirmed` audit, and ignores generic affirmations.
 - Retried destructive commands now consume the matching confirmation marker exactly once by renaming it to `consumed-confirm-*.json`, appending `consumed` audit plus tombstone ledger evidence, and converting the preflight to `destructive-confirmed` allow.
-- Permission-request enforcement, previous-turn baseline evidence snapshots, min-age handling for pre-existing confirmations, and audited expiry cleanup are still incomplete. Those pieces must land before Phase 3 can be marked fully enforcing-ready across both providers.
+- `StrictModeApprovalState.consume_destructive_confirmation!` now enforces a `STRICT_CONFIRM_MIN_AGE_SEC` anti-forgery guard: markers with `approval_prompt_seq` matching the current prompt sequence are consumable immediately on retry, while markers from a different prompt must satisfy `(now - created_at) >= STRICT_CONFIRM_MIN_AGE_SEC` (bound `[0, 60]`). `bin/strict-hook` reads the runtime setting and passes it on every consume call. Malformed or missing `created_at` fails closed.
+- Previous-turn baseline evidence snapshots and audited expiry cleanup are still incomplete. Those pieces must land before Phase 3 can be marked fully enforcing-ready across both providers.
 
 Acceptance:
 

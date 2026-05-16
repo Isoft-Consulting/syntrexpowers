@@ -1111,7 +1111,8 @@ if preflight.fetch("attempted") &&
       payload_hash: payload_hash,
       preflight: preflight,
       cwd: cwd,
-      project_dir: hook_project_dir(cwd)
+      project_dir: hook_project_dir(cwd),
+      min_age_sec: protected_runtime_settings(state_root).fetch("STRICT_CONFIRM_MIN_AGE_SEC", "0").to_i
     )
     if consumed.fetch("consumed")
       approval_summary = consumed

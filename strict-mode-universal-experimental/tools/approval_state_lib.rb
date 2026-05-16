@@ -18,6 +18,7 @@ class StrictModeApprovalState
   SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze
   CONFIRM_LINE = /\Astrict-mode confirm ([0-9a-f]{64})\z/.freeze
   DEFAULT_CONFIRM_MAX_AGE_SEC = 600
+  DEFAULT_CONFIRM_MIN_AGE_SEC = 0
 
   PENDING_DESTRUCTIVE_FIELDS = %w[
     schema_version
@@ -228,7 +229,7 @@ class StrictModeApprovalState
     end
   end
 
-  def self.consume_destructive_confirmation!(state_root:, install_root:, provider:, payload:, payload_hash:, preflight:, cwd:, project_dir:)
+  def self.consume_destructive_confirmation!(state_root:, install_root:, provider:, payload:, payload_hash:, preflight:, cwd:, project_dir:, min_age_sec: DEFAULT_CONFIRM_MIN_AGE_SEC)
     return { "consumed" => false } unless preflight.is_a?(Hash) &&
                                          preflight.fetch("trusted", false) &&
                                          preflight.fetch("decision", "") == "block" &&
@@ -268,6 +269,10 @@ class StrictModeApprovalState
       raise "confirmation marker pending hash mismatch" unless marker.fetch("pending_record_hash") == pending.fetch("pending_record_hash")
       raise "confirmation marker ledger missing" unless marker_ledger_for_marker(state_root, ctx, marker, marker_path)
       raise "confirmation marker expired" if expired?(marker.fetch("expires_at"))
+      current_prompt_seq = load_prompt_sequence(prompt_sequence_path(state_root, ctx), ctx).fetch("last_prompt_seq")
+      if fails_min_age?(marker, current_prompt_seq, min_age_sec)
+        raise "confirmation marker fails min-age anti-forgery (created_at=#{marker.fetch("created_at")}, min_age_sec=#{min_age_sec.to_i})"
+      end
       confirmed = audit_record_by_hash(state_root, marker.fetch("approval_log_record_hash"))
       raise "confirmation audit missing" unless confirmed &&
                                             confirmed.fetch("action") == "confirmed" &&
@@ -969,6 +974,25 @@ class StrictModeApprovalState
   def self.expired?(iso8601)
     Time.iso8601(iso8601) <= Time.now.utc
   rescue ArgumentError
+    true
+  end
+
+  # Anti-forgery min-age guard для confirmation markers.
+  # Маркер, созданный в current user-prompt-submit hook (тот же
+  # prompt_seq, что сейчас в prompt-sequence), допустим к consume
+  # сразу — это легитимный "type confirm, immediately retry"
+  # сценарий. Маркер с approval_prompt_seq != current допустим
+  # только если он на диске уже не меньше min_age_sec секунд —
+  # это защита от внешнего pre-existing forge файла, который
+  # появился до старта strict-hook'а на ту же сессию.
+  def self.fails_min_age?(marker, current_prompt_seq, min_age_sec, now: Time.now.utc)
+    threshold = min_age_sec.to_i
+    return false if threshold <= 0
+    return false if marker.fetch("approval_prompt_seq") == current_prompt_seq
+
+    created_at = Time.iso8601(marker.fetch("created_at"))
+    (now - created_at) < threshold
+  rescue ArgumentError, KeyError
     true
   end
 
