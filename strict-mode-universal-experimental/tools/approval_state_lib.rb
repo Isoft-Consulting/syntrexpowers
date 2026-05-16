@@ -271,8 +271,38 @@ class StrictModeApprovalState
   def self.expire_pending_record!(state_root, ctx, pending, pending_path, prompt_seq)
     approval_hash = pending.fetch("approval_hash")
     marker_path = confirm_path(state_root, ctx, approval_hash)
+    expired_pending_path = pending_path.dirname.join("expired-#{pending_path.basename}")
+    # Idempotency: если tombstone уже существует — pending уже был
+    # expire'нут в прошлом sweep'е. Не trigger audit append повторно.
+    # Двусмысленный случай (tombstone + pending одновременно) трактуем
+    # как требующий manual review: warn и skip, чтобы не затереть
+    # старый tombstone и не плодить duplicate audits.
+    if expired_pending_path.file?
+      if pending_path.file?
+        warn "approval-sweep skip ambiguous tombstone+pending: #{pending_path.basename}"
+      end
+      return nil
+    end
+
     pending_pre_rename = StrictModeGlobalLedger.fingerprint(pending_path)
     marker_pre_rename = marker_path.exist? ? StrictModeGlobalLedger.fingerprint(marker_path) : nil
+
+    # Rename FIRST: если rename падает (disk full, permission), audit
+    # ещё не записан, и следующий sweep сможет re-try с того же
+    # места. Если бы порядок был обратный, после rename failure
+    # остался бы pending + audit "expired" — каждый последующий sweep
+    # снова audited expiry, создавая дубли.
+    File.rename(pending_path, expired_pending_path) if pending_path.file? && !pending_path.symlink?
+
+    expired_marker_path = nil
+    if marker_path.file? && !marker_path.symlink?
+      expired_marker_path = marker_path.dirname.join("expired-#{marker_path.basename}")
+      File.rename(marker_path, expired_marker_path)
+    end
+
+    # После успешного rename(s) пишем audit и ledger entries. Если на
+    # этом этапе случится failure, файлы уже в tombstone state, и
+    # next sweep ранее проверит expired_pending_path.exist? и пропустит.
     audit = append_destructive_audit!(
       state_root,
       ctx,
@@ -281,8 +311,6 @@ class StrictModeApprovalState
       pending: pending,
       prompt_seq: prompt_seq
     )
-    expired_pending_path = pending_path.dirname.join("expired-#{pending_path.basename}")
-    File.rename(pending_path, expired_pending_path) if pending_path.file? && !pending_path.symlink?
     StrictModeFdrCycle.append_session_ledger!(
       state_root,
       ctx,
@@ -293,9 +321,7 @@ class StrictModeApprovalState
       new_fingerprint: StrictModeGlobalLedger.fingerprint(expired_pending_path),
       related_record_hash: audit.fetch("record_hash")
     )
-    if marker_path.file? && !marker_path.symlink?
-      expired_marker_path = marker_path.dirname.join("expired-#{marker_path.basename}")
-      File.rename(marker_path, expired_marker_path)
+    if expired_marker_path
       StrictModeFdrCycle.append_session_ledger!(
         state_root,
         ctx,
@@ -1058,14 +1084,23 @@ class StrictModeApprovalState
     true
   end
 
+  # Cap на размер approval_evidence в одном turn-baseline: защита
+  # от unbounded grow'a baseline JSON при тысячах consume audits
+  # между turns (adversarial или buggy session). При превышении —
+  # берём только последние N записей (по времени), это сохраняет
+  # самое свежее доказательство consumption'а.
+  TURN_BASELINE_APPROVAL_EVIDENCE_CAP = 512
+
   # Возвращает evidence-entries по destructive-confirmation
   # consume'ам за период (since, until]. Используется
   # turn-baseline builder'ом, чтобы зафиксировать previous-turn
   # consumption proof (acceptance line 53). Каждая запись несёт
   # approval_hash, audit record_hash и pre-rename fingerprint —
   # этого достаточно, чтобы Stop/judge мог per-turn проверить, что
-  # consume действительно прошёл через trusted chain.
-  def self.consumed_audit_evidence_since(state_root, ctx, since_iso8601, until_iso8601 = nil)
+  # consume действительно прошёл через trusted chain. Лимит размера
+  # — TURN_BASELINE_APPROVAL_EVIDENCE_CAP; результат включает поле
+  # truncated в overflow record при срабатывании cap'а.
+  def self.consumed_audit_evidence_since(state_root, ctx, since_iso8601, until_iso8601 = nil, cap: TURN_BASELINE_APPROVAL_EVIDENCE_CAP)
     threshold_since = Time.iso8601(since_iso8601.to_s)
     threshold_until = until_iso8601.nil? ? nil : Time.iso8601(until_iso8601.to_s)
     records = load_audit_records(destructive_log_path(state_root))
@@ -1079,7 +1114,12 @@ class StrictModeApprovalState
 
       true
     end
-    matched.map do |record|
+    truncated_count = 0
+    if cap.is_a?(Integer) && cap.positive? && matched.length > cap
+      truncated_count = matched.length - cap
+      matched = matched.last(cap)
+    end
+    entries = matched.map do |record|
       {
         "approval_hash" => record.fetch("approval_hash"),
         "audit_hash" => record.fetch("record_hash"),
@@ -1089,7 +1129,22 @@ class StrictModeApprovalState
         "consumed_at" => record.fetch("ts")
       }
     end
-  rescue ArgumentError, KeyError, SystemCallError
+    if truncated_count.positive?
+      entries.unshift(
+        "truncated_count" => truncated_count,
+        "truncation_reason" => "approval-evidence-cap-#{cap}"
+      )
+    end
+    entries
+  rescue RuntimeError, ArgumentError, KeyError, SystemCallError, JSON::ParserError
+    # destructive-log читается без global lock (writer держит global
+    # lock, sweep/baseline под session lock). В очень редкой race
+    # window load_audit_records может увидеть partial-write line:
+    #   - blank audit line (RuntimeError) — sentinel из load_audit_records,
+    #   - неполный JSON (JSON::ParserError) — фрагмент строки без `}`.
+    # Возвращаем пустой evidence: baseline соберётся без proof'а
+    # консумов этого turn'а, но Stop gate не сломается. Next turn
+    # перечитает чистый файл.
     []
   end
 

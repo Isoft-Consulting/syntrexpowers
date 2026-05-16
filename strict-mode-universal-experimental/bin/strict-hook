@@ -195,7 +195,7 @@ def protected_runtime_settings(state_root)
   runtime.fetch("records").each_with_object({}) do |record, settings|
     settings[record.fetch("key")] = record.fetch("value")
   end
-rescue RuntimeError, SystemCallError, ArgumentError => e
+rescue RuntimeError, SystemCallError, ArgumentError, KeyError => e
   warn "strict-hook protected runtime config unavailable: #{e.message}"
   {}
 end

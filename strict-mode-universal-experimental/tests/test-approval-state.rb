@@ -1,8 +1,13 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+require "json"
+require "pathname"
+require "securerandom"
 require "time"
+require "tmpdir"
 require_relative "../tools/approval_state_lib"
+require_relative "../tools/metadata_lib"
 
 $cases = 0
 $failures = []
@@ -156,6 +161,134 @@ assert(
     now: now
   ),
   "expected negative min_age_sec to be treated as disabled"
+)
+
+# consumed_audit_evidence_since: пустой destructive-log → пустая
+# evidence-выдача, не crash. Покрывает rescue ветку.
+Dir.mktmpdir("strict-evidence-") do |dir|
+  state_root = Pathname.new(dir)
+  ctx = {
+    "provider" => "codex",
+    "session_key" => "test-session",
+    "raw_session_hash" => "0" * 64,
+    "cwd" => "/tmp/test",
+    "project_dir" => "/tmp/test"
+  }
+  evidence = StrictModeApprovalState.consumed_audit_evidence_since(
+    state_root,
+    ctx,
+    "1970-01-01T00:00:00Z",
+    Time.now.utc.iso8601
+  )
+  assert(
+    "consumed_audit_evidence_since returns empty array when destructive log absent",
+    evidence == [],
+    "expected [], got #{evidence.inspect}"
+  )
+end
+
+# consumed_audit_evidence_since: malformed JSONL (partial write race)
+# → пустая выдача, не crash.
+Dir.mktmpdir("strict-evidence-") do |dir|
+  state_root = Pathname.new(dir)
+  log = StrictModeApprovalState.destructive_log_path(state_root)
+  # Записываем некорректный fragment чтобы спровоцировать RuntimeError
+  # из load_audit_records ("blank audit line").
+  log.write("{\n\n")
+  ctx = {
+    "provider" => "codex",
+    "session_key" => "test-session",
+    "raw_session_hash" => "0" * 64,
+    "cwd" => "/tmp/test",
+    "project_dir" => "/tmp/test"
+  }
+  evidence = StrictModeApprovalState.consumed_audit_evidence_since(
+    state_root,
+    ctx,
+    "1970-01-01T00:00:00Z"
+  )
+  assert(
+    "consumed_audit_evidence_since rescues malformed audit log",
+    evidence == [],
+    "expected [] on malformed log, got #{evidence.inspect}"
+  )
+end
+
+# consumed_audit_evidence_since cap: если matched > cap, отдаём
+# последние cap записей плюс truncation header.
+require_relative "../tools/global_ledger_lib"
+Dir.mktmpdir("strict-evidence-") do |dir|
+  state_root = Pathname.new(dir)
+  ctx = {
+    "provider" => "codex",
+    "session_key" => "cap-session",
+    "raw_session_hash" => "0" * 64,
+    "cwd" => "/tmp/test",
+    "project_dir" => "/tmp/test"
+  }
+  log = StrictModeApprovalState.destructive_log_path(state_root)
+  missing_fingerprint = StrictModeGlobalLedger.fingerprint(state_root.join("missing-#{SecureRandom.hex(4)}"))
+  previous_hash = "0" * 64
+  base_ts = Time.utc(2026, 5, 16, 12, 0, 0)
+  10.times do |i|
+    record = {
+      "schema_version" => 1,
+      "log" => "destructive",
+      "action" => "consumed",
+      "provider" => "codex",
+      "session_key" => "cap-session",
+      "raw_session_hash" => "0" * 64,
+      "cwd" => "/tmp/test",
+      "project_dir" => "/tmp/test",
+      "approval_hash" => format("%064x", i + 1),
+      "pending_record_hash" => format("%064x", 0x1000 + i),
+      "next_user_prompt_marker" => "prompt-seq:1",
+      "prompt_seq" => 0,
+      "source" => "pre-tool-hook",
+      "ts" => (base_ts + i).iso8601,
+      "previous_record_hash" => previous_hash,
+      "command_hash" => format("%064x", 0x2000 + i),
+      "command_hash_source" => "shell-string",
+      "marker_hash" => format("%064x", 0x3000 + i),
+      "active_marker_path" => "/tmp/marker-#{i}",
+      "consumed_tombstone_path" => "/tmp/tombstone-#{i}",
+      "marker_pre_rename_fingerprint" => missing_fingerprint,
+      "tombstone_fingerprint" => missing_fingerprint,
+      "record_hash" => ""
+    }
+    record["record_hash"] = StrictModeMetadata.hash_record(record, "record_hash")
+    previous_hash = record["record_hash"]
+    log.open("a") { |f| f.write(JSON.generate(record) + "\n") }
+  end
+  evidence = StrictModeApprovalState.consumed_audit_evidence_since(
+    state_root,
+    ctx,
+    "1970-01-01T00:00:00Z",
+    nil,
+    cap: 3
+  )
+  assert(
+    "consumed_audit_evidence_since cap returns truncation header + last N",
+    evidence.length == 4 && evidence.first["truncated_count"] == 7,
+    "expected 4 entries (header+3) with truncated_count=7, got #{evidence.inspect}"
+  )
+  assert(
+    "consumed_audit_evidence_since cap keeps newest entries",
+    evidence.last["approval_hash"] == format("%064x", 10),
+    "expected last approval_hash to be hash of i=9, got #{evidence.last.inspect}"
+  )
+end
+
+# fails_min_age? при cap-параметре передаётся как Integer 0 → guard off
+assert(
+  "integer 0 min_age_sec disables guard explicitly",
+  !StrictModeApprovalState.fails_min_age?(
+    marker(approval_prompt_seq: 1, created_at: now.iso8601),
+    2,
+    0,
+    now: now
+  ),
+  "expected Integer 0 to disable guard"
 )
 
 if $failures.empty?
