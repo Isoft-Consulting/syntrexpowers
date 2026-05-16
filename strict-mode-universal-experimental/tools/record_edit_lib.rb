@@ -6,6 +6,7 @@ require "json"
 require "pathname"
 require "securerandom"
 require "time"
+require_relative "approval_state_lib"
 require_relative "destructive_gate_lib"
 require_relative "fdr_cycle_lib"
 require_relative "global_ledger_lib"
@@ -173,6 +174,16 @@ module StrictModeRecordEdit
       raise "#{path}: previous turn baseline tuple mismatch" if previous && !baseline_context_matches?(previous, context)
 
       now = Time.now.utc.iso8601
+      # previous-turn consumption proof: записываем все consume-аудиты,
+      # случившиеся между предыдущим updated_at и now. Acceptance
+      # line 53: marker fingerprints + audit record hashes per turn.
+      approval_evidence_since = previous ? previous.fetch("updated_at") : "1970-01-01T00:00:00Z"
+      approval_evidence = StrictModeApprovalState.consumed_audit_evidence_since(
+        state_root,
+        context,
+        approval_evidence_since,
+        now
+      )
       record = {
         "schema_version" => 1,
         "kind" => "turn-baseline",
@@ -186,7 +197,7 @@ module StrictModeRecordEdit
         "log_offsets" => current_log_offsets(state_root, context),
         "last_sequences" => current_sequences(state_root, context),
         "last_safe_stop_sequences" => previous ? previous.fetch("last_safe_stop_sequences") : zero_sequences,
-        "approval_evidence" => [],
+        "approval_evidence" => approval_evidence,
         "created_at" => previous ? previous.fetch("created_at") : now,
         "updated_at" => now,
         "baseline_hash" => ""

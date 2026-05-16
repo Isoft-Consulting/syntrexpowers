@@ -1058,6 +1058,47 @@ class StrictModeApprovalState
     true
   end
 
+  # Возвращает evidence-entries по destructive-confirmation
+  # consume'ам за период (since, until]. Используется
+  # turn-baseline builder'ом, чтобы зафиксировать previous-turn
+  # consumption proof (acceptance line 53). Каждая запись несёт
+  # approval_hash, audit record_hash и pre-rename fingerprint —
+  # этого достаточно, чтобы Stop/judge мог per-turn проверить, что
+  # consume действительно прошёл через trusted chain.
+  def self.consumed_audit_evidence_since(state_root, ctx, since_iso8601, until_iso8601 = nil)
+    threshold_since = Time.iso8601(since_iso8601.to_s)
+    threshold_until = until_iso8601.nil? ? nil : Time.iso8601(until_iso8601.to_s)
+    records = load_audit_records(destructive_log_path(state_root))
+    matched = records.select do |record|
+      next false unless record.fetch("action") == "consumed"
+      next false unless evidence_tuple_matches?(record, ctx)
+
+      ts = Time.iso8601(record.fetch("ts"))
+      next false unless ts > threshold_since
+      next false if threshold_until && ts > threshold_until
+
+      true
+    end
+    matched.map do |record|
+      {
+        "approval_hash" => record.fetch("approval_hash"),
+        "audit_hash" => record.fetch("record_hash"),
+        "marker_hash" => record.fetch("marker_hash"),
+        "marker_pre_rename_fingerprint" => record.fetch("marker_pre_rename_fingerprint"),
+        "tombstone_fingerprint" => record.fetch("tombstone_fingerprint"),
+        "consumed_at" => record.fetch("ts")
+      }
+    end
+  rescue ArgumentError, KeyError, SystemCallError
+    []
+  end
+
+  def self.evidence_tuple_matches?(record, ctx)
+    %w[provider session_key raw_session_hash cwd project_dir].all? do |field|
+      record.fetch(field) == ctx.fetch(field)
+    end
+  end
+
   # Anti-forgery min-age guard для confirmation markers.
   # Маркер, созданный в current user-prompt-submit hook (тот же
   # prompt_seq, что сейчас в prompt-sequence), допустим к consume
