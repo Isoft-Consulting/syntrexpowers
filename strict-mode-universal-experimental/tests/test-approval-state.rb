@@ -387,6 +387,191 @@ end
 require_relative "../tools/fdr_cycle_lib"
 require_relative "../tools/global_ledger_lib"
 
+# End-to-end sweep test: создаём pending через настоящий
+# note_destructive_block!, состариваем его expires_at и
+# проверяем что sweep:
+#   - порождает корректный "expired" audit с source=user-prompt-hook
+#   - переименовывает pending в expired-pending-*.json
+#   - валидирует все ledger entries через validate_session_ledger_record
+#     (см. critical fix выше — без этого блок упал бы)
+Dir.mktmpdir("strict-sweep-e2e-") do |dir|
+  root = Pathname.new(dir)
+  install_root = root.join("install")
+  state_root = install_root.join("state")
+  install_root.mkpath
+  state_root.mkpath
+  project_dir = root.join("project")
+  cwd = project_dir
+  project_dir.mkpath
+
+  payload = {
+    "thread_id" => "sweep-e2e-thread-001",
+    "tool_name" => "shell",
+    "tool_input" => { "command" => "rm -rf /tmp/dummy-target" }
+  }
+  payload_hash = Digest::SHA256.hexdigest(JSON.generate(payload))
+  reason_text = "destructive command blocked"
+  preflight = {
+    "trusted" => true,
+    "decision" => "block",
+    "reason_code" => "destructive-command",
+    "reason_hash" => Digest::SHA256.hexdigest(reason_text),
+    "attempted" => true
+  }
+
+  notice = StrictModeApprovalState.note_destructive_block!(
+    state_root: state_root,
+    install_root: install_root,
+    provider: "codex",
+    payload: payload,
+    payload_hash: payload_hash,
+    preflight: preflight,
+    cwd: cwd.to_s,
+    project_dir: project_dir.to_s
+  )
+  assert(
+    "note_destructive_block! produced an approval notice with pending_path",
+    notice.is_a?(Hash) && notice["pending_path"].is_a?(String),
+    "expected notice with pending_path, got #{notice.inspect}"
+  )
+
+  pending_path = Pathname.new(notice.fetch("pending_path"))
+  approval_hash = notice.fetch("approval_hash")
+  pending_record = JSON.parse(pending_path.read)
+  # Состариваем pending: created_at в прошлое, expires_at в прошлое.
+  past = Time.now.utc - 7200
+  pending_record["created_at"] = past.iso8601
+  pending_record["expires_at"] = (past + 60).iso8601
+  pending_record["pending_record_hash"] = ""
+  pending_record["pending_record_hash"] = StrictModeMetadata.hash_record(pending_record, "pending_record_hash")
+  # Записываем mutate'нутую копию: pending_record_hash changed, поэтому
+  # в production его бы отверг marker_ledger_for_pending. Здесь sweep
+  # обращается только к expires_at и approval_hash, и удаляет файл.
+  pending_path.write(JSON.pretty_generate(pending_record) + "\n")
+
+  identity = StrictModeFdrCycle.session_identity("codex", payload)
+  ctx = identity.merge(
+    "provider" => "codex",
+    "cwd" => cwd.to_s,
+    "project_dir" => project_dir.to_s
+  )
+
+  sweep = nil
+  StrictModeApprovalState.with_approval_locks!(install_root, state_root, ctx, "prompt-event") do
+    sweep = StrictModeApprovalState.sweep_expired_approvals!(state_root, ctx, 1)
+  end
+
+  assert(
+    "sweep emits approval_hash in swept list for the expired pending",
+    sweep.is_a?(Hash) && sweep.fetch("swept").include?(approval_hash),
+    "expected approval_hash #{approval_hash} in swept, got #{sweep.inspect[0, 400]}"
+  )
+  assert(
+    "sweep reports no per-pending errors for valid expired pending",
+    sweep.fetch("errors").empty?,
+    "expected no errors, got #{sweep.fetch("errors").inspect}"
+  )
+
+  expired_pending_path = pending_path.dirname.join("expired-#{pending_path.basename}")
+  assert(
+    "sweep renames pending JSON to expired-pending-*.json",
+    expired_pending_path.file? && !pending_path.exist?,
+    "expected #{expired_pending_path} to exist and #{pending_path} to be gone"
+  )
+
+  audit_records = StrictModeApprovalState.load_audit_records(
+    StrictModeApprovalState.destructive_log_path(state_root)
+  )
+  expired_audit = audit_records.find do |record|
+    record.fetch("action") == "expired" &&
+      record.fetch("approval_hash") == approval_hash &&
+      record.fetch("source") == "user-prompt-hook"
+  end
+  assert(
+    "destructive-log carries expired audit with source=user-prompt-hook for swept pending",
+    expired_audit && expired_audit.fetch("prompt_seq") == 1,
+    "expected expired audit with prompt_seq=1, got #{expired_audit.inspect[0, 400]}"
+  )
+end
+
+# Idempotency e2e: повторный sweep после того как pending уже expired
+# и rename'нут — не должен ни re-emit'ить audit, ни падать. Чекает
+# expire_pending_decision :skip_tombstone_only branch на real fs.
+Dir.mktmpdir("strict-sweep-idemp-") do |dir|
+  root = Pathname.new(dir)
+  install_root = root.join("install")
+  state_root = install_root.join("state")
+  install_root.mkpath
+  state_root.mkpath
+  project_dir = root.join("project")
+  cwd = project_dir
+  project_dir.mkpath
+
+  payload = {
+    "thread_id" => "sweep-idemp-thread-002",
+    "tool_name" => "shell",
+    "tool_input" => { "command" => "rm -rf /tmp/dummy-target-2" }
+  }
+  payload_hash = Digest::SHA256.hexdigest(JSON.generate(payload))
+  preflight = {
+    "trusted" => true,
+    "decision" => "block",
+    "reason_code" => "destructive-command",
+    "reason_hash" => Digest::SHA256.hexdigest("again"),
+    "attempted" => true
+  }
+
+  notice = StrictModeApprovalState.note_destructive_block!(
+    state_root: state_root,
+    install_root: install_root,
+    provider: "codex",
+    payload: payload,
+    payload_hash: payload_hash,
+    preflight: preflight,
+    cwd: cwd.to_s,
+    project_dir: project_dir.to_s
+  )
+  pending_path = Pathname.new(notice.fetch("pending_path"))
+  record = JSON.parse(pending_path.read)
+  past = Time.now.utc - 7200
+  record["created_at"] = past.iso8601
+  record["expires_at"] = (past + 60).iso8601
+  record["pending_record_hash"] = ""
+  record["pending_record_hash"] = StrictModeMetadata.hash_record(record, "pending_record_hash")
+  pending_path.write(JSON.pretty_generate(record) + "\n")
+
+  identity = StrictModeFdrCycle.session_identity("codex", payload)
+  ctx = identity.merge(
+    "provider" => "codex",
+    "cwd" => cwd.to_s,
+    "project_dir" => project_dir.to_s
+  )
+
+  first_sweep = nil
+  second_sweep = nil
+  StrictModeApprovalState.with_approval_locks!(install_root, state_root, ctx, "prompt-event") do
+    first_sweep = StrictModeApprovalState.sweep_expired_approvals!(state_root, ctx, 2)
+    second_sweep = StrictModeApprovalState.sweep_expired_approvals!(state_root, ctx, 3)
+  end
+
+  audit_before = StrictModeApprovalState.load_audit_records(StrictModeApprovalState.destructive_log_path(state_root))
+  expired_after_two_sweeps = audit_before.count do |record|
+    record.fetch("action") == "expired" &&
+      record.fetch("approval_hash") == notice.fetch("approval_hash")
+  end
+
+  assert(
+    "second sweep is idempotent (no new swept entries)",
+    second_sweep.is_a?(Hash) && second_sweep.fetch("swept").empty? && second_sweep.fetch("errors").empty?,
+    "expected empty second sweep, got #{second_sweep.inspect}"
+  )
+  assert(
+    "exactly one expired audit per pending after two sweeps",
+    expired_after_two_sweeps == 1,
+    "expected 1 expired audit, got #{expired_after_two_sweeps} (audits: #{audit_before.size})"
+  )
+end
+
 %w[expired-pending expired-confirm-marker].each do |target_class|
   ctx = {
     "provider" => "codex",
