@@ -282,6 +282,24 @@ class StrictModeApprovalState
     result
   end
 
+  # Возвращает уникальный путь tombstone'а для retry-сценария: тот же
+  # approval_hash → тот же filename pending'a, но если предыдущий
+  # tombstone уже занят (legitimate retry после expired), добавляем
+  # UTC timestamp suffix чтобы не затереть предыдущее доказательство.
+  # Для confirm-marker (no .json extension) helper тоже работает —
+  # extname возвращает "" и мы получаем file.<ts>.tombstone-like name.
+  def self.unique_tombstone_for_retry(source_path, prefix)
+    timestamp = Time.now.utc.strftime("%Y%m%dT%H%M%S%6NZ")
+    extname = source_path.extname
+    stem = source_path.basename(extname).to_s
+    name = if extname.empty?
+             "#{prefix}-#{stem}.#{timestamp}"
+           else
+             "#{prefix}-#{stem}.#{timestamp}#{extname}"
+           end
+    source_path.dirname.join(name)
+  end
+
   # Pure-функция: принимает решение, надо ли expire'нуть pending.
   # Вынесено отдельно от expire_pending_record! чтобы можно было
   # unit-тестировать идемпотентность без full chain (locks, audit
@@ -305,11 +323,18 @@ class StrictModeApprovalState
     expired_pending_path = pending_path.dirname.join("expired-#{pending_path.basename}")
     decision = expire_pending_decision(pending_path, expired_pending_path)
     case decision
-    when :skip_ambiguous
-      warn "approval-sweep skip ambiguous tombstone+pending: #{pending_path.basename}"
-      return nil
     when :skip_tombstone_only, :skip_nothing
       return nil
+    when :skip_ambiguous
+      # Legitimate retry: user снова блокирует ту же destructive
+      # команду (same provider/session/cwd/approval_hash → same
+      # pending filename) после того как предыдущий pending уже
+      # expired в tombstone. Старый tombstone несёт original
+      # expired-audit binding и нельзя его терять. Даём НОВОМУ
+      # tombstone'у уникальный timestamp suffix; original tombstone
+      # сохраняется, new pending получает свой expired audit
+      # отдельно.
+      expired_pending_path = unique_tombstone_for_retry(pending_path, "expired")
     end
 
     pending_pre_rename = StrictModeGlobalLedger.fingerprint(pending_path)
@@ -324,7 +349,8 @@ class StrictModeApprovalState
 
     expired_marker_path = nil
     if marker_path.file? && !marker_path.symlink?
-      expired_marker_path = marker_path.dirname.join("expired-#{marker_path.basename}")
+      base_expired_marker = marker_path.dirname.join("expired-#{marker_path.basename}")
+      expired_marker_path = base_expired_marker.exist? ? unique_tombstone_for_retry(marker_path, "expired") : base_expired_marker
       File.rename(marker_path, expired_marker_path)
     end
 

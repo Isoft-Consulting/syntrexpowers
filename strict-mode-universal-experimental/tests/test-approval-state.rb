@@ -761,6 +761,127 @@ with_stubbed_baseline_load(trusted_valid_cap) do
   )
 end
 
+# Retry-collision e2e: первый pending expired → tombstone. Юзер
+# создаёт второй pending с тем же approval_hash. Sweep НЕ должен
+# выкинуть его как ambiguous: должен дать новому tombstone'у
+# уникальный timestamp suffix и записать второй expired audit.
+Dir.mktmpdir("strict-retry-collision-") do |dir|
+  root = Pathname.new(dir)
+  install_root = root.join("install")
+  state_root = install_root.join("state")
+  install_root.mkpath
+  state_root.mkpath
+  project_dir = root.join("project")
+  cwd = project_dir
+  project_dir.mkpath
+
+  payload = {
+    "thread_id" => "retry-collision-thread",
+    "tool_name" => "shell",
+    "tool_input" => { "command" => "rm -rf /tmp/repeat-target" }
+  }
+  payload_hash = Digest::SHA256.hexdigest(JSON.generate(payload))
+  preflight = {
+    "trusted" => true,
+    "decision" => "block",
+    "reason_code" => "destructive-command",
+    "reason_hash" => Digest::SHA256.hexdigest("retry"),
+    "attempted" => true
+  }
+
+  notice1 = StrictModeApprovalState.note_destructive_block!(
+    state_root: state_root,
+    install_root: install_root,
+    provider: "codex",
+    payload: payload,
+    payload_hash: payload_hash,
+    preflight: preflight,
+    cwd: cwd.to_s,
+    project_dir: project_dir.to_s
+  )
+  pending_path1 = Pathname.new(notice1.fetch("pending_path"))
+  rec1 = JSON.parse(pending_path1.read)
+  past = Time.now.utc - 7200
+  rec1["created_at"] = past.iso8601
+  rec1["expires_at"] = (past + 60).iso8601
+  rec1["pending_record_hash"] = ""
+  rec1["pending_record_hash"] = StrictModeMetadata.hash_record(rec1, "pending_record_hash")
+  pending_path1.write(JSON.pretty_generate(rec1) + "\n")
+
+  identity = StrictModeFdrCycle.session_identity("codex", payload)
+  ctx = identity.merge(
+    "provider" => "codex",
+    "cwd" => cwd.to_s,
+    "project_dir" => project_dir.to_s
+  )
+
+  StrictModeApprovalState.with_approval_locks!(install_root, state_root, ctx, "prompt-event") do
+    StrictModeApprovalState.sweep_expired_approvals!(state_root, ctx, 1)
+  end
+
+  # Симулируем legitimate retry: тот же approval_hash → перезаписываем
+  # pending file и снова состариваем. tombstone от первого expire ещё
+  # лежит рядом.
+  pending_path1.write(JSON.pretty_generate(rec1) + "\n")
+
+  sweep2 = nil
+  StrictModeApprovalState.with_approval_locks!(install_root, state_root, ctx, "prompt-event") do
+    sweep2 = StrictModeApprovalState.sweep_expired_approvals!(state_root, ctx, 2)
+  end
+
+  assert(
+    "second-pending sweep on same approval_hash succeeds (not skipped as ambiguous)",
+    sweep2.is_a?(Hash) && sweep2.fetch("swept").include?(rec1.fetch("approval_hash")),
+    "expected swept to include approval_hash, got #{sweep2.inspect[0, 400]}"
+  )
+
+  base_tombstone = pending_path1.dirname.join("expired-#{pending_path1.basename}")
+  retry_tombstones = pending_path1.dirname.glob("expired-pending-destructive-codex-*.json").reject { |p| p == base_tombstone }
+  assert(
+    "second expiry creates a unique tombstone with timestamp suffix",
+    retry_tombstones.length == 1,
+    "expected exactly one timestamped tombstone besides base, got #{retry_tombstones.map(&:basename).map(&:to_s).inspect}"
+  )
+  assert(
+    "original tombstone survives the second sweep (no overwrite)",
+    base_tombstone.file?,
+    "expected base tombstone #{base_tombstone.basename} to remain"
+  )
+
+  expired_audits = StrictModeApprovalState.load_audit_records(
+    StrictModeApprovalState.destructive_log_path(state_root)
+  ).count do |record|
+    record.fetch("action") == "expired" && record.fetch("approval_hash") == rec1.fetch("approval_hash")
+  end
+  assert(
+    "two expired audits exist after retry-collision (one per pending)",
+    expired_audits == 2,
+    "expected 2 expired audits, got #{expired_audits}"
+  )
+end
+
+# unique_tombstone_for_retry чистая функция: проверяем shape для
+# .json pending и для no-extension confirm marker.
+ret_json = StrictModeApprovalState.unique_tombstone_for_retry(
+  Pathname.new("/tmp/x/pending-destructive-codex-x-aaa.json"),
+  "expired"
+)
+assert(
+  "unique_tombstone_for_retry preserves .json extension",
+  ret_json.basename.to_s.start_with?("expired-pending-destructive-codex-x-aaa.") && ret_json.extname == ".json",
+  "expected expired-...timestamp.json, got #{ret_json.basename}"
+)
+
+ret_marker = StrictModeApprovalState.unique_tombstone_for_retry(
+  Pathname.new("/tmp/x/confirm-codex-x-aaa"),
+  "expired"
+)
+assert(
+  "unique_tombstone_for_retry handles no-extension confirm marker",
+  ret_marker.basename.to_s.match?(/\Aexpired-confirm-codex-x-aaa\.\d{8}T\d{6}\d{6}Z\z/),
+  "expected expired-confirm-codex-x-aaa.<timestamp>, got #{ret_marker.basename}"
+)
+
 if $failures.empty?
   puts "approval-state: #{$cases} cases ok"
 else
