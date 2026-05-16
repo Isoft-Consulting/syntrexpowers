@@ -120,14 +120,14 @@ module StrictModeRecordEdit
     append_tool_intent!(state_root, context, event)
   end
 
-  def write_turn_baseline_from_payload!(state_root:, provider:, payload:, payload_hash:, cwd:, project_dir:, prompt_seq:)
+  def write_turn_baseline_from_payload!(state_root:, provider:, payload:, payload_hash:, cwd:, project_dir:, prompt_seq:, install_root: nil)
     return nil unless payload.is_a?(Hash)
 
     event = normalize(payload, provider: provider, logical_event: "user-prompt-submit", cwd: cwd, project_dir: project_dir, payload_hash: payload_hash)
     context = session_context(provider: provider, payload: payload, cwd: cwd, project_dir: project_dir)
     raise "turn baseline requires stable provider session id" unless context
 
-    write_turn_baseline!(Pathname.new(state_root), context, event, prompt_seq.to_i)
+    write_turn_baseline!(Pathname.new(state_root), context, event, prompt_seq.to_i, install_root: install_root)
   end
 
   def stop_policy_from_payload(state_root:, provider:, logical_event:, payload:, payload_hash:, cwd:, project_dir:)
@@ -169,15 +169,20 @@ module StrictModeRecordEdit
   end
 
   # Считывает effective cap для approval_evidence из runtime config
-  # под protected-baseline trust check. Если runtime config недоступен
-  # или ключа нет — возвращает nil; consumed_audit_evidence_since
-  # сам откатится к TURN_BASELINE_APPROVAL_EVIDENCE_CAP. Чтение
-  # происходит inside session lock (write_turn_baseline!), что
-  # уменьшает окно gap-between-read-and-use (Phase 3 race mitigation).
-  def approval_evidence_cap_from_runtime(state_root, context)
-    install_root = Pathname.new(state_root).parent
+  # под protected-baseline trust check. install_root должен быть
+  # передан caller'ом — guess из state_root.parent был хрупкий
+  # (для custom STRICT_STATE_ROOT layout даёт неверный путь и
+  # baseline.load возвращает untrusted → fallback к default cap).
+  # Если install_root nil или runtime config недоступен/ключа нет —
+  # возвращаем nil; consumed_audit_evidence_since сам откатится к
+  # TURN_BASELINE_APPROVAL_EVIDENCE_CAP. Чтение происходит inside
+  # session lock (write_turn_baseline!), что уменьшает окно
+  # gap-between-read-and-use (Phase 3 race mitigation).
+  def approval_evidence_cap_from_runtime(state_root, context, install_root)
+    return nil unless install_root
+
     loaded = StrictModeProtectedBaseline.load(
-      install_root: install_root,
+      install_root: Pathname.new(install_root),
       state_root: state_root,
       project_dir: Pathname.new(context.fetch("project_dir")),
       home: Dir.home
@@ -193,7 +198,7 @@ module StrictModeRecordEdit
     nil
   end
 
-  def write_turn_baseline!(state_root, context, event, prompt_seq)
+  def write_turn_baseline!(state_root, context, event, prompt_seq, install_root: nil)
     StrictModeFdrCycle.with_session_lock!(state_root, context, "prompt-event") do
       path = turn_baseline_path(state_root, context.fetch("provider"), context.fetch("session_key"))
       previous = load_turn_baseline(path)
@@ -212,7 +217,7 @@ module StrictModeRecordEdit
         context,
         approval_evidence_since,
         now,
-        cap: approval_evidence_cap_from_runtime(state_root, context)
+        cap: approval_evidence_cap_from_runtime(state_root, context, install_root)
       )
       record = {
         "schema_version" => 1,
