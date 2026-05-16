@@ -133,12 +133,21 @@
     "approval_evidence": {
       "shape": "array",
       "members": [
+        "kind",
         "approval hash",
         "audit hash",
-        "ledger hash"
+        "marker hash",
+        "marker pre-rename fingerprint",
+        "tombstone fingerprint",
+        "consumed at",
+        "truncated count",
+        "truncation reason",
+        "previous audit hash"
       ],
       "rules": [
-        "exact approval binding"
+        "exact approval binding",
+        "truncation header binds dropped chain anchor",
+        "read-failed sentinel surfaces audit-log corruption"
       ]
     },
     "project_optouts_previous": {
@@ -326,5 +335,5 @@
   "fixture_requirements": [
     "baseline parser with kind-specific nested schemas"
   ],
-  "profile_hash": "2218ff27528d8121badd4e5f13fe48098f81e0e435c8a43f5a6f26797db16164"
+  "profile_hash": "c2ef75c3e1cb238821216fda4e13ef9e4854abee4c47bfb6602b1edbf94d8bc3"
 }

@@ -339,7 +339,7 @@ Every field profile named in 17.2.2 must have exactly one row here. `field_detai
 | `state.baseline.v1` | `log_offsets` | `object-map` | log name; byte offset | offsets never exceed file size |
 | `state.baseline.v1` | `last_sequences` | `object-map` | record type; last seq | matches state.sequence.v1 |
 | `state.baseline.v1` | `last_safe_stop_sequences` | `object-map` | record type; safe stop seq | stop gate coverage marker |
-| `state.baseline.v1` | `approval_evidence` | `array` | approval hash; audit hash; ledger hash | exact approval binding |
+| `state.baseline.v1` | `approval_evidence` | `array` | kind; approval hash; audit hash; marker hash; marker pre-rename fingerprint; tombstone fingerprint; consumed at; truncated count; truncation reason; previous audit hash | exact approval binding; truncation header binds dropped chain anchor; read-failed sentinel surfaces audit-log corruption |
 | `state.baseline.v1` | `project_optouts_previous` | `object-map` | opt-out path; fingerprint | previous baseline comparison |
 | `state.baseline.v1` | `project_optouts_current` | `object-map` | opt-out path; fingerprint | current fingerprint activation |
 | `state.baseline.v1` | `dirty path records` | `array` | path; status; fingerprint | dirty snapshot bounded |

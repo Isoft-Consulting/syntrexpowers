@@ -12,6 +12,7 @@ require_relative "fdr_cycle_lib"
 require_relative "global_ledger_lib"
 require_relative "metadata_lib"
 require_relative "normalized_event_lib"
+require_relative "protected_baseline_lib"
 
 module StrictModeRecordEdit
   extend self
@@ -167,6 +168,31 @@ module StrictModeRecordEdit
     end
   end
 
+  # Считывает effective cap для approval_evidence из runtime config
+  # под protected-baseline trust check. Если runtime config недоступен
+  # или ключа нет — возвращает nil; consumed_audit_evidence_since
+  # сам откатится к TURN_BASELINE_APPROVAL_EVIDENCE_CAP. Чтение
+  # происходит inside session lock (write_turn_baseline!), что
+  # уменьшает окно gap-between-read-and-use (Phase 3 race mitigation).
+  def approval_evidence_cap_from_runtime(state_root, context)
+    install_root = Pathname.new(state_root).parent
+    loaded = StrictModeProtectedBaseline.load(
+      install_root: install_root,
+      state_root: state_root,
+      project_dir: Pathname.new(context.fetch("project_dir")),
+      home: Dir.home
+    )
+    return nil unless loaded.fetch("trusted")
+
+    runtime = loaded.fetch("config_results").fetch("runtime.env", { "records" => [] })
+    record = runtime.fetch("records").find { |r| r.fetch("key") == "STRICT_APPROVAL_EVIDENCE_CAP" }
+    return nil unless record
+
+    Integer(record.fetch("value"))
+  rescue ArgumentError, KeyError, SystemCallError, RuntimeError
+    nil
+  end
+
   def write_turn_baseline!(state_root, context, event, prompt_seq)
     StrictModeFdrCycle.with_session_lock!(state_root, context, "prompt-event") do
       path = turn_baseline_path(state_root, context.fetch("provider"), context.fetch("session_key"))
@@ -177,12 +203,16 @@ module StrictModeRecordEdit
       # previous-turn consumption proof: записываем все consume-аудиты,
       # случившиеся между предыдущим updated_at и now. Acceptance
       # line 53: marker fingerprints + audit record hashes per turn.
+      # Cap читается из runtime config (STRICT_APPROVAL_EVIDENCE_CAP)
+      # при невалидном значении / отсутствии — fallback к default
+      # внутри consumed_audit_evidence_since.
       approval_evidence_since = previous ? previous.fetch("updated_at") : "1970-01-01T00:00:00Z"
       approval_evidence = StrictModeApprovalState.consumed_audit_evidence_since(
         state_root,
         context,
         approval_evidence_since,
-        now
+        now,
+        cap: approval_evidence_cap_from_runtime(state_root, context)
       )
       record = {
         "schema_version" => 1,

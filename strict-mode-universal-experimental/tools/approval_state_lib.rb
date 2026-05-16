@@ -12,6 +12,7 @@ require_relative "global_ledger_lib"
 require_relative "global_lock_lib"
 require_relative "metadata_lib"
 require_relative "normalized_event_lib"
+require_relative "protected_baseline_lib"
 
 class StrictModeApprovalState
   ZERO_HASH = "0" * 64
@@ -363,7 +364,7 @@ class StrictModeApprovalState
     audit
   end
 
-  def self.consume_destructive_confirmation!(state_root:, install_root:, provider:, payload:, payload_hash:, preflight:, cwd:, project_dir:, min_age_sec: DEFAULT_CONFIRM_MIN_AGE_SEC)
+  def self.consume_destructive_confirmation!(state_root:, install_root:, provider:, payload:, payload_hash:, preflight:, cwd:, project_dir:, min_age_sec: nil)
     return { "consumed" => false } unless preflight.is_a?(Hash) &&
                                          preflight.fetch("trusted", false) &&
                                          preflight.fetch("decision", "") == "block" &&
@@ -404,8 +405,15 @@ class StrictModeApprovalState
       raise "confirmation marker ledger missing" unless marker_ledger_for_marker(state_root, ctx, marker, marker_path)
       raise "confirmation marker expired" if expired?(marker.fetch("expires_at"))
       current_prompt_seq = load_prompt_sequence(prompt_sequence_path(state_root, ctx), ctx).fetch("last_prompt_seq")
-      if fails_min_age?(marker, current_prompt_seq, min_age_sec)
-        raise "confirmation marker fails min-age anti-forgery (created_at=#{marker.fetch("created_at")}, min_age_sec=#{min_age_sec.to_i})"
+      # Effective min-age читается ВНУТРИ approval lock'a (после
+      # acquire global+session locks), чтобы закрыть race window
+      # между read-config и use-config: операторский edit runtime.env
+      # между чтением и проверкой больше не bypass'ает guard.
+      # Если caller передал явный min_age_sec (например тест) —
+      # используем его, иначе читаем из protected runtime config.
+      effective_min_age_sec = min_age_sec.nil? ? read_protected_min_age_sec(install_root, state_root, project_dir) : min_age_sec
+      if fails_min_age?(marker, current_prompt_seq, effective_min_age_sec)
+        raise "confirmation marker fails min-age anti-forgery (created_at=#{marker.fetch("created_at")}, min_age_sec=#{effective_min_age_sec.to_i})"
       end
       confirmed = audit_record_by_hash(state_root, marker.fetch("approval_log_record_hash"))
       raise "confirmation audit missing" unless confirmed &&
@@ -455,6 +463,29 @@ class StrictModeApprovalState
         "tombstone_path" => tombstone_path.to_s
       }
     end
+  end
+
+  # Читает STRICT_CONFIRM_MIN_AGE_SEC из trusted runtime config
+  # внутри approval lock'а. Возвращает Integer (0 если ключ или
+  # baseline недоступны), что эквивалентно "guard disabled" —
+  # консистентно с DEFAULT_CONFIRM_MIN_AGE_SEC и с поведением
+  # protected_runtime_settings в bin/strict-hook при untrusted baseline.
+  def self.read_protected_min_age_sec(install_root, state_root, project_dir)
+    loaded = StrictModeProtectedBaseline.load(
+      install_root: install_root,
+      state_root: state_root,
+      project_dir: Pathname.new(project_dir),
+      home: Dir.home
+    )
+    return DEFAULT_CONFIRM_MIN_AGE_SEC unless loaded.fetch("trusted")
+
+    runtime = loaded.fetch("config_results").fetch("runtime.env", { "records" => [] })
+    record = runtime.fetch("records").find { |r| r.fetch("key") == "STRICT_CONFIRM_MIN_AGE_SEC" }
+    return DEFAULT_CONFIRM_MIN_AGE_SEC unless record
+
+    Integer(record.fetch("value"))
+  rescue ArgumentError, KeyError, SystemCallError, RuntimeError
+    DEFAULT_CONFIRM_MIN_AGE_SEC
   end
 
   def self.with_approval_locks!(install_root, state_root, context, transaction_kind)
@@ -1171,8 +1202,17 @@ class StrictModeApprovalState
       true
     end
     truncated_count = 0
+    dropped_chain_anchor = ZERO_HASH
     if matched.length > effective_cap
       truncated_count = matched.length - effective_cap
+      # Chain binding: previous_record_hash старейшей выжившей записи
+      # фиксирует, где именно в hash-chain была обрезка. Без этого
+      # `truncated_count` cryptographically не bound — атакующий мог
+      # бы inject'ить фейковое значение в baseline. Связав header
+      # с reachable chain anchor, judge может re-walk audit log и
+      # подтвердить, что между ZERO_HASH (или предыдущим baseline'ом)
+      # и этим anchor'ом действительно жили truncated_count записей.
+      dropped_chain_anchor = matched[matched.length - effective_cap].fetch("previous_record_hash")
       matched = matched.last(effective_cap)
     end
     entries = matched.map do |record|
@@ -1190,7 +1230,8 @@ class StrictModeApprovalState
       entries.unshift(evidence_sentinel(
         EVIDENCE_TRUNCATION_HEADER_KIND,
         "approval-evidence-cap-#{effective_cap}",
-        truncated_count
+        truncated_count,
+        previous_audit_hash: dropped_chain_anchor
       ))
     end
     entries
@@ -1211,7 +1252,7 @@ class StrictModeApprovalState
     )]
   end
 
-  def self.evidence_sentinel(kind, reason, truncated_count)
+  def self.evidence_sentinel(kind, reason, truncated_count, previous_audit_hash: ZERO_HASH)
     {
       "kind" => kind,
       "approval_hash" => ZERO_HASH,
@@ -1221,23 +1262,19 @@ class StrictModeApprovalState
       "tombstone_fingerprint" => zero_fingerprint,
       "consumed_at" => "1970-01-01T00:00:00Z",
       "truncated_count" => truncated_count,
-      "truncation_reason" => reason
+      "truncation_reason" => reason,
+      "previous_audit_hash" => previous_audit_hash
     }
   end
 
+  # Каноническая "missing" fingerprint shape берётся напрямую из
+  # StrictModeGlobalLedger.missing_fingerprint — нет смысла дублировать
+  # структуру здесь, иначе при future drift в global_ledger_lib
+  # audit-валидатор начнёт отвергать sentinel'ы. missing_fingerprint
+  # возвращает shape без обращения к файловой системе (не как
+  # `fingerprint(path)` который делает lstat).
   def self.zero_fingerprint
-    {
-      "exists" => 0,
-      "kind" => "missing",
-      "dev" => 0,
-      "inode" => 0,
-      "mode" => 0,
-      "size_bytes" => 0,
-      "mtime_ns" => 0,
-      "content_sha256" => ZERO_HASH,
-      "link_target" => "",
-      "tree_hash" => ZERO_HASH
-    }
+    StrictModeGlobalLedger.missing_fingerprint
   end
 
   def self.evidence_tuple_matches?(record, ctx)
