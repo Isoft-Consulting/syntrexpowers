@@ -187,13 +187,13 @@ Dir.mktmpdir("strict-evidence-") do |dir|
   )
 end
 
-# consumed_audit_evidence_since: malformed JSONL (partial write race)
-# → пустая выдача, не crash.
+# consumed_audit_evidence_since: malformed JSONL (partial write race
+# или реальная corruption) → возвращает sentinel с
+# kind=approval-evidence-read-failed (не [] — иначе Stop не отличит
+# от законного пустого turn'а).
 Dir.mktmpdir("strict-evidence-") do |dir|
   state_root = Pathname.new(dir)
   log = StrictModeApprovalState.destructive_log_path(state_root)
-  # Записываем некорректный fragment чтобы спровоцировать RuntimeError
-  # из load_audit_records ("blank audit line").
   log.write("{\n\n")
   ctx = {
     "provider" => "codex",
@@ -208,9 +208,14 @@ Dir.mktmpdir("strict-evidence-") do |dir|
     "1970-01-01T00:00:00Z"
   )
   assert(
-    "consumed_audit_evidence_since rescues malformed audit log",
-    evidence == [],
-    "expected [] on malformed log, got #{evidence.inspect}"
+    "consumed_audit_evidence_since emits read-failed sentinel on corrupted log",
+    evidence.length == 1 && evidence.first["kind"] == "approval-evidence-read-failed",
+    "expected one sentinel with kind=approval-evidence-read-failed, got #{evidence.inspect}"
+  )
+  assert(
+    "read-failed sentinel exposes approval_hash sentinel (consumers safe to fetch)",
+    evidence.first["approval_hash"] == "0" * 64,
+    "expected ZERO_HASH approval_hash on read-failed sentinel, got #{evidence.first.inspect}"
   )
 end
 
@@ -273,10 +278,39 @@ Dir.mktmpdir("strict-evidence-") do |dir|
     "expected 4 entries (header+3) with truncated_count=7, got #{evidence.inspect}"
   )
   assert(
+    "consumed_audit_evidence_since cap header carries truncation kind",
+    evidence.first["kind"] == "approval-evidence-truncated",
+    "expected truncation header kind, got #{evidence.first.inspect}"
+  )
+  assert(
+    "consumed_audit_evidence_since cap header has approval_hash sentinel (consumers safe to fetch)",
+    evidence.first["approval_hash"] == "0" * 64,
+    "expected ZERO_HASH approval_hash on truncation header, got #{evidence.first.inspect}"
+  )
+  assert(
     "consumed_audit_evidence_since cap keeps newest entries",
     evidence.last["approval_hash"] == format("%064x", 10),
     "expected last approval_hash to be hash of i=9, got #{evidence.last.inspect}"
   )
+
+  # Невалидный cap (0, nil, negative, string) — fallback к умолчанию.
+  [0, nil, -5, "abc"].each do |bad_cap|
+    evidence_bad = StrictModeApprovalState.consumed_audit_evidence_since(
+      state_root,
+      ctx,
+      "1970-01-01T00:00:00Z",
+      nil,
+      cap: bad_cap
+    )
+    expected_min = StrictModeApprovalState::TURN_BASELINE_APPROVAL_EVIDENCE_CAP
+    overflow = 10 > expected_min ? 10 - expected_min : 0
+    expected_length = overflow.positive? ? expected_min + 1 : 10
+    assert(
+      "consumed_audit_evidence_since falls back on invalid cap #{bad_cap.inspect}",
+      evidence_bad.length == expected_length,
+      "with cap=#{bad_cap.inspect} expected #{expected_length} entries (default cap), got #{evidence_bad.length}"
+    )
+  end
 end
 
 # fails_min_age? при cap-параметре передаётся как Integer 0 → guard off
@@ -290,6 +324,58 @@ assert(
   ),
   "expected Integer 0 to disable guard"
 )
+
+# expire_pending_decision: чистая функция idempotency-логики
+# (extract'нута из expire_pending_record!). Покрывает 4 branch'а:
+# proceed, skip_tombstone_only, skip_ambiguous, skip_nothing.
+Dir.mktmpdir("strict-expire-decision-") do |dir|
+  pending = Pathname.new(dir).join("pending-destructive-codex-x-aaa.json")
+  tombstone = Pathname.new(dir).join("expired-pending-destructive-codex-x-aaa.json")
+
+  # nothing: ни pending, ни tombstone → skip_nothing
+  assert(
+    "expire_pending_decision returns skip_nothing when both absent",
+    StrictModeApprovalState.expire_pending_decision(pending, tombstone) == :skip_nothing,
+    "expected :skip_nothing"
+  )
+
+  # proceed: только pending → :proceed
+  pending.write("{}")
+  assert(
+    "expire_pending_decision returns proceed when pending exists and tombstone absent",
+    StrictModeApprovalState.expire_pending_decision(pending, tombstone) == :proceed,
+    "expected :proceed"
+  )
+
+  # ambiguous: оба → :skip_ambiguous (защита от затирания старого tombstone)
+  tombstone.write("{}")
+  assert(
+    "expire_pending_decision returns skip_ambiguous when both exist",
+    StrictModeApprovalState.expire_pending_decision(pending, tombstone) == :skip_ambiguous,
+    "expected :skip_ambiguous"
+  )
+
+  # tombstone_only: после успешного sweep'a — pending удалён, tombstone остался → idempotent skip
+  pending.unlink
+  assert(
+    "expire_pending_decision returns skip_tombstone_only when only tombstone present",
+    StrictModeApprovalState.expire_pending_decision(pending, tombstone) == :skip_tombstone_only,
+    "expected :skip_tombstone_only"
+  )
+
+  # symlink на pending или tombstone не считается валидным (rejected
+  # protections against attacker pre-creating symlink to redirect rename).
+  pending_target = Pathname.new(dir).join("target.json")
+  pending_target.write("{}")
+  pending.make_symlink(pending_target)
+  tombstone.unlink
+  assert(
+    "expire_pending_decision rejects pending symlink (skip_nothing)",
+    StrictModeApprovalState.expire_pending_decision(pending, tombstone) == :skip_nothing,
+    "expected :skip_nothing on symlink pending"
+  )
+  pending.unlink
+end
 
 if $failures.empty?
   puts "approval-state: #{$cases} cases ok"

@@ -223,30 +223,37 @@ class StrictModeApprovalState
       # next-user-turn проходом. Sweep идёт ПОСЛЕ append_prompt_event,
       # чтобы prompt_seq был monotonic — невозможно создать и
       # истечь маркер в одном prompt'е (acceptance line 47).
-      expired_swept = sweep_expired_approvals!(state_root, ctx, prompt_event.fetch("prompt_seq"))
+      sweep_result = sweep_expired_approvals!(state_root, ctx, prompt_event.fetch("prompt_seq"))
       {
         "prompt_seq" => prompt_event.fetch("prompt_seq"),
         "prompt_event_hash" => prompt_event.fetch("record_hash"),
         "approval_hash" => approval_hash || "",
         "marker_created" => !marker.nil?,
         "marker_hash" => marker ? marker.fetch("marker_hash") : ZERO_HASH,
-        "expired_swept" => expired_swept
+        "expired_swept" => sweep_result.fetch("swept"),
+        "expired_sweep_errors" => sweep_result.fetch("errors")
       }
     end
   end
 
   # Идёт ПОД approval session+global lock'ом (вызывается из record_user_prompt!).
-  # Возвращает список approval_hash'ей вычищенных pending'ов. Каждый
-  # expired pending порождает:
+  # Возвращает hash:
+  #   "swept"  — список approval_hash'ей успешно expired pending'ов
+  #   "errors" — список { "path", "message", "error_class" } для тех,
+  #              которые упали (corrupted JSON, rename failure, etc).
+  # Раньше ошибки молча warn'ились в stderr и терялись. Теперь surface'им
+  # через return value, чтобы caller (record_user_prompt!) включил
+  # их в approval_summary; интегрируется с future log/ledger surface.
+  # Каждый expired pending порождает:
   #   - audit с action="expired", source="user-prompt-hook"
-  #   - rename pending -> expired-pending-... (idempotent через File.rename)
-  #   - если соответствующий confirm-marker ещё активен — rename в
-  #     expired-confirm-...
+  #   - rename pending -> expired-pending-... (idempotent)
+  #   - если соответствующий confirm-marker ещё активен — rename
+  #     в expired-confirm-...
   # Любая ошибка при отдельном pending'е не должна валить весь sweep —
-  # warn'аем и продолжаем (other pending'и тоже expire).
+  # записываем error и продолжаем (other pending'и тоже expire).
   def self.sweep_expired_approvals!(state_root, ctx, prompt_seq)
-    swept = []
-    return swept unless prompt_seq.is_a?(Integer) && prompt_seq.positive?
+    result = { "swept" => [], "errors" => [] }
+    return result unless prompt_seq.is_a?(Integer) && prompt_seq.positive?
 
     provider = ctx.fetch("provider")
     session_key = ctx.fetch("session_key")
@@ -260,27 +267,47 @@ class StrictModeApprovalState
         next unless expired?(record.fetch("expires_at"))
 
         expire_pending_record!(state_root, ctx, record, path, prompt_seq)
-        swept << record.fetch("approval_hash")
-      rescue RuntimeError, SystemCallError, ArgumentError, KeyError => e
-        warn "approval-sweep skip #{path}: #{e.message}"
+        result["swept"] << record.fetch("approval_hash")
+      rescue RuntimeError, SystemCallError, ArgumentError, KeyError, JSON::ParserError => e
+        message = e.message.to_s[0, 200]
+        result["errors"] << {
+          "path" => path.basename.to_s,
+          "error_class" => e.class.name,
+          "message" => message
+        }
+        warn "approval-sweep skip #{path}: #{e.class}: #{message}"
       end
     end
-    swept
+    result
+  end
+
+  # Pure-функция: принимает решение, надо ли expire'нуть pending.
+  # Вынесено отдельно от expire_pending_record! чтобы можно было
+  # unit-тестировать идемпотентность без full chain (locks, audit
+  # log, ledger). Возвращает один из:
+  #   :proceed — tombstone нет, pending есть → expire
+  #   :skip_tombstone_only — tombstone уже есть, pending нет → idempotent skip
+  #   :skip_ambiguous — есть и tombstone, и pending → manual review
+  #   :skip_nothing — нет ни того, ни другого → race-removed
+  def self.expire_pending_decision(pending_path, expired_pending_path)
+    pending_exists = pending_path.file? && !pending_path.symlink?
+    tombstone_exists = expired_pending_path.file? && !expired_pending_path.symlink?
+    return :skip_ambiguous if pending_exists && tombstone_exists
+    return :skip_tombstone_only if tombstone_exists
+    return :skip_nothing unless pending_exists
+    :proceed
   end
 
   def self.expire_pending_record!(state_root, ctx, pending, pending_path, prompt_seq)
     approval_hash = pending.fetch("approval_hash")
     marker_path = confirm_path(state_root, ctx, approval_hash)
     expired_pending_path = pending_path.dirname.join("expired-#{pending_path.basename}")
-    # Idempotency: если tombstone уже существует — pending уже был
-    # expire'нут в прошлом sweep'е. Не trigger audit append повторно.
-    # Двусмысленный случай (tombstone + pending одновременно) трактуем
-    # как требующий manual review: warn и skip, чтобы не затереть
-    # старый tombstone и не плодить duplicate audits.
-    if expired_pending_path.file?
-      if pending_path.file?
-        warn "approval-sweep skip ambiguous tombstone+pending: #{pending_path.basename}"
-      end
+    decision = expire_pending_decision(pending_path, expired_pending_path)
+    case decision
+    when :skip_ambiguous
+      warn "approval-sweep skip ambiguous tombstone+pending: #{pending_path.basename}"
+      return nil
+    when :skip_tombstone_only, :skip_nothing
       return nil
     end
 
@@ -1090,6 +1117,18 @@ class StrictModeApprovalState
   # берём только последние N записей (по времени), это сохраняет
   # самое свежее доказательство consumption'а.
   TURN_BASELINE_APPROVAL_EVIDENCE_CAP = 512
+  # Минимально допустимый cap. Запретить cap = 0 / negative /
+  # non-Integer — иначе вызывающий мог бы скрытно отключить
+  # bound'енье через runtime config drift или typo. Если кэп
+  # выглядит инвалидно — fallback к умолчанию + warn.
+  TURN_BASELINE_APPROVAL_EVIDENCE_CAP_MIN = 1
+
+  # Sentinel-shape для truncation header: должен содержать те же
+  # ключи, что и обычный evidence record, чтобы consumer'ы, делающие
+  # `entry.fetch("approval_hash")`, не получали KeyError. Реальные
+  # содержимые поля (approval_hash и др.) — ZERO sentinel'ы, чтобы
+  # их нельзя было перепутать с реальным consumption proof'ом.
+  EVIDENCE_TRUNCATION_HEADER_KIND = "approval-evidence-truncated"
 
   # Возвращает evidence-entries по destructive-confirmation
   # consume'ам за период (since, until]. Используется
@@ -1097,10 +1136,27 @@ class StrictModeApprovalState
   # consumption proof (acceptance line 53). Каждая запись несёт
   # approval_hash, audit record_hash и pre-rename fingerprint —
   # этого достаточно, чтобы Stop/judge мог per-turn проверить, что
-  # consume действительно прошёл через trusted chain. Лимит размера
-  # — TURN_BASELINE_APPROVAL_EVIDENCE_CAP; результат включает поле
-  # truncated в overflow record при срабатывании cap'а.
+  # consume действительно прошёл через trusted chain.
+  #
+  # Аргументы:
+  #   cap — макс. число reality entries; при overflow возвращаются
+  #         последние cap записей плюс header с kind ==
+  #         EVIDENCE_TRUNCATION_HEADER_KIND. Невалидный cap (0,
+  #         negative, non-Integer) откатывается к
+  #         TURN_BASELINE_APPROVAL_EVIDENCE_CAP с warning.
+  #
+  # При повреждении destructive-log (RuntimeError из blank-line
+  # detector, JSON::ParserError, etc) метод возвращает sentinel
+  # с kind == "approval-evidence-read-failed" и непустым reason —
+  # baseline builder увидит non-empty array и сможет различить
+  # реальный empty turn от corrupted-log scenario.
   def self.consumed_audit_evidence_since(state_root, ctx, since_iso8601, until_iso8601 = nil, cap: TURN_BASELINE_APPROVAL_EVIDENCE_CAP)
+    effective_cap = if cap.is_a?(Integer) && cap >= TURN_BASELINE_APPROVAL_EVIDENCE_CAP_MIN
+                      cap
+                    else
+                      warn "consumed_audit_evidence_since: invalid cap #{cap.inspect}, falling back to default #{TURN_BASELINE_APPROVAL_EVIDENCE_CAP}"
+                      TURN_BASELINE_APPROVAL_EVIDENCE_CAP
+                    end
     threshold_since = Time.iso8601(since_iso8601.to_s)
     threshold_until = until_iso8601.nil? ? nil : Time.iso8601(until_iso8601.to_s)
     records = load_audit_records(destructive_log_path(state_root))
@@ -1115,12 +1171,13 @@ class StrictModeApprovalState
       true
     end
     truncated_count = 0
-    if cap.is_a?(Integer) && cap.positive? && matched.length > cap
-      truncated_count = matched.length - cap
-      matched = matched.last(cap)
+    if matched.length > effective_cap
+      truncated_count = matched.length - effective_cap
+      matched = matched.last(effective_cap)
     end
     entries = matched.map do |record|
       {
+        "kind" => "approval-evidence-consumed",
         "approval_hash" => record.fetch("approval_hash"),
         "audit_hash" => record.fetch("record_hash"),
         "marker_hash" => record.fetch("marker_hash"),
@@ -1130,22 +1187,57 @@ class StrictModeApprovalState
       }
     end
     if truncated_count.positive?
-      entries.unshift(
-        "truncated_count" => truncated_count,
-        "truncation_reason" => "approval-evidence-cap-#{cap}"
-      )
+      entries.unshift(evidence_sentinel(
+        EVIDENCE_TRUNCATION_HEADER_KIND,
+        "approval-evidence-cap-#{effective_cap}",
+        truncated_count
+      ))
     end
     entries
-  rescue RuntimeError, ArgumentError, KeyError, SystemCallError, JSON::ParserError
+  rescue RuntimeError, ArgumentError, KeyError, SystemCallError, JSON::ParserError => e
     # destructive-log читается без global lock (writer держит global
-    # lock, sweep/baseline под session lock). В очень редкой race
-    # window load_audit_records может увидеть partial-write line:
-    #   - blank audit line (RuntimeError) — sentinel из load_audit_records,
-    #   - неполный JSON (JSON::ParserError) — фрагмент строки без `}`.
-    # Возвращаем пустой evidence: baseline соберётся без proof'а
-    # консумов этого turn'а, но Stop gate не сломается. Next turn
-    # перечитает чистый файл.
-    []
+    # lock, sweep/baseline под session lock). В redкой race window
+    # load_audit_records может увидеть partial-write line или
+    # неполный JSON. ОДНАКО же ошибка может означать и реальную
+    # corruption диска — не "пустой turn". Возвращаем sentinel
+    # с kind == "approval-evidence-read-failed", чтобы Stop gate /
+    # judge различали empty-turn от read-failure и могли поднять
+    # тревогу. error.class и message не помещаем в baseline (PII,
+    # бесконтрольный размер), а указываем reason'ом.
+    [evidence_sentinel(
+      "approval-evidence-read-failed",
+      "audit-log-read-error: #{e.class}",
+      0
+    )]
+  end
+
+  def self.evidence_sentinel(kind, reason, truncated_count)
+    {
+      "kind" => kind,
+      "approval_hash" => ZERO_HASH,
+      "audit_hash" => ZERO_HASH,
+      "marker_hash" => ZERO_HASH,
+      "marker_pre_rename_fingerprint" => zero_fingerprint,
+      "tombstone_fingerprint" => zero_fingerprint,
+      "consumed_at" => "1970-01-01T00:00:00Z",
+      "truncated_count" => truncated_count,
+      "truncation_reason" => reason
+    }
+  end
+
+  def self.zero_fingerprint
+    {
+      "exists" => 0,
+      "kind" => "missing",
+      "dev" => 0,
+      "inode" => 0,
+      "mode" => 0,
+      "size_bytes" => 0,
+      "mtime_ns" => 0,
+      "content_sha256" => ZERO_HASH,
+      "link_target" => "",
+      "tree_hash" => ZERO_HASH
+    }
   end
 
   def self.evidence_tuple_matches?(record, ctx)
