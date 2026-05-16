@@ -377,6 +377,52 @@ Dir.mktmpdir("strict-expire-decision-") do |dir|
   pending.unlink
 end
 
+# Critical regression: validate_session_ledger_record должен accept'нуть
+# target_class "expired-pending" + operation "rename" и
+# target_class "expired-confirm-marker" + operation "rename" от writer
+# "strict-hook". Без этого sweep падает в runtime при первом expired
+# pending'е, потому что expire_pending_record! пишет именно эти
+# ledger entries (только integration test через test-hook-preflight
+# не trigger'ил sweep сценарий — иллюзия зелёной suite).
+require_relative "../tools/fdr_cycle_lib"
+require_relative "../tools/global_ledger_lib"
+
+%w[expired-pending expired-confirm-marker].each do |target_class|
+  ctx = {
+    "provider" => "codex",
+    "session_key" => "ledger-validation-session",
+    "raw_session_hash" => "1" * 64,
+    "cwd" => "/tmp/test",
+    "project_dir" => "/tmp/test"
+  }
+  record = {
+    "schema_version" => 1,
+    "ledger_scope" => "session",
+    "writer" => "strict-hook",
+    "provider" => ctx.fetch("provider"),
+    "session_key" => ctx.fetch("session_key"),
+    "raw_session_hash" => ctx.fetch("raw_session_hash"),
+    "cwd" => ctx.fetch("cwd"),
+    "project_dir" => ctx.fetch("project_dir"),
+    "target_path" => "/tmp/test/strict-mode/state/expired-pending-codex-x-deadbeef.json",
+    "target_class" => target_class,
+    "operation" => "rename",
+    "old_fingerprint" => StrictModeGlobalLedger.missing_fingerprint,
+    "new_fingerprint" => StrictModeGlobalLedger.missing_fingerprint,
+    "related_record_hash" => "f" * 64,
+    "ts" => Time.now.utc.iso8601,
+    "previous_record_hash" => "0" * 64,
+    "record_hash" => ""
+  }
+  record["record_hash"] = StrictModeMetadata.hash_record(record, "record_hash")
+  errors = StrictModeFdrCycle.validate_session_ledger_record(record, expected_previous_hash: "0" * 64)
+  assert(
+    "validate_session_ledger_record accepts strict-hook + #{target_class} + rename",
+    errors.empty?,
+    "expected no errors, got: #{errors.inspect}"
+  )
+end
+
 if $failures.empty?
   puts "approval-state: #{$cases} cases ok"
 else

@@ -42,6 +42,8 @@ Default state root:
   pending-destructive-<provider>-<session_id>-<hash>.json
   confirm-<provider>-<session_id>-<hash>
   consumed-confirm-<provider>-<session_id>-<hash>.json
+  expired-pending-destructive-<provider>-<session_id>-<hash>.json
+  expired-confirm-<provider>-<session_id>-<hash>
 ```
 
 Rules:
